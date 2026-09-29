@@ -26,7 +26,9 @@ export function createState({ store, now = () => new Date().toISOString() }) {
   const persist = async (section) => {
     try { await store.save(section, settings[section]); } catch (e) {
       emit({ type: 'save-error', section, message: e.message });
+      return;
     }
+    emit({ type: 'saved', section });
   };
 
   const api = {
@@ -51,6 +53,20 @@ export function createState({ store, now = () => new Date().toISOString() }) {
       settings[section] = normalizeSection(section, null);
       emit({ type: 'settings', section });
       await persist(section);
+    },
+
+    /**
+     * Accept a calibration written or computed by the server (capture, confirmation, epochs), without writing it back.
+     * epochsOnly: update only the epochs, without touching the entered values.
+     */
+    adoptCalibration(doc, { epochsOnly = false } = {}) {
+      const incoming = normalizeSection('calibration', doc);
+      const next = epochsOnly
+        ? { ...settings.calibration, epochXY: incoming.epochXY, epochZ: incoming.epochZ }
+        : incoming;
+      if (JSON.stringify(next) === JSON.stringify(settings.calibration)) return;
+      settings.calibration = next;
+      emit({ type: 'settings', section: 'calibration' });
     },
 
     /** A report of a failed write from places that write to storage themselves (source presets). */

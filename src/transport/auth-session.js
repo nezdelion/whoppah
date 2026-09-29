@@ -4,7 +4,7 @@
 
 const PERMISSION_BY_OPERATION = {
   upload: 'печать', pause: 'печать', cancel: 'печать',
-  command: 'управление принтером', job: 'просмотр состояния', test: 'просмотр состояния',
+  command: 'управление принтером', position: 'управление принтером', job: 'просмотр состояния', test: 'просмотр состояния',
 };
 
 export function readCookie(cookieString, name) {

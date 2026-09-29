@@ -5,7 +5,10 @@ All plotting logic lives in the browser application.
 """
 
 import json
+import math
 import os
+import threading
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 import flask
@@ -14,6 +17,7 @@ from octoprint.access import ADMIN_GROUP
 from octoprint.access.permissions import Permissions
 
 from ._version import __version__
+from .position import PositionReader
 
 __plugin_name__ = "Plotter"
 __plugin_version__ = __version__
@@ -27,6 +31,11 @@ MAX_SECTION_BYTES = 1024 * 1024
 APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "app")
 
 NEEDS_PROFILE = "PLUGIN_PLOTTER_MACHINE_PROFILE"
+
+# calibration defaults of the app (the base for a first manual edit or a capture into an empty section)
+CALIBRATION_DEFAULTS = {"cornerX": -5, "cornerY": 50, "zTouch": 8}
+CALIBRATION_PARTS = {"xy": ("cornerX", "cornerY"), "z": ("zTouch",)}
+EPOCH_KEYS = {"xy": "epochXY", "z": "epochZ"}
 
 
 def csrf_cookie_name(request):
@@ -57,11 +66,18 @@ class PlotterPlugin(
     octoprint.plugin.BlueprintPlugin,
     octoprint.plugin.SettingsPlugin,
     octoprint.plugin.TemplatePlugin,
+    octoprint.plugin.EventHandlerPlugin,
 ):
+    def __init__(self):
+        super().__init__()
+        self._epoch_lock = threading.Lock()
+        self._calibration_lock = threading.Lock()
+        self._reader = PositionReader()
+
     # ~~ SettingsPlugin: storage for the app settings
 
     def get_settings_defaults(self):
-        return {"profile": None, "calibration": None, "users": {}}
+        return {"profile": None, "calibration": None, "users": {}, "positionEpoch": 0}
 
     # The app has its own REST API for these values; keep them out of OctoPrint's generic /api/settings.
     def on_settings_load(self):
@@ -126,8 +142,11 @@ class PlotterPlugin(
         response.headers["Cache-Control"] = "no-store"
         return response
 
-    def _error(self, status, message):
-        return self._json({"error": message}, status)
+    def _error(self, status, message, code=None):
+        payload = {"error": message}
+        if code:
+            payload["code"] = code
+        return self._json(payload, status)
 
     def _login_redirect(self):
         target = flask.request.script_root + flask.request.path
@@ -239,10 +258,157 @@ class PlotterPlugin(
         if len(json.dumps(value, ensure_ascii=False).encode("utf-8")) > MAX_SECTION_BYTES:
             return self._error(413, "section is larger than 1 MB")
 
+        if section == "calibration":
+            with self._calibration_lock:
+                value = self._manual_calibration(value)
+                self._write_section(section, user, value)
+            return self._json({"ok": True, "calibration": value})
         self._write_section(section, user, value)
         return self._json({"ok": True})
 
+    # ~~ calibration: coordinate epoch, capture and confirmation
+
+    def current_epoch(self):
+        value = self._settings.get(["positionEpoch"])
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    def bump_epoch(self, reason=""):
+        with self._epoch_lock:
+            self._settings.set(["positionEpoch"], self.current_epoch() + 1)
+            self._settings.save()
+        self._logger.debug(f"plotter: coordinate epoch is now {self.current_epoch()} ({reason})")
+
+    def _stored_calibration(self):
+        value = self._settings.get(["calibration"])
+        return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _part_values(doc, part):
+        return tuple(doc.get(k, CALIBRATION_DEFAULTS[k]) for k in CALIBRATION_PARTS[part])
+
+    def _manual_calibration(self, body):
+        """Manual input: only the parts whose values changed get the current epoch; the others keep theirs."""
+        old = self._stored_calibration()
+        new = {k: v for k, v in body.items() if k not in EPOCH_KEYS.values()}
+        epoch = self.current_epoch()
+        for part, key in EPOCH_KEYS.items():
+            if self._part_values(new, part) != self._part_values(old, part):
+                new[key] = epoch
+            elif key in old:
+                new[key] = old[key]
+        return new
+
+    @staticmethod
+    def _is_number(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+    def _calibration_action(self, part, confirm):
+        user = self._session_user()
+        if user is None:
+            return self._error(403, "login required")
+        if not self.can_edit_calibration():
+            return self._error(403, "missing permission: printer control")
+        body = {}
+        if not confirm:
+            body = flask.request.get_json(silent=True)
+            keys = {"xy": ("x", "y"), "z": ("zTouch",)}[part]
+            if not isinstance(body, dict) or not all(self._is_number(body.get(k)) for k in keys):
+                return self._error(400, "expected numbers: " + ", ".join(keys))
+            if not isinstance(body.get("epoch"), int) or isinstance(body.get("epoch"), bool):
+                return self._error(400, "epoch must be an integer")
+        with self._calibration_lock:
+            current = self.current_epoch()
+            if not confirm and body["epoch"] != current:
+                return self._error(409, "coordinates changed since the position was read", code="stale")
+            doc = {**CALIBRATION_DEFAULTS, **self._stored_calibration()}
+            if not confirm:
+                if part == "xy":
+                    doc["cornerX"], doc["cornerY"] = body["x"], body["y"]
+                else:
+                    doc["zTouch"] = body["zTouch"]
+                doc["updatedAt"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            doc[EPOCH_KEYS[part]] = current
+            self._write_section("calibration", user, doc)
+        return self._json({"ok": True, "calibration": doc})
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/calibration/xy", methods=["POST"])
+    def capture_xy(self):
+        return self._calibration_action("xy", False)
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/calibration/z", methods=["POST"])
+    def capture_z(self):
+        return self._calibration_action("z", False)
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/calibration/xy/confirm", methods=["POST"])
+    def confirm_xy(self):
+        return self._calibration_action("xy", True)
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/calibration/z/confirm", methods=["POST"])
+    def confirm_z(self):
+        return self._calibration_action("z", True)
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/position/epoch", methods=["GET"])
+    def get_epoch(self):
+        if self._session_user() is None:
+            return self._error(403, "login required")
+        return self._json({"epoch": self.current_epoch()})
+
+    def _printer_problem(self):
+        """(status, code, message) when the head cannot be read now, else None."""
+        printer = self._printer
+        if printer is None or not printer.is_operational():
+            return 409, "offline", "printer is not connected"
+        for name in ("is_printing", "is_paused", "is_pausing", "is_cancelling", "is_finishing"):
+            check = getattr(printer, name, None)
+            if callable(check) and check():
+                return 409, "busy", "printer is printing"
+        return None
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/position", methods=["POST"])
+    def read_position(self):
+        if self._session_user() is None:
+            return self._error(403, "login required")
+        if not self.can_edit_calibration():
+            return self._error(403, "missing permission: printer control")
+        problem = self._printer_problem()
+        if problem:
+            return self._error(problem[0], problem[2], code=problem[1])
+        rid = self._reader.start()
+        if rid is None:
+            return self._error(409, "another position read is running", code="busy")
+        epoch0 = self.current_epoch()
+        try:
+            self._printer.commands(self._reader.commands(rid), tags={"plugin:plotter"})
+        except Exception as e:
+            self._reader.wait(rid, 0)  # release
+            return self._error(409, f"cannot send: {e}", code="offline")
+        outcome, coords = self._reader.wait(rid)
+        if outcome == "unsupported":
+            return self._error(501, "the printer firmware does not know M118", code="unsupported")
+        if outcome == "timeout":
+            return self._error(504, "the printer did not answer", code="timeout")
+        if outcome == "nocoords":
+            return self._error(502, "no coordinates in the printer answer", code="nocoords")
+        if self.current_epoch() != epoch0:
+            return self._error(409, "coordinates changed while reading", code="stale")
+        x, y, z = coords
+        return self._json({"x": x, "y": y, "z": z, "epoch": epoch0})
+
     # ~~ hooks
+
+    def on_event(self, event, payload):
+        from octoprint.events import Events
+
+        if event == Events.CONNECTED:
+            self.bump_epoch("connected")
+
+    def on_gcode_received(self, comm_instance, line, *args, **kwargs):
+        self._reader.feed(line)
+        return line
+
+    def on_gcode_sent(self, comm_instance, phase, cmd, cmd_type, gcode, *args, **kwargs):
+        if gcode == "G28":
+            self.bump_epoch("G28")
 
     def body_size_limits(self, current_max_body_sizes, *args, **kwargs):
         # OctoPrint's default request body limit is 100 KB; sections may be up to 1 MB (routes are relative to /plugin/plotter/)
@@ -265,5 +431,7 @@ class PlotterPlugin(
 __plugin_implementation__ = PlotterPlugin()
 __plugin_hooks__ = {
     "octoprint.access.permissions": __plugin_implementation__.get_additional_permissions,
+    "octoprint.comm.protocol.gcode.received": __plugin_implementation__.on_gcode_received,
+    "octoprint.comm.protocol.gcode.sent": __plugin_implementation__.on_gcode_sent,
     "octoprint.server.http.bodysize": __plugin_implementation__.body_size_limits,
 }

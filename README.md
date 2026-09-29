@@ -54,6 +54,8 @@ OctoPrint → Settings → Plugin Manager → "Get More…" → "… from an upl
 - Writing the calibration requires the standard OctoPrint **Control** permission. Print, upload and pause are checked against OctoPrint permissions (Print, File Upload, Control); on denial "permission required: …" is shown.
 - A section is at most 1 MB; unknown sections are rejected by the server.
 
+**Calibration capture (plugin only).** Bring the pen over with the standard Control tab, then on the "Print" tab press "Corner here" (accounting for the pen offset from the sheet corner) or "Touch here"; the position is read with `M118`/`M400`/`M114` (unavailable while printing). "Corner is correct" / "Touch is correct" confirm a part without changing values. After homing (`G28`) or a printer reconnect the app shows "calibration may be outdated", and printing requires confirmation. Requires the Control permission and firmware that answers `M118`.
+
 **Transferring settings from standalone.** In standalone: "Export to file" at the bottom of the settings panel; in the plugin: "Import from file…". The profile and calibration are skipped with a message if permissions are missing, the rest is imported. If the user has no settings on the server yet, but `localStorage` of the same address (host:port) has standalone settings, the app offers to transfer them itself.
 
 **Development.**

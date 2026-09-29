@@ -9,6 +9,8 @@ import { offerLocalImport } from './local-import.js';
 import { createState, createSourceContext } from './state.js';
 import { createPrintService } from './print/print-service.js';
 import { limitsCheck, partialCheck } from './print/checks.js';
+import { createOctoPrintPosition } from '../transport/octoprint-position.js';
+import { setupCalibration } from './calibration/setup.js';
 import { createSvgSource } from './tabs/svg-tab.js';
 import { createPhotoSource } from './tabs/photo-tab.js';
 import { createPrintTab } from './tabs/print-tab.js';
@@ -21,6 +23,11 @@ const notice = (() => {
     show(...content) { el.replaceChildren(...content, ' ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); el.hidden = true; } }, 'скрыть')); el.hidden = false; },
   };
 })();
+
+const pageVisibility = () => ({
+  visible: () => document.visibilityState !== 'hidden',
+  subscribe: (fn) => { document.addEventListener('visibilitychange', fn); return () => document.removeEventListener('visibilitychange', fn); },
+});
 
 // Choosing implementations by mode: standalone — key and browser storage, plugin — session and OctoPrint server.
 function setupPlugin(env) {
@@ -38,7 +45,8 @@ function setupPlugin(env) {
     return null;
   };
   document.querySelector('header').append(h('a', { class: 'back-link', href: env.octoprintUrl }, '← OctoPrint'));
-  return { store, transport, needs, ui: { hideConnection: true, needs } };
+  const positionSource = createOctoPrintPosition({ apiUrl: `${env.baseUrl}/plugin/plotter/api`, auth });
+  return { store, transport, needs, positionSource, ui: { hideConnection: true, needs } };
 }
 
 async function start() {
@@ -72,16 +80,20 @@ async function start() {
     }).catch((e) => `Перенос настроек: ${e.message}`);
     if (message) { await state.load(); notice.show(message); }
   }
+  // Calibration capture and tracking of its freshness — plugin mode only (in standalone there is nothing to read the position from).
+  const calibration = setupCalibration({ positionSource: plugin && plugin.positionSource, state, store, visibility: pageVisibility() });
+  const calibrator = calibration && calibration.calibrator;
+  const preflight = [limitsCheck, partialCheck, ...(calibration ? [calibration.check] : [])];
   const service = createPrintService({
     transport,
     getSettings: () => state.settings(),
     confirm: (message) => Promise.resolve(window.confirm(message)),
-    preflight: [limitsCheck, partialCheck],
+    preflight,
   });
 
   const tabs = [
     ...[createSvgSource(), createPhotoSource()].map((source) => ({ id: source.id, title: source.title, source })),
-    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, ui: plugin ? plugin.ui : {} }) },
+    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, calibrator, ui: plugin ? plugin.ui : {} }) },
   ];
 
   const nav = document.getElementById('tabs');

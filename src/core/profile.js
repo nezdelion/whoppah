@@ -27,6 +27,9 @@ export const CALIBRATION_SCHEMA = Object.freeze([
   num('cornerY', 'Y', 50, { unit: 'мм', group: 'Угол бумаги (сопло, когда перо в углу листа)' }),
   num('zTouch', 'Z касания бумаги', 8, { unit: 'мм', min: 0, max: 300, group: 'Высота' }),
   { key: 'updatedAt', label: 'Дата', type: 'text', default: null, hidden: true },
+  // printer coordinate epochs at which a calibration part was captured, entered or confirmed (written by the plugin server)
+  { key: 'epochXY', label: 'Версия угла', type: 'number', default: null, hidden: true },
+  { key: 'epochZ', label: 'Версия касания', type: 'number', default: null, hidden: true },
 ]);
 
 export const DEFAULT_CUSTOM_FORMATS = Object.freeze([{ id: 'work', name: 'Рабочее поле', w: 180, h: 180 }]);

@@ -17,3 +17,11 @@ export async function partialCheck({ drawing }) {
   const reasons = partialReasons(drawing);
   return { level: 'confirm', message: `Рисунок промежуточный${reasons.length ? ': ' + reasons.join('; ') : ''}.` };
 }
+
+/** Before sending the coordinate epoch is checked anew, not relying on the page poll. */
+export function calibrationFreshCheck(monitor) {
+  return async () => {
+    const s = await monitor.refresh();
+    return s.known && s.stale.length ? { level: 'confirm', message: s.message } : ok;
+  };
+}

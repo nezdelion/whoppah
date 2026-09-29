@@ -1,0 +1,14 @@
+# Recorded from OctoPrint 1.11.8 Virtual Printer (serial.log): host lines "Send:", printer lines "Recv:".
+# The Neptune 3 Pro (Marlin) answers are not recorded yet (task 1.1); the Marlin M114 line below is the documented format.
+Send: M118 PLT_B 608aaaba
+Recv: PLT_B 608aaaba
+Recv: ok
+Send: M400
+Recv: ok
+Send: M114
+Recv: ok X:-15.0 Y:40.0 Z:8.2 E:0.0 Count: A:0 B:0 C:0
+Send: M118 PLT_E 608aaaba
+Recv: PLT_E 608aaaba
+Recv: ok
+# Marlin 2.x M114 (documented format, not recorded)
+Recv: X:-5.00 Y:50.00 Z:8.00 E:0.00 Count X:-400 Y:4000 Z:3200

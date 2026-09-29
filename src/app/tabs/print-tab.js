@@ -13,9 +13,16 @@ const MANUAL_BUTTONS = [
   ['up', 'Перо вверх'], ['corner', 'К углу бумаги'], ['touch', 'Перо на касание'], ['motorsOff', 'Моторы выкл'], ['home', 'Home (G28)'],
 ];
 
-export function createPrintTab({ state, store, service, transport, ui = {} }) {
+const OFFSET_KEY = 'neptune-plotter.capture-offset';
+const readOffset = () => {
+  try { const o = JSON.parse(localStorage.getItem(OFFSET_KEY)); if (Number.isFinite(o.x) && Number.isFinite(o.y)) return o; } catch (e) { /* nothing saved */ }
+  return { x: 0, y: 0 };
+};
+
+/** calibrator — { capture, monitor } in plugin mode, otherwise null: no capture buttons. */
+export function createPrintTab({ state, store, service, transport, ui = {}, calibrator = null }) {
   let timer = 0, pollTimer = 0, unsubscribe = () => {}, plan = null, planError = '';
-  let lastJobState = '', darkQuery = null, redraw = null;
+  let lastJobState = '', darkQuery = null, redraw = null, stopMonitor = () => {};
 
   return {
     id: 'print',
@@ -50,6 +57,8 @@ export function createPrintTab({ state, store, service, transport, ui = {} }) {
           button('dlSvg', 'Скачать SVG', () => download('svg')),
           button('dlPaper', 'SVG как на бумаге', () => download('paper'))));
 
+      const calibrationCard = calibrator ? mountCaptureCard() : null;
+
       const sendCard = h('div', { class: 'card' },
         h('h2', {}, 'Отправка'),
         h('label', {}, 'Имя файла в OctoPrint', $.name),
@@ -68,13 +77,55 @@ export function createPrintTab({ state, store, service, transport, ui = {} }) {
           button('cancel', 'Отмена', () => { if (confirm('Отменить рисование?')) run('Отмена', () => service.cancel()); }, 'danger')),
         $.log);
 
-      el.append(h('div', { class: 'columns' }, h('div', {}, settingsHost), h('div', { class: 'work-col' }, previewCard, sendCard, printerCard)));
+      el.append(h('div', { class: 'columns' }, h('div', {}, settingsHost), h('div', { class: 'work-col' }, previewCard, calibrationCard, sendCard, printerCard)));
 
       // --- behavior
       const log = (msg) => {
         $.log.textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`;
         $.log.scrollTop = $.log.scrollHeight;
       };
+
+      function mountCaptureCard() {
+        const need = ui.needs ? ui.needs('calibration') : null;
+        const initial = readOffset();
+        $.offX = h('input', { type: 'number', step: '0.1', value: initial.x, 'aria-label': 'Смещение пера по X, мм' });
+        $.offY = h('input', { type: 'number', step: '0.1', value: initial.y, 'aria-label': 'Смещение пера по Y, мм' });
+        $.fresh = h('div', { class: 'warn', role: 'status' });
+        const offset = () => {
+          const n = (el) => (Number.isFinite(parseFloat(el.value)) ? parseFloat(el.value) : 0);
+          return { x: n($.offX), y: n($.offY) };
+        };
+        const saveOffset = () => { try { localStorage.setItem(OFFSET_KEY, JSON.stringify(offset())); } catch (e) { /* without saving */ } };
+        $.offX.addEventListener('change', saveOffset);
+        $.offY.addEventListener('change', saveOffset);
+        const cap = calibrator.capture;
+        const act = (key, text, fn) => button(key, text, async () => {
+          for (const k of CAPTURE_KEYS) $[k].disabled = true;
+          try { const r = await fn(); log(`${text}: ${r.message}`); } finally { syncCapture(); }
+        });
+        return h('div', { class: 'card' },
+          h('h2', {}, 'Калибровка по положению головы'),
+          h('div', { class: 'note' }, 'Подведите перо штатной вкладкой Control в OctoPrint, затем нажмите кнопку. Во время печати недоступно.'),
+          need ? h('div', { class: 'note' }, `Недоступно: ${need}`) : null,
+          h('div', { class: 'row' },
+            h('label', {}, 'Смещение пера от угла листа, мм: X', $.offX), h('label', {}, 'Y', $.offY)),
+          h('div', { class: 'row' },
+            act('capCorner', 'Угол здесь', () => cap.captureCorner(offset())),
+            act('capTouch', 'Касание здесь', () => cap.captureTouch())),
+          h('div', { class: 'row' },
+            act('okCorner', 'Угол верен', () => cap.confirm('xy')),
+            act('okTouch', 'Касание верно', () => cap.confirm('z'))),
+          $.fresh);
+      }
+
+      const CAPTURE_KEYS = ['capCorner', 'capTouch', 'okCorner', 'okTouch'];
+      function syncCapture() {
+        if (!calibrator) return;
+        const blocked = !transport.configured() || (ui.needs && ui.needs('calibration')) || calibrator.capture.unsupported;
+        for (const k of ['capCorner', 'capTouch']) $[k].disabled = !!blocked;
+        for (const k of ['okCorner', 'okTouch']) $[k].disabled = !transport.configured() || !!(ui.needs && ui.needs('calibration'));
+        $.fresh.textContent = calibrator.monitor.status().message;
+      }
 
       async function run(label, action) {
         try {
@@ -141,6 +192,7 @@ export function createPrintTab({ state, store, service, transport, ui = {} }) {
         for (const k of ['test', 'pause', 'cancel', ...MANUAL_BUTTONS.map(([id]) => 'm-' + id)]) $[k].disabled = !online;
         if (!online) $.job.textContent = 'Принтер не настроен: укажите адрес и API-ключ OctoPrint';
         if (!$.name.dataset.touched) $.name.value = drawing ? `${baseName(state.sourceName())}.gcode` : '';
+        syncCapture();
         draw();
       }
 
@@ -163,6 +215,7 @@ export function createPrintTab({ state, store, service, transport, ui = {} }) {
         polling = false;
       }
 
+      stopMonitor = calibrator ? calibrator.monitor.subscribe(syncCapture) : () => {};
       unsubscribe = state.subscribe((e) => {
         if (e.type === 'settings' && e.section === 'connection') { render(); poll(); return; }
         if (e.type === 'drawing') $.name.dataset.touched = '';
@@ -179,6 +232,7 @@ export function createPrintTab({ state, store, service, transport, ui = {} }) {
 
     unmount() {
       unsubscribe();
+      stopMonitor();
       if (darkQuery) darkQuery.removeEventListener('change', redraw);
       clearTimeout(timer);
       clearInterval(pollTimer);
