@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neptune Plotter</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6;
+    --accent: #2f5fd0; --accent-text: #fff; --danger: #c43b2f; --warn-bg: #fff4d6; --warn: #7a5a00;
+    --paper: #ffffff; --ink: #1d1d1b; --travel: #e0605a; --field: #9bb4ee; --limit: #c9c9c1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171716; --panel: #212120; --text: #ecece8; --muted: #9a9a94; --line: #3a3a37;
+      --accent: #6d93f0; --accent-text: #0e0e0d; --danger: #ef7a6f; --warn-bg: #3b3218; --warn: #f0d37a;
+      --paper: #2b2b29; --ink: #ecece8; --travel: #ef7a6f; --field: #4a64a8; --limit: #4a4a46;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { padding: 12px 16px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header span { color: var(--muted); }
+  main { display: grid; grid-template-columns: 340px 1fr; gap: 16px; padding: 0 16px 16px; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; }
+  .grid > * { min-width: 0; }
+  label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+  label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
+  input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; min-width: 0; width: 100%; }
+  input[type=checkbox] { width: auto; }
+  .wide { grid-column: 1 / -1; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  #drop { border: 2px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+  #drop.over { border-color: var(--accent); color: var(--accent); }
+  #preview { width: 100%; aspect-ratio: 1; display: block; background: var(--bg); border-radius: 6px; }
+  #stats { margin-top: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .warn { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
+  .warn:empty { display: none; }
+  #log { font: 12px/1.35 ui-monospace, monospace; color: var(--muted); max-height: 140px; overflow: auto; white-space: pre-wrap; margin-top: 8px; }
+  progress { width: 100%; height: 10px; }
+  #job { margin: 8px 0; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Neptune Plotter</h1>
+  <span>SVG → G-code → OctoPrint</span>
+</header>
+<main>
+  <div>
+    <div class="card">
+      <div id="drop">Перетащи SVG сюда или нажми, чтобы выбрать<input id="file" type="file" accept=".svg,image/svg+xml" hidden></div>
+    </div>
+    <div id="settings"></div>
+    <div class="card">
+      <h2>OctoPrint</h2>
+      <div class="grid">
+        <label class="wide">Адрес<input id="opUrl" placeholder="http://octopi.local"></label>
+        <label class="wide">API-ключ<input id="opKey" type="password" autocomplete="off"></label>
+        <label class="wide">Имя файла<input id="opName"></label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="bTest">Проверить связь</button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <canvas id="preview" width="900" height="900"></canvas>
+      <div class="row" style="margin-top:8px; justify-content: space-between">
+        <label class="check"><input type="checkbox" id="showTravel" checked> переезды</label>
+        <div class="row">
+          <button id="bDownload" disabled>Скачать G-code</button>
+          <button id="bUpload" disabled>Загрузить в OctoPrint</button>
+          <button id="bPrint" class="primary" disabled>Загрузить и рисовать</button>
+        </div>
+      </div>
+      <div id="stats"></div>
+      <div id="warn" class="warn"></div>
+    </div>
+    <div class="card">
+      <h2>Принтер</h2>
+      <div class="row">
+        <button id="bHome">Home (G28)</button>
+        <button id="bUp">Перо вверх</button>
+        <button id="bCorner">К углу бумаги</button>
+        <button id="bTouch">Перо на касание</button>
+        <button id="bMotors">Моторы выкл</button>
+      </div>
+      <div id="job">Нет связи</div>
+      <progress id="prog" max="100" value="0"></progress>
+      <div class="row" style="margin-top:8px">
+        <button id="bPause">Пауза / продолжить</button>
+        <button id="bCancel" class="danger">Отмена</button>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+</main>
+<script src="core.js"></script>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const STORE = 'neptune-plotter.settings';
+
+const FORM = [
+  ['Поле', [['fieldW', 'Ширина, мм'], ['fieldH', 'Высота, мм'], ['margin', 'Отступ, мм'], null,
+    ['halign', 'По горизонтали', { left: 'слева', center: 'центр', right: 'справа' }],
+    ['valign', 'По вертикали', { top: 'сверху', center: 'центр', bottom: 'снизу' }],
+    ['rotate', 'Повернуть на 90°', 'bool']]],
+  ['Угол бумаги (сопло, когда перо в углу)', [['cornerX', 'X'], ['cornerY', 'Y']]],
+  ['Перо, Z', [['zDown', 'Рисует'], ['zUp', 'Поднято'], ['zStart', 'В начале'], ['zEnd', 'В конце']]],
+  ['Скорости, мм/мин', [['fDraw', 'Рисование'], ['fTravel', 'Переезд'], ['fZUp', 'Z вверх'], ['fZDown', 'Z вниз']]],
+  ['Пределы хода сопла', [['limX0', 'X мин'], ['limX1', 'X макс'], ['limY0', 'Y мин'], ['limY1', 'Y макс']]],
+  ['Файл', [['home', 'G28 в начале (ручку поднять!)', 'bool'], ['motorsOff', 'M84 в конце', 'bool']]],
+];
+
+let S = Object.assign({}, PlotCore.DEFAULTS, { opUrl: 'http://octopi.local', opKey: '', opName: 'plot.gcode' });
+try { Object.assign(S, JSON.parse(localStorage.getItem(STORE) || '{}')); } catch (e) {}
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} };
+
+// --- settings form
+(function buildForm() {
+  const host = $('settings');
+  for (const [title, fields] of FORM) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<h2>${title}</h2><div class="grid"></div>`;
+    const grid = card.querySelector('.grid');
+    for (const f of fields) {
+      if (!f) { grid.appendChild(document.createElement('div')); continue; }
+      const [key, text, kind] = f;
+      const lab = document.createElement('label');
+      let inp;
+      if (kind === 'bool') {
+        lab.className = 'check wide';
+        inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = !!S[key];
+        lab.append(inp, text);
+        inp.onchange = () => { S[key] = inp.checked; changed(); };
+      } else if (kind && typeof kind === 'object') {
+        inp = document.createElement('select');
+        for (const [v, t] of Object.entries(kind)) inp.add(new Option(t, v, false, S[key] === v));
+        lab.append(text, inp);
+        inp.onchange = () => { S[key] = inp.value; changed(); };
+      } else {
+        inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.value = S[key];
+        lab.append(text, inp);
+        inp.oninput = () => { const v = parseFloat(inp.value); if (Number.isFinite(v)) { S[key] = v; changed(); } };
+      }
+      grid.appendChild(lab);
+    }
+    host.appendChild(card);
+  }
+  for (const k of ['opUrl', 'opKey', 'opName']) {
+    $(k).value = S[k];
+    $(k).oninput = () => { S[k] = $(k).value.trim(); save(); };
+  }
+})();
+
+// --- SVG loading
+let tree = null, result = null, svgName = '';
+
+function domToTree(el) {
+  const attrs = {};
+  for (const a of el.attributes) attrs[a.name] = a.value;
+  return { tag: el.localName, attrs, children: Array.from(el.children, domToTree) };
+}
+
+function loadSvg(text, name) {
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') {
+    $('warn').textContent = 'Не удалось прочитать SVG';
+    return;
+  }
+  tree = domToTree(doc.documentElement);
+  svgName = name.replace(/\.svg$/i, '');
+  S.opName = svgName.replace(/[^\w.-]+/g, '_').slice(0, 60) + '.gcode';
+  $('opName').value = S.opName;
+  changed();
+}
+
+$('drop').onclick = () => $('file').click();
+$('file').onchange = () => { const f = $('file').files[0]; if (f) f.text().then(t => loadSvg(t, f.name)); };
+$('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('over'); };
+$('drop').ondragleave = () => $('drop').classList.remove('over');
+$('drop').ondrop = (e) => {
+  e.preventDefault(); $('drop').classList.remove('over');
+  const f = e.dataTransfer.files[0]; if (f) f.text().then(t => loadSvg(t, f.name));
+};
+$('showTravel').onchange = draw;
+
+let timer = 0;
+function changed() { save(); clearTimeout(timer); timer = setTimeout(regen, 120); }
+
+function regen() {
+  if (!tree) { draw(); return; }
+  try {
+    result = PlotCore.plan(tree, S);
+  } catch (e) {
+    result = null; $('warn').textContent = 'Ошибка: ' + e.message; draw(); return;
+  }
+  const st = result.stats;
+  const ok = !!(st && st.lines);
+  for (const b of ['bDownload', 'bUpload', 'bPrint']) $(b).disabled = !ok;
+  $('stats').textContent = ok
+    ? `${st.lines} линий · рисунок ${st.size[0].toFixed(1)}×${st.size[1].toFixed(1)} мм · перо ${(st.draw / 1000).toFixed(2)} м, переезды ${(st.travel / 1000).toFixed(2)} м · ≈${Math.ceil(st.seconds / 60)} мин · X ${st.bbox.x0.toFixed(1)}…${st.bbox.x1.toFixed(1)}, Y ${st.bbox.y0.toFixed(1)}…${st.bbox.y1.toFixed(1)}`
+    : '';
+  $('warn').textContent = result.warnings.join('\n');
+  draw();
+}
+
+// --- preview (printer coordinates, Y up)
+function draw() {
+  const cv = $('preview'), g = cv.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  const col = (n) => css.getPropertyValue(n).trim();
+  const W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  const x0 = Math.min(S.limX0, S.cornerX) - 5, x1 = Math.max(S.limX1, S.cornerX + S.fieldW) + 5;
+  const y0 = Math.min(S.limY0, S.cornerY) - 5, y1 = Math.max(S.limY1, S.cornerY + S.fieldH) + 5;
+  const k = Math.min(W / (x1 - x0), H / (y1 - y0));
+  const P = (x, y) => [(x - x0) * k, H - (y - y0) * k];
+  const rect = (ax, ay, bx, by) => { const [px, py] = P(ax, by), [qx, qy] = P(bx, ay); return [px, py, qx - px, qy - py]; };
+  g.setLineDash([6, 4]); g.strokeStyle = col('--limit'); g.lineWidth = 1;
+  g.strokeRect(...rect(S.limX0, S.limY0, S.limX1, S.limY1));
+  g.setLineDash([]);
+  g.fillStyle = col('--paper'); g.strokeStyle = col('--field');
+  g.fillRect(...rect(S.cornerX, S.cornerY, S.cornerX + S.fieldW, S.cornerY + S.fieldH));
+  g.strokeRect(...rect(S.cornerX, S.cornerY, S.cornerX + S.fieldW, S.cornerY + S.fieldH));
+  g.fillStyle = col('--muted'); g.font = '22px system-ui';
+  const [cx, cy] = P(S.cornerX, S.cornerY);
+  g.fillText(`угол X${S.cornerX} Y${S.cornerY}`, cx + 4, cy - 6);
+  if (!result || !result.lines.length) {
+    g.fillText('SVG не загружен', W / 2 - 80, H / 2); return;
+  }
+  const L = result.lines;
+  if ($('showTravel').checked) {
+    g.strokeStyle = col('--travel'); g.lineWidth = 1; g.setLineDash([4, 4]); g.beginPath();
+    let p = [S.cornerX, S.cornerY];
+    for (const l of L) { g.moveTo(...P(...p)); g.lineTo(...P(...l[0])); p = l[l.length - 1]; }
+    g.stroke(); g.setLineDash([]);
+  }
+  g.strokeStyle = col('--ink'); g.lineWidth = 1.5; g.lineJoin = 'round'; g.beginPath();
+  for (const l of L) { g.moveTo(...P(...l[0])); for (let i = 1; i < l.length; i++) g.lineTo(...P(...l[i])); }
+  g.stroke();
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+
+// --- download
+$('bDownload').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([result.gcode], { type: 'text/plain' }));
+  a.download = S.opName || 'plot.gcode';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+// --- OctoPrint
+function log(msg) {
+  const el = $('log');
+  el.textContent += new Date().toLocaleTimeString() + '  ' + msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function op(path, opts = {}) {
+  if (!S.opUrl || !S.opKey) throw new Error('укажи адрес и API-ключ OctoPrint');
+  const r = await fetch(S.opUrl.replace(/\/+$/, '') + path,
+    Object.assign({}, opts, { headers: Object.assign({ 'X-Api-Key': S.opKey }, opts.headers || {}) }));
+  const t = await r.text();
+  if (!r.ok) throw new Error(`${r.status} ${t.replace(/<[^>]+>/g, ' ').trim().slice(0, 200)}`);
+  return t ? JSON.parse(t) : null;
+}
+const post = (path, body) => op(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const gcode = (...commands) => post('/api/printer/command', { commands });
+
+async function run(label, fn) {
+  try { await fn(); log(label + ': ок'); poll(); }
+  catch (e) {
+    log(label + ': ' + (e instanceof TypeError
+      ? 'нет ответа (адрес? CORS включён в OctoPrint?) — ' + e.message : e.message));
+  }
+}
+
+$('bTest').onclick = () => run('Связь', async () => {
+  const v = await op('/api/version');
+  log(`OctoPrint ${v.server}, API ${v.api}`);
+  startPolling();
+});
+
+$('bHome').onclick = () => {
+  if (!confirm('Ручка поднята выше сопла? При G28 голова опускается до стола.')) return;
+  run('Home', () => gcode('G28'));
+};
+$('bUp').onclick = () => run('Перо вверх', () => gcode('G90', `G0 Z${S.zStart} F${S.fZUp}`));
+$('bCorner').onclick = () => run('К углу', () => gcode('G90', `G0 Z${S.zStart} F${S.fZUp}`, `G0 X${S.cornerX} Y${S.cornerY} F${S.fTravel}`));
+$('bTouch').onclick = () => {
+  if (!confirm(`Опустить перо на Z${S.zDown}?`)) return;
+  run('Перо на касание', () => gcode('G90', `G0 Z${S.zDown} F${S.fZDown}`));
+};
+$('bMotors').onclick = () => {
+  if (!confirm('Отключить моторы? Координаты сбросятся, перед рисованием нужен Home.')) return;
+  run('Моторы выкл', () => gcode('M84'));
+};
+
+async function upload(print) {
+  const fd = new FormData();
+  fd.append('file', new Blob([result.gcode], { type: 'text/plain' }), S.opName || 'plot.gcode');
+  fd.append('select', 'true');
+  fd.append('print', print ? 'true' : 'false');
+  await op('/api/files/local', { method: 'POST', body: fd });
+  startPolling();
+}
+$('bUpload').onclick = () => run('Загрузка ' + S.opName, () => upload(false));
+$('bPrint').onclick = () => {
+  const home = S.home ? 'В файле есть G28 — ручка должна быть поднята.' : 'G28 в файле нет — принтер должен держать координаты (голова не двигается рукой).';
+  if (!confirm(`${home}\nБумага в углу X${S.cornerX} Y${S.cornerY}, перо на метке. Рисовать?`)) return;
+  run('Рисование ' + S.opName, () => upload(true));
+};
+$('bPause').onclick = () => run('Пауза', () => post('/api/job', { command: 'pause', action: 'toggle' }));
+$('bCancel').onclick = () => {
+  if (!confirm('Отменить рисование?')) return;
+  run('Отмена', async () => {
+    await post('/api/job', { command: 'cancel' });
+    // lift the pen once OctoPrint has stopped streaming
+    setTimeout(() => gcode('G90', `G0 Z${S.zStart} F${S.fZUp}`).then(() => log('Перо поднято'), e => log('Поднять перо не вышло: ' + e.message)), 2000);
+  });
+};
+
+let pollTimer = 0;
+function startPolling() { if (!pollTimer) pollTimer = setInterval(poll, 2000); poll(); }
+async function poll() {
+  if (!S.opUrl || !S.opKey) return;
+  try {
+    const j = await op('/api/job');
+    const p = j.progress || {};
+    const left = p.printTimeLeft != null ? ` · осталось ≈${Math.ceil(p.printTimeLeft / 60)} мин` : '';
+    const file = j.job && j.job.file && j.job.file.name ? ` · ${j.job.file.name}` : '';
+    $('job').textContent = `${j.state}${file}${p.completion != null ? ` · ${p.completion.toFixed(1)}%` : ''}${left}`;
+    $('prog').value = p.completion || 0;
+  } catch (e) {
+    $('job').textContent = 'Нет связи: ' + e.message;
+  }
+}
+
+draw();
+if (S.opUrl && S.opKey) startPolling();
+</script>
+</body>
+</html>
