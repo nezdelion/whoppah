@@ -41,9 +41,23 @@ export function parseSettings(text) {
   return { sections };
 }
 
-/** Writes the chosen sections; parsing has already passed, so on a parse error the storage is not touched. */
-export async function applySettings(store, parsed, selected = Object.keys(parsed.sections)) {
+/**
+ * Writes the chosen sections; parsing has already passed, so on a parse error the storage is not touched.
+ * needs(key) -> a string with the missing permission or null: such a section is skipped. A storage failure also skips the section.
+ * @returns { applied: string[], skipped: { key, reason }[] }
+ */
+export async function applySettings(store, parsed, selected = Object.keys(parsed.sections), { needs = () => null } = {}) {
+  const applied = [], skipped = [];
   for (const key of selected) {
-    if (parsed.sections[key] !== undefined) await store.save(key, parsed.sections[key]);
+    if (parsed.sections[key] === undefined) continue;
+    const need = needs(key);
+    if (need) { skipped.push({ key, reason: need }); continue; }
+    try {
+      await store.save(key, parsed.sections[key]);
+      applied.push(key);
+    } catch (e) {
+      skipped.push({ key, reason: e.message });
+    }
   }
+  return { applied, skipped };
 }

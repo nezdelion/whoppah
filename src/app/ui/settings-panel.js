@@ -10,19 +10,31 @@ const CONNECTION_SCHEMA = [
   { key: 'key', label: 'API-ключ', type: 'password', group: 'OctoPrint' },
 ];
 
+export function importMessage(applied, skipped) {
+  const names = (keys) => keys.map((k) => SECTION_LABELS[k]).join(', ');
+  let m = `Настройки импортированы: ${names(applied) || 'ничего'}`;
+  if (skipped.length) m += `. Пропущено: ${skipped.map((x) => `${SECTION_LABELS[x.key]} (${x.reason})`).join(', ')}`;
+  return m;
+}
+
 export const formatDate = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU') : 'не задана');
 
 export function calibrationSummary(cal) {
   return `Калибровка: угол X${cal.cornerX} Y${cal.cornerY}, касание Z${cal.zTouch}, изменена: ${formatDate(cal.updatedAt)}`;
 }
 
-export function mountSettingsPanel(host, { state, store, notify }) {
+/**
+ * ui.hideConnection — hide the address and key (plugin mode);
+ * ui.needs(section) — the "permission required …" text for a section without write permission, or null (the section is then read-only).
+ */
+export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
+  const needs = ui.needs || (() => null);
   const forms = {};
   const sections = [
     { id: 'job', title: 'Задание', schema: SCHEMAS.job },
     { id: 'calibration', title: 'Калибровка', schema: SCHEMAS.calibration },
     { id: 'profile', title: 'Профиль машины', schema: SCHEMAS.profile },
-    { id: 'connection', title: 'Подключение', schema: CONNECTION_SCHEMA },
+    ...(ui.hideConnection ? [] : [{ id: 'connection', title: 'Подключение', schema: CONNECTION_SCHEMA }]),
   ];
   const calibrationNote = h('div', { class: 'note' });
 
@@ -33,8 +45,14 @@ export function mountSettingsPanel(host, { state, store, notify }) {
       type: 'button',
       onclick: () => { if (confirm(`Сбросить «${s.title}» к значениям по умолчанию?`)) state.reset(s.id); },
     }, 'Сбросить к умолчанию');
+    const need = needs(s.id);
+    if (need) reset.disabled = true;
+    // fieldset disabled disables all form fields at once, including dynamic ones
+    const body = need ? h('fieldset', { disabled: true, class: 'readonly' }, form.element) : form.element;
     host.append(h('section', { class: 'settings-section' },
-      h('h3', {}, s.title), form.element, s.id === 'calibration' ? calibrationNote : null, h('div', { class: 'row' }, reset)));
+      h('h3', {}, s.title),
+      need ? h('div', { class: 'note' }, `Только чтение: ${need}`) : null,
+      body, s.id === 'calibration' ? calibrationNote : null, h('div', { class: 'row' }, reset)));
   }
 
   const refresh = () => {
@@ -44,10 +62,10 @@ export function mountSettingsPanel(host, { state, store, notify }) {
   refresh();
   state.subscribe((e) => { if (e.type === 'settings') refresh(); });
 
-  host.append(mountTransfer({ state, store, notify }));
+  host.append(mountTransfer({ state, store, notify, needs }));
 }
 
-function mountTransfer({ state, store, notify }) {
+function mountTransfer({ state, store, notify, needs }) {
   const fileInput = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
   const list = h('div', { class: 'choices' });
   const message = h('div', { class: 'warn' });
@@ -61,10 +79,10 @@ function mountTransfer({ state, store, notify }) {
   async function onApply(ev) {
     const chosen = [...list.querySelectorAll('input:checked')].map((i) => i.value);
     ev.preventDefault();
-    await applySettings(store, parsed, chosen);
+    const { applied, skipped } = await applySettings(store, parsed, chosen, { needs });
     await state.load();
     dialog.close();
-    notify(`Настройки импортированы: ${chosen.map((k) => SECTION_LABELS[k]).join(', ') || 'ничего'}`);
+    notify(importMessage(applied, skipped));
   }
 
   fileInput.addEventListener('change', async () => {
@@ -79,7 +97,8 @@ function mountTransfer({ state, store, notify }) {
       return;
     }
     list.replaceChildren(...Object.keys(parsed.sections).map((k) =>
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', value: k, checked: true }), SECTION_LABELS[k])));
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', value: k, checked: true }),
+        SECTION_LABELS[k] + (needs(k) ? ` (будет пропущен: ${needs(k)})` : ''))));
     message.textContent = '';
     dialog.showModal();
   });

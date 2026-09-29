@@ -57,3 +57,7 @@ progress { width: 100%; height: 10px; }
 .choices { display: grid; gap: 6px; margin: 8px 0; }
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; max-width: min(420px, calc(100vw - 32px)); }
 dialog::backdrop { background: rgba(0, 0, 0, .4); }
+.notice { padding: 8px 16px; background: var(--warn-bg); color: var(--warn); }
+.notice[hidden] { display: none; }
+header .back-link { margin-left: auto; color: var(--accent); }
+fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7; }

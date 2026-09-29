@@ -22,6 +22,13 @@ export function createState({ store, now = () => new Date().toISOString() }) {
     ? { ...CONNECTION_DEFAULTS, ...(values || {}) }
     : normalize(SCHEMAS[section], values));
 
+  // A storage failure (the server did not accept the write) must not break operation: the value stays in memory, the UI gets an event.
+  const persist = async (section) => {
+    try { await store.save(section, settings[section]); } catch (e) {
+      emit({ type: 'save-error', section, message: e.message });
+    }
+  };
+
   const api = {
     async load() {
       for (const section of Object.keys(settings)) settings[section] = normalizeSection(section, await store.load(section));
@@ -37,14 +44,17 @@ export function createState({ store, now = () => new Date().toISOString() }) {
       if (section === 'calibration' && !('updatedAt' in changes)) next.updatedAt = now();
       settings[section] = normalizeSection(section, next);
       emit({ type: 'settings', section });
-      await store.save(section, settings[section]);
+      await persist(section);
     },
 
     async reset(section) {
       settings[section] = normalizeSection(section, null);
       emit({ type: 'settings', section });
-      await store.save(section, settings[section]);
+      await persist(section);
     },
+
+    /** A report of a failed write from places that write to storage themselves (source presets). */
+    saveFailed(section, message) { emit({ type: 'save-error', section, message }); },
 
     setDrawing(next, name = '') {
       drawing = next;
@@ -83,7 +93,7 @@ export function createSourceContext({ state, store, sourceId }) {
       async save(obj) {
         const all = (await store.load('presets')) || {};
         all[sourceId] = clone(obj);
-        await store.save('presets', all);
+        try { await store.save('presets', all); } catch (e) { state.saveFailed('presets', e.message); }
       },
     },
     printParams: {

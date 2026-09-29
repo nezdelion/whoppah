@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "OctoPrint-Plotter"
+dynamic = ["version"]
+description = "Pen plotter web app (SVG to G-code) served as a full-screen page by OctoPrint"
+readme = "README.md"
+requires-python = ">=3.9,<4"
+license = { text = "MIT" }
+dependencies = ["OctoPrint>=1.11.0"]
+
+[project.urls]
+Homepage = "https://github.com/"
+
+[project.entry-points."octoprint.plugin"]
+plotter = "octoprint_plotter"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools]
+packages = ["octoprint_plotter"]
+
+[tool.setuptools.dynamic]
+version = { attr = "octoprint_plotter._version.__version__" }
+
+[tool.setuptools.package-data]
+octoprint_plotter = ["templates/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -13,7 +13,7 @@ const MANUAL_BUTTONS = [
   ['up', 'Перо вверх'], ['corner', 'К углу бумаги'], ['touch', 'Перо на касание'], ['motorsOff', 'Моторы выкл'], ['home', 'Home (G28)'],
 ];
 
-export function createPrintTab({ state, store, service, transport }) {
+export function createPrintTab({ state, store, service, transport, ui = {} }) {
   let timer = 0, pollTimer = 0, unsubscribe = () => {}, plan = null, planError = '';
   let lastJobState = '', darkQuery = null, redraw = null;
 
@@ -27,7 +27,7 @@ export function createPrintTab({ state, store, service, transport }) {
 
       // --- left column: settings
       const settingsHost = h('div', { class: 'settings' });
-      mountSettingsPanel(settingsHost, { state, store, notify: (m) => log(m) });
+      mountSettingsPanel(settingsHost, { state, store, notify: (m) => log(m), ui });
 
       // --- right column
       $.canvas = h('canvas', { class: 'preview', width: 900, height: 900 });
