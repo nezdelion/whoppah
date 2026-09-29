@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <g transform="translate(100 100) rotate(30)">
+    <g transform="scale(2 1)">
+      <rect x="-20" y="-10" width="40" height="20"/>
+    </g>
+    <g transform="skewX(20) translate(10 20)">
+      <line x1="0" y1="0" x2="30" y2="0"/>
+    </g>
+  </g>
+  <g transform="matrix(1 0 0 -1 0 200)">
+    <polyline points="10,10 40,60 80,20"/>
+  </g>
+  <g transform="rotate(45 50 150)">
+    <rect x="40" y="140" width="20" height="20"/>
+  </g>
+  <path transform="skewY(10)" d="M150 20 L190 20 L170 60 Z"/>
+</svg>

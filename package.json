@@ -1,0 +1,9 @@
+{
+  "name": "neptune-plotter",
+  "private": true,
+  "type": "module",
+  "description": "Pen plotter for Elegoo Neptune 3 Pro controlled by OctoPrint",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120mm" height="90mm" viewBox="0 0 240 180">
+  <path d="M20,150 C20,60 80,20 120,20 S220,60 220,150 Q120,175 20,150 Z" fill="none" stroke="black"/>
+  <path d="M60,110 q20,-30 40,0 t40,0" fill="none" stroke="black"/>
+  <circle cx="90" cy="80" r="8"/>
+  <circle cx="150" cy="80" r="8"/>
+  <polyline points="100,130 120,140 140,130"/>
+  <line x1="10" y1="10" x2="230" y2="10"/>
+  <text x="20" y="170">подпись</text>
+  <path d="M30 30 h10 v10 h-10 z M50 30 h10 v10 h-10 z"/>
+</svg>

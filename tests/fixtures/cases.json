@@ -1,0 +1,11 @@
+[
+  { "name": "user", "svg": "user.svg", "options": {} },
+  { "name": "shapes", "svg": "shapes.svg", "options": {} },
+  { "name": "transforms", "svg": "transforms.svg", "options": {} },
+  { "name": "arcs", "svg": "arcs.svg", "options": {} },
+  { "name": "use-hidden", "svg": "use-hidden.svg", "options": {} },
+  { "name": "user-rotated-left-top", "svg": "user.svg",
+    "options": { "rotate": true, "halign": "left", "valign": "top", "margin": 8, "home": true } },
+  { "name": "shapes-wide-field", "svg": "shapes.svg",
+    "options": { "fieldW": 150, "fieldH": 100, "margin": 3, "halign": "right", "valign": "bottom", "zDown": 7.0, "motorsOff": false } }
+]

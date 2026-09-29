@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
+  <defs>
+    <path id="star" d="M0,-10 L3,-3 L10,-3 L4,2 L6,9 L0,5 L-6,9 L-4,2 L-10,-3 L-3,-3 Z"/>
+    <g id="pair"><circle cx="0" cy="0" r="4"/><rect x="6" y="-3" width="6" height="6"/></g>
+  </defs>
+  <use href="#star" x="25" y="25"/>
+  <use xlink:href="#star" transform="translate(70 30) scale(1.5)"/>
+  <use href="#pair" x="30" y="70" transform="rotate(20)"/>
+  <rect x="5" y="5" width="90" height="90" display="none"/>
+  <circle cx="50" cy="50" r="20" style="visibility:hidden"/>
+  <g style="display: none"><line x1="0" y1="0" x2="100" y2="100"/></g>
+  <image href="x.png" width="10" height="10"/>
+  <line x1="5" y1="95" x2="95" y2="95"/>
+</svg>
