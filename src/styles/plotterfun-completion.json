@@ -1,0 +1,38 @@
+{
+  "vendorCommit": "faf67d4dadc359a9d5703b0c4e501ea3bbad84d9",
+  "styles": {
+    "boxes": "sync",
+    "delaunay": "timer-chain",
+    "dots": "sync",
+    "halftone": "sync",
+    "implode": "sync",
+    "jaggy": "async-handler",
+    "linedraw": "sync",
+    "linescan": "sync",
+    "longwave": "sync",
+    "margins": "sync",
+    "mosaic": "sync",
+    "needles": "sync",
+    "peano": "sync",
+    "polyspiral": "sync",
+    "sawtooth": "sync",
+    "spiral": "sync",
+    "springs": "sync",
+    "squiggle": "sync",
+    "squiggleLeftRight": "sync",
+    "stipple": "timer-chain",
+    "subline": "sync",
+    "waves": "sync",
+    "woven": "sync"
+  },
+  "notes": {
+    "delaunay": "like stipple: async render() without return, transitions only via makeAsync (setTimeout 0)",
+    "jaggy": "onmessage is an async function, no await or timers inside, only synchronous computation: it finishes together with the handler Promise",
+    "stipple": "onmessage starts async render() without return; all transitions are await makeAsync (setTimeout 0), there is no other async API"
+  },
+  "sha256": {
+    "delaunay": "da64064e0128fef799707919700053da4bfe5f15bd704f5adea69a42dd9af787",
+    "jaggy": "e03fed4b086f8f0aea001c98b0fb4ccaa065fe6d4ae38c6bacc3c98ff45eba75",
+    "stipple": "04cae149b7475505c358d2699d35cadd2956a98f0e47f1b5bd17a3d35ffd1ef1"
+  }
+}

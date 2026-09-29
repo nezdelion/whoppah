@@ -95,6 +95,11 @@ function parsePath(d) {
   return subs;
 }
 
+/** The d attribute data -> polylines (flat arrays), curve chord no longer than step units. For styles that return a path as a string. */
+export function pathToLines(d, step) {
+  return parsePath(d).map((sp) => cleanLine(flattenSubpath(sp, step))).filter(Boolean);
+}
+
 // --- shapes -> subpaths
 
 function poly(pts, closed) {

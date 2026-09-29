@@ -22,7 +22,7 @@ VERSION_FILE = PACKAGE / "_version.py"
 DIST = ROOT / "dist"
 
 APP_FILES = ["index.html"]
-APP_DIRS = ["src", "vendor"]  # vendor/ appears with third-party code (add-photo-styles); copied when present
+APP_DIRS = ["src", "vendor"]  # vendor/ holds third-party code (plotterfun, with LICENSE and UPSTREAM); copied when present
 SKIP = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store")
 
 

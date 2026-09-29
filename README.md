@@ -72,13 +72,15 @@ index.html                entry point
 src/core/                 pure functions over Drawing: geometry, svg-import, svg-export, optimize, layout, gcode, profile, pipeline
 src/transport/            Transport interface, OctoPrint REST (fetch), auth by key and by session (plugin)
 src/storage/              SettingsStore (localStorage, OctoPrint server), settings file
+src/styles/               "image → lines" styles: registry, runner (workers), plotterfun adapter, own styles (own/)
+vendor/plotterfun/        third-party plotterfun code (unmodified copy), version in vendor/plotterfun/UPSTREAM
 octoprint-plugin/         OctoPrint Python plugin (page, env.json, settings API, permission)
 tools/                    build_plugin.py (zip build), dev_octoprint.sh (local OctoPrint)
 src/app/                  shell: state, tabs, forms, preview, print service
 tests/                    node --test
 ```
 
-`core` → nothing; `transport` → nothing; `storage` → nothing; `app` → everything. The rule is checked by `tests/deps.test.js`.
+`core` → nothing; `transport` → nothing; `storage` → nothing; `styles` → `core` (`styles/tone.js` and `styles/own/*` — only `core`, no DOM); `app` → everything. The rule is checked by `tests/deps.test.js`.
 All modules exchange the `Drawing` model (layers of polylines, flat arrays `[x0, y0, x1, y1, ...]`, "document" or "machine" coordinate system).
 
 Processing order (`core/pipeline.js`): import → layout (mm) → simplification → sorting/merging → G-code.
@@ -88,6 +90,8 @@ Processing order (`core/pipeline.js`): import → layout (mm) → simplification
 ```sh
 npm test        # or: node --test
 ```
+
+plotterfun style wrapper (`tests/plotterfun-host.test.js`): by default a fast set (one style per execution model, the "style fails by itself" case, data after final), the whole `node --test` takes about 7 s. Full sweep of 23 styles over parameter variants and two images (about 2 minutes): `PLOTTERFUN_SWEEP=1 node --test tests/plotterfun-host.test.js`; `PLOTTERFUN_FULL=1` additionally sets a 1 s quiet period after final and 5 s for the reference.
 
 Plugin tests: `cd octoprint-plugin && pytest` (OctoPrint 1.11 is required in the environment).
 
@@ -102,6 +106,17 @@ Create `src/app/tabs/<name>-tab.js`, export a factory of the object `{ id, title
 - `ctx.printParams.get()/subscribe(fn)` — read-only: field, margin, rotation, pen width.
 
 The "Print" tab does not change. An intermediate result is marked `meta.partial = { reasons: [...] }`.
+
+### "Photo" tab and styles
+
+The "Photo" tab (`src/app/tabs/photo-tab.js`) is an ordinary source: image → stack of style layers → `ctx.emit(drawing)`, each visible layer becomes a drawing layer. Computation runs in workers (`src/styles/runner.js`), a new run of a layer cancels the previous one. A layer gets the "done" status only on a reliable completion signal; for plotterfun styles it is built by the wrapper `src/styles/plotterfun-host.js` from the manifest `src/styles/plotterfun-completion.json` (execution model of each style: `sync`, `async-handler`, `timer-chain`, `none`). The manifest applies only to the commit from the first line of `vendor/plotterfun/UPSTREAM`; after updating vendor run `python3 tools/audit_plotterfun.py` — unverified styles get `none` (the result stays intermediate, printing needs confirmation).
+
+Adding your own style: a pure function `(gray, w, h, params) => lines` in `src/styles/own/`, an entry in `src/styles/own/worker.js` (the `IMPL` table) and a descriptor in `src/styles/registry.js`.
+
+## Third-party code
+
+- **plotterfun** — Tim Alex Jacobs (mitxela), MIT license, <https://github.com/mitxela/plotterfun>. The style files and `helpers.js` are in `vendor/plotterfun/` unmodified together with `LICENSE`; the upstream commit is in `vendor/plotterfun/UPSTREAM`. Update = replace the directory + `tools/audit_plotterfun.py` + recheck the styles with asynchronous code.
+- `vendor/plotterfun/external/` holds `rhill-voronoi-core.min.js` (Raymond Hill, MIT, <https://github.com/gorhill/Javascript-Voronoi>) and `stackblur.min.js` (StackBlur, <https://github.com/flozz/StackBlur>), as in upstream; their copyright stays in the file headers.
 
 ## How to add a transport, auth, storage
 

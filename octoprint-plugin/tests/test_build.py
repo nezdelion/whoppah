@@ -30,6 +30,15 @@ def test_zip_contains_app_and_plugin(tmp_path, monkeypatch):
         "octoprint_plotter/static/app/index.html",
         "octoprint_plotter/static/app/src/app/main.js",
         "octoprint_plotter/static/app/src/transport/auth-session.js",
+        # style engine: workers, completion manifest and the vendored plotterfun (with its licence and version file)
+        "octoprint_plotter/static/app/src/styles/plotterfun-host.js",
+        "octoprint_plotter/static/app/src/styles/plotterfun-completion.json",
+        "octoprint_plotter/static/app/src/styles/own/worker.js",
+        "octoprint_plotter/static/app/vendor/plotterfun/LICENSE",
+        "octoprint_plotter/static/app/vendor/plotterfun/UPSTREAM",
+        "octoprint_plotter/static/app/vendor/plotterfun/helpers.js",
+        "octoprint_plotter/static/app/vendor/plotterfun/squiggle.js",
+        "octoprint_plotter/static/app/vendor/plotterfun/external/stackblur.min.js",
     ):
         assert top + expected in names, expected
     assert not any("__pycache__" in n or "/tests/" in n or n.endswith(".pyc") for n in names)

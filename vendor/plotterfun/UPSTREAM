@@ -1,0 +1,31 @@
+faf67d4dadc359a9d5703b0c4e501ea3bbad84d9
+repo: https://github.com/mitxela/plotterfun
+license: MIT (LICENSE), Copyright (c) 2020 Tim Alex Jacobs (mitxela)
+files (verbatim copies, not edited):
+  boxes.js
+  delaunay.js
+  dots.js
+  external/rhill-voronoi-core.min.js
+  external/stackblur.min.js
+  halftone.js
+  helpers.js
+  implode.js
+  jaggy.js
+  LICENSE
+  linedraw.js
+  linescan.js
+  longwave.js
+  margins.js
+  mosaic.js
+  needles.js
+  peano.js
+  polyspiral.js
+  sawtooth.js
+  spiral.js
+  springs.js
+  squiggle.js
+  squiggleLeftRight.js
+  stipple.js
+  subline.js
+  waves.js
+  woven.js

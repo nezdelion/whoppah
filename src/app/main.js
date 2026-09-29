@@ -10,6 +10,7 @@ import { createState, createSourceContext } from './state.js';
 import { createPrintService } from './print/print-service.js';
 import { limitsCheck, partialCheck } from './print/checks.js';
 import { createSvgSource } from './tabs/svg-tab.js';
+import { createPhotoSource } from './tabs/photo-tab.js';
 import { createPrintTab } from './tabs/print-tab.js';
 import { h } from './ui/dom.js';
 
@@ -79,7 +80,7 @@ async function start() {
   });
 
   const tabs = [
-    ...[createSvgSource()].map((source) => ({ id: source.id, title: source.title, source })),
+    ...[createSvgSource(), createPhotoSource()].map((source) => ({ id: source.id, title: source.title, source })),
     { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, ui: plugin ? plugin.ui : {} }) },
   ];
 

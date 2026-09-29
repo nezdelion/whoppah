@@ -2,12 +2,14 @@
   --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6;
   --accent: #2f5fd0; --accent-text: #fff; --danger: #c43b2f; --warn-bg: #fff4d6; --warn: #7a5a00;
   --paper: #ffffff; --ink: #1d1d1b; --travel: #e0605a; --field: #9bb4ee; --limit: #c9c9c1;
+  --layer-0: #1d1d1b; --layer-1: #c43b2f; --layer-2: #2f5fd0; --layer-3: #2c8a4b;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #171716; --panel: #212120; --text: #ecece8; --muted: #9a9a94; --line: #3a3a37;
     --accent: #6d93f0; --accent-text: #0e0e0d; --danger: #ef7a6f; --warn-bg: #3b3218; --warn: #f0d37a;
     --paper: #2b2b29; --ink: #ecece8; --travel: #ef7a6f; --field: #4a64a8; --limit: #4a4a46;
+    --layer-0: #ecece8; --layer-1: #ef7a6f; --layer-2: #6d93f0; --layer-3: #6fcf8a;
   }
 }
 * { box-sizing: border-box; }
@@ -61,3 +63,21 @@ dialog::backdrop { background: rgba(0, 0, 0, .4); }
 .notice[hidden] { display: none; }
 header .back-link { margin-left: auto; color: var(--accent); }
 fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7; }
+
+/* "Photo" tab */
+.layers { display: grid; gap: 8px; }
+.layer { border: 1px solid var(--line); border-left: 4px solid var(--layer-color, var(--line)); border-radius: 6px; padding: 8px; display: grid; gap: 6px; min-width: 0; }
+.layer-head { display: flex; gap: 6px; align-items: center; }
+.layer-head .layer-name { flex: 1 1 auto; min-width: 0; }
+.layer-head button { padding: 4px 8px; }
+.layer-status { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.layer-status[data-status="error"] { color: var(--danger); }
+.layer-status[data-status="partial"], .layer-status[data-status="running"] { color: var(--warn); }
+.layer-body .param-grid { grid-template-columns: minmax(0, 1fr); }
+.param-inputs { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 6px; align-items: center; }
+.param-inputs input[type=range] { padding: 0; border: 0; background: none; }
+.size { margin-top: 8px; }
+.photo-preview { aspect-ratio: auto; }
+.layer .note:empty, .layer .warn:empty { display: none; }
+.layer .note, .layer .warn { margin-top: 0; }
+.layer-body > summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-bottom: 6px; }

@@ -1,0 +1,38 @@
+// Photo loading: EXIF-aware decoding, white background under transparency, scaling to the working resolution -> ImageData.
+
+export class ImageLoadError extends Error {
+  constructor(message = 'не удалось открыть изображение') {
+    super(message);
+    this.name = 'ImageLoadError';
+  }
+}
+
+export const ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
+
+/** Size by the long side longSide preserving proportions (at least 1 px). */
+export function fitSize(width, height, longSide) {
+  const k = longSide / Math.max(width, height);
+  return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) };
+}
+
+/** @returns {{name, width, height, bitmap}} the EXIF orientation is already applied by the browser */
+export async function decodeImage(file) {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    return { name: file.name || '', width: bitmap.width, height: bitmap.height, bitmap };
+  } catch (e) {
+    throw new ImageLoadError();
+  }
+}
+
+/** White background + scaling -> ImageData with the long side longSide. */
+export function rasterize(decoded, longSide) {
+  const { width, height } = fitSize(decoded.width, decoded.height, longSide);
+  const canvas = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
+  const g = canvas.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, width, height);
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(decoded.bitmap, 0, 0, width, height);
+  return g.getImageData(0, 0, width, height);
+}
