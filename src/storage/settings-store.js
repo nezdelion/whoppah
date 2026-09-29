@@ -56,8 +56,15 @@ export function convertLegacySettings(old) {
   // simplification is off so that the G-code stays the same
   const job = { ...pick(old, { margin: 'marginMm', halign: 'halign', valign: 'valign', rotate: 'rotate', mergeTol: 'mergeTolMm' }), simplifyTolMm: 0 };
   if (old.fieldW > 0 && old.fieldH > 0) {
-    job.customFormats = [{ id: 'migrated', name: 'Из старой версии', w: old.fieldW, h: old.fieldH }];
-    job.paperId = 'migrated';
+    // storage does not know core, so the standard own format is duplicated here
+    const formats = [{ id: 'work', name: 'Рабочее поле', w: 180, h: 180 }];
+    let selected = formats.find((f) => f.w === old.fieldW && f.h === old.fieldH);
+    if (!selected) {
+      selected = { id: 'migrated', name: 'Из старой версии', w: old.fieldW, h: old.fieldH };
+      formats.push(selected);
+    }
+    job.customFormats = formats;
+    job.paperId = selected.id;
     job.orientation = old.fieldW > old.fieldH ? 'landscape' : 'portrait';
   }
   const connection = pick(old, { opUrl: 'url', opKey: 'key' });

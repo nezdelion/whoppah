@@ -68,7 +68,7 @@ export function createPrintTab({ state, store, service, transport }) {
           button('cancel', 'Отмена', () => { if (confirm('Отменить рисование?')) run('Отмена', () => service.cancel()); }, 'danger')),
         $.log);
 
-      el.append(h('div', { class: 'columns' }, h('div', {}, settingsHost), h('div', {}, previewCard, sendCard, printerCard)));
+      el.append(h('div', { class: 'columns' }, h('div', {}, settingsHost), h('div', { class: 'work-col' }, previewCard, sendCard, printerCard)));
 
       // --- behavior
       const log = (msg) => {

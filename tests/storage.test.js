@@ -62,6 +62,15 @@ test('G-code before and after the migration matches', async () => {
   assert.equal(actual, legacy.plan(tree, OLD).gcode);
 });
 
+test('migration keeps Work area and adds a custom format; a matching size is not duplicated', () => {
+  const a = convertLegacySettings({ fieldW: 150, fieldH: 100 }).job;
+  assert.deepEqual(a.customFormats.map((f) => f.id), ['work', 'migrated']);
+  assert.equal(a.paperId, 'migrated');
+  const b = convertLegacySettings({ fieldW: 180, fieldH: 180 }).job;
+  assert.deepEqual(b.customFormats.map((f) => f.id), ['work']);
+  assert.equal(b.paperId, 'work');
+});
+
 test('convertLegacySettings: a square format — portrait, a wide one — landscape', () => {
   assert.equal(convertLegacySettings({ fieldW: 100, fieldH: 200 }).job.orientation, 'portrait');
   assert.equal(convertLegacySettings({ fieldW: 200, fieldH: 100 }).job.orientation, 'landscape');
