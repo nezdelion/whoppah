@@ -13,13 +13,7 @@ FakeWorker.all = [];
 
 const descriptor = (over = {}) => ({ id: 'own:fake', adapter: 'native', params: [], createWorker: () => new FakeWorker(), ...over });
 const image = () => ({ width: 2, height: 1, data: new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]) });
-// Timers of the late-data window are manual: tick() fires everything that is scheduled.
-const fakeTimers = () => {
-  const pending = new Map(); let n = 0;
-  return { setTimeout: (f) => { pending.set(++n, f); return n; }, clearTimeout: (id) => pending.delete(id), tick() { for (const [id, f] of [...pending]) { pending.delete(id); f(); } }, count: () => pending.size };
-};
-let timers = fakeTimers();
-const setup = () => { FakeWorker.all = []; timers = fakeTimers(); return createRunner({ createSession: (d) => createNativeSession(d), timers }); };
+const setup = () => { FakeWorker.all = []; return createRunner({ createSession: (d) => createNativeSession(d) }); };
 const line = (x) => Float64Array.of(x, 0, x + 1, 1);
 
 test('start: a copy of the image goes to the worker, the layer is computing', () => {
@@ -75,7 +69,7 @@ test('without final the status stays computing at any pause, the result is inter
   assert.equal(s.lines.length, 1);
 });
 
-test('final: status done, the result is not intermediate, the worker is released', () => {
+test('final: status done, the result is not intermediate, the worker stays listening', () => {
   const runner = setup();
   const seen = [];
   runner.run('a', descriptor(), { image: image(), params: {} }, (s) => seen.push(s));
@@ -83,12 +77,13 @@ test('final: status done, the result is not intermediate, the worker is released
   w.emit({ type: 'result', runId: id, lines: [line(1), line(3)], final: true });
   assert.equal(seen.at(-1).status, STATUS.DONE);
   assert.equal(seen.at(-1).partial, false);
-  assert.equal(w.terminated, false, 'late data window is still open');
-  timers.tick();
+  assert.equal(w.terminated, false, 'worker still listens after final');
+  assert.equal(w.terminated, false);
+  runner.cancel('a');
   assert.equal(w.terminated, true);
 });
 
-test('a style without live parameters: data after final within the late-data window returns the layer to intermediate', () => {
+test('a style without live parameters: data after final at any moment returns the layer to intermediate', () => {
   const runner = setup();
   const seen = [];
   runner.run('a', descriptor(), { image: image(), params: {} }, (s) => seen.push(s));
@@ -99,20 +94,30 @@ test('a style without live parameters: data after final within the late-data win
   assert.equal(seen.at(-1).status, STATUS.PARTIAL);
   assert.equal(seen.at(-1).lines.length, 2);
   assert.equal(w.terminated, false);
-  timers.tick();
-  assert.equal(w.terminated, true);
+  w.emit({ type: 'result', runId: id, lines: [line(1), line(2), line(3)], final: true });
+  assert.equal(seen.at(-1).status, STATUS.DONE);
+  w.emit({ type: 'result', runId: id, lines: [line(1)], final: false, late: true });
+  assert.equal(seen.at(-1).status, STATUS.PARTIAL);
   runner.cancel('a');
+  assert.equal(w.terminated, true);
 });
 
-test('cancel and run replacement clear the release timer', () => {
+test('after final the worker is terminated by cancel, run replacement and dispose', () => {
   const runner = setup();
+  const fin = (w) => w.emit({ type: 'result', runId: w.sent[0].msg.runId, lines: [], final: true });
   runner.run('a', descriptor(), { image: image(), params: {} }, () => {});
-  const w = FakeWorker.all[0];
-  w.emit({ type: 'result', runId: w.sent[0].msg.runId, lines: [], final: true });
-  assert.equal(timers.count(), 1);
+  const a = FakeWorker.all[0]; fin(a);
+  assert.equal(a.terminated, false);
   runner.cancel('a');
-  assert.equal(timers.count(), 0);
-  assert.equal(w.terminated, true);
+  assert.equal(a.terminated, true);
+  runner.run('b', descriptor(), { image: image(), params: {} }, () => {});
+  const b = FakeWorker.all[1]; fin(b);
+  runner.run('b', descriptor(), { image: image(), params: {} }, () => {});
+  assert.equal(b.terminated, true, 'replacement');
+  const b2 = FakeWorker.all[2]; fin(b2);
+  runner.dispose();
+  assert.equal(b2.terminated, true, 'dispose');
+  assert.equal(runner.isActive('b'), false);
 });
 
 test('data after completion: the layer is intermediate with a reason, the result updated', () => {

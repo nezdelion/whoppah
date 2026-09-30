@@ -9,5 +9,6 @@ export function setupCalibration({ positionSource, state, store, visibility, tim
   const monitor = createCalibrationMonitor({ state, positionSource, loadCalibration: () => store.load('calibration'), visibility, timers });
   const capture = createCalibrationCapture({ state, positionSource, monitor });
   monitor.start();
-  return { calibrator: { monitor, capture }, check: calibrationFreshCheck(monitor) };
+  // beforePlan: refresh the calibration before building the plan; check compares the already obtained epoch with the plan snapshot
+  return { calibrator: { monitor, capture }, check: calibrationFreshCheck(monitor), beforePlan: monitor.refresh };
 }

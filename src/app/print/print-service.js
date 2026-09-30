@@ -26,7 +26,7 @@ function stopMessage(kind, state) {
 }
 
 export function createPrintService({
-  transport, getSettings, confirm, preflight = [],
+  transport, getSettings, confirm, preflight = [], beforePlan = [],
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = () => Date.now(),
 }) {
   const fail = (message) => ({ ok: false, message });
@@ -41,6 +41,8 @@ export function createPrintService({
   }
 
   async function send(drawing, { print = false, name = 'plot.gcode' } = {}) {
+    // Preparation (refreshing the calibration from the server) runs before the settings snapshot: the plan and the checks see the same snapshot.
+    for (const prepare of beforePlan) await prepare();
     const settings = getSettings();
     let plan;
     try { plan = buildPlan(drawing, settings); } catch (e) { return fail(e.message); }

@@ -116,6 +116,7 @@ async function start() {
     getSettings: () => state.settings(),
     confirm: (message) => Promise.resolve(window.confirm(message)),
     preflight,
+    beforePlan: calibration ? [calibration.beforePlan] : [],
   });
 
   const tabs = [

@@ -20,8 +20,15 @@ export async function partialCheck({ drawing }) {
 
 /** Before sending the coordinate epoch is checked anew, not relying on the page poll. */
 export function calibrationFreshCheck(monitor) {
-  return async () => {
-    const s = await monitor.refresh();
+  return async (ctx = {}) => {
+    await monitor.refresh(); // coordinate epoch; the plan values are already fixed by the snapshot, the estimate uses it
+    const snap = ctx.settings && ctx.settings.calibration;
+    // the poll could have accepted new coordinates after the snapshot: a plan on old ones must not be sent
+    const now = monitor.currentCalibration && monitor.currentCalibration();
+    if (snap && now && ['cornerX', 'cornerY', 'zTouch'].some((k) => snap[k] !== now[k])) {
+      return { level: 'block', message: 'Калибровка изменилась во время подготовки — отправьте ещё раз.' };
+    }
+    const s = monitor.status(snap);
     return s.known && s.stale.length ? { level: 'confirm', message: s.message } : ok;
   };
 }

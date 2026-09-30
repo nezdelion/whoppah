@@ -18,9 +18,9 @@ export function createCalibrationMonitor({
   let timer = null, unsubscribe = () => {}, offState = () => {}, running = false, inflight = null;
   const listeners = new Set();
 
-  const status = () => {
+  const status = (calibration = state.get('calibration')) => {
     if (epoch === null) return { known: false, xy: true, z: true, stale: [], message: '' };
-    const f = calibrationFreshness(state.get('calibration'), epoch);
+    const f = calibrationFreshness(calibration, epoch);
     return { known: true, ...f, message: staleMessage(f.stale) };
   };
   const emit = () => { const s = status(); for (const fn of [...listeners]) fn(s); };
@@ -47,7 +47,10 @@ export function createCalibrationMonitor({
   function disarm() { if (timer) { timers.clearInterval(timer); timer = null; } }
 
   return {
+    /** calibration — the snapshot to evaluate freshness against (the current calibration by default). */
     status,
+    /** The calibration in the state now (after a poll) — to compare with the snapshot the plan was built from. */
+    currentCalibration: () => state.get('calibration'),
     /** A fresh check before sending: first the request, then the state. */
     refresh,
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },

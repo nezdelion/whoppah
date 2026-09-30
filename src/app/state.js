@@ -17,7 +17,10 @@ export function createState({ store, now = () => new Date().toISOString() }) {
   let sourceName = '';
   let drawingSource = null;
   const listeners = new Set();
-  const unsaved = new Set(); // sections whose last edit is not yet written to the server (a write is in progress or failed)
+  // Counters of local edits and written edits per section: independent of merges with the server (adoptCalibration).
+  // A section is unwritten while saved < edits (a write is in progress or failed).
+  const edits = {}, saved = {};
+  const unsaved = (section) => (saved[section] || 0) < (edits[section] || 0);
 
   const emit = (event) => { for (const fn of [...listeners]) fn(event); };
   const normalizeSection = (section, values) => (section === 'connection'
@@ -26,13 +29,12 @@ export function createState({ store, now = () => new Date().toISOString() }) {
 
   // A storage failure (the server did not accept the write) must not break operation: the value stays in memory, the UI gets an event.
   const persist = async (section) => {
-    unsaved.add(section);
-    const saving = settings[section];
-    try { await store.save(section, saving); } catch (e) {
+    const n = edits[section];
+    try { await store.save(section, settings[section]); } catch (e) {
       emit({ type: 'save-error', section, message: e.message });
       return;
     }
-    if (settings[section] === saving) unsaved.delete(section);
+    saved[section] = Math.max(saved[section] || 0, n);
     emit({ type: 'saved', section });
   };
 
@@ -49,12 +51,14 @@ export function createState({ store, now = () => new Date().toISOString() }) {
     async patch(section, changes) {
       const next = { ...settings[section], ...changes };
       if (section === 'calibration' && !('updatedAt' in changes)) next.updatedAt = now();
+      edits[section] = (edits[section] || 0) + 1;
       settings[section] = normalizeSection(section, next);
       emit({ type: 'settings', section });
       await persist(section);
     },
 
     async reset(section) {
+      edits[section] = (edits[section] || 0) + 1;
       settings[section] = normalizeSection(section, null);
       emit({ type: 'settings', section });
       await persist(section);
@@ -74,7 +78,7 @@ export function createState({ store, now = () => new Date().toISOString() }) {
         const cur = settings.calibration;
         const parts = [[['cornerX', 'cornerY'], 'epochXY'], [['zTouch'], 'epochZ']];
         next = { ...cur };
-        const keepLocal = unsaved.has('calibration');
+        const keepLocal = unsaved('calibration');
         for (const [keys, epochKey] of parts) {
           if (keys.every((k) => cur[k] === incoming[k])) next[epochKey] = incoming[epochKey];
           else if (keepLocal) next[epochKey] = null;
