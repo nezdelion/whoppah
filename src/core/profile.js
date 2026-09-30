@@ -20,10 +20,15 @@ export const PROFILE_SCHEMA = Object.freeze([
   num('limX1', 'X макс', 234, { unit: 'мм', group: 'Пределы хода сопла' }),
   num('limY0', 'Y мин', 1, { unit: 'мм', group: 'Пределы хода сопла' }),
   num('limY1', 'Y макс', 231, { unit: 'мм', group: 'Пределы хода сопла' }),
-  { key: 'home', label: 'G28 в начале (ручку поднять!)', type: 'bool', default: false, group: 'Файл' },
+  { key: 'home', label: 'Home (G28) в начале файла', type: 'bool', default: false, group: 'Файл',
+    warn: 'Home опускает голову к столу, чтобы датчик замерил Z. Перо торчит ниже сопла и упрётся в стол или бумагу — '
+      + 'можно сломать перо или держатель. Включайте, только если перо в этот момент поднято в держателе выше сопла. '
+      + 'Обычно проще сделать Home кнопкой до установки пера, а потом снять калибровку.' },
   { key: 'motorsOff', label: 'M84 в конце', type: 'bool', default: true, group: 'Файл' },
   // the mesh fade (Z10 on the Neptune 3 Pro) turns off compensation above the pen touch; Z0 — compensation at any height, until the printer reboots
-  { key: 'meshNoFade', label: 'Сетка стола на любой высоте (M420 S1 Z0)', type: 'bool', default: false, group: 'Файл' },
+  { key: 'meshNoFade', label: 'Сетка стола на любой высоте (M420 S1 Z0)', type: 'bool', default: false, group: 'Файл',
+    warn: 'После включения снимите касание заново: с компенсацией Z в углу листа сдвигается на поправку сетки в этой точке. '
+      + 'Настройка действует до перезагрузки принтера; файл и кнопки пера отправляют её сами.' },
 ]);
 
 export const CALIBRATION_SCHEMA = Object.freeze([

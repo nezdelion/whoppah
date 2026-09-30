@@ -23,7 +23,9 @@ function numberField(f, values, onChange) {
 
 function boolField(f, values, onChange) {
   const input = h('input', { type: 'checkbox', checked: !!values[f.key], onchange: () => onChange({ [f.key]: input.checked }) });
-  return { element: h('label', { class: 'check wide' }, input, f.label), set(v) { input.checked = !!v[f.key]; } };
+  // warn — the ⚠ sign with details on hover; clicking the sign does not toggle the checkbox
+  const warn = f.warn ? h('span', { class: 'warn-icon', title: f.warn, tabindex: 0, role: 'img', 'aria-label': f.warn, onclick: (e) => e.preventDefault() }, '⚠') : null;
+  return { element: h('label', { class: 'check wide' }, input, f.label, warn), set(v) { input.checked = !!v[f.key]; } };
 }
 
 function enumField(f, values, onChange) {
