@@ -1,6 +1,7 @@
 // "Photo" source: image -> stack of style layers (workers) -> preview -> ctx.emit(drawing).
 // The tab knows nothing about specific styles: only the registry, the parameter description and the runner.
 import { h } from '../ui/dom.js';
+import { createViewport } from '../ui/viewport.js';
 import { exportSvg } from '../../core/svg-export.js';
 import { stats } from '../../core/drawing.js';
 import { downloadText, baseName } from '../download.js';
@@ -50,7 +51,9 @@ export function createPhotoSource() {
       $.addStyle = h('select', { 'aria-label': 'Стиль нового слоя' }, groupedStyles().map((g) =>
         h('optgroup', { label: g.group }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === DEFAULT_STYLE }, `${s.name} · ${originLabel(s)}`)))));
       $.add = h('button', { type: 'button', onclick: () => addLayer($.addStyle.value) }, 'Добавить слой');
-      $.canvas = h('canvas', { class: 'preview photo-preview', width: 900, height: 900 });
+      $.canvas = h('canvas', { class: 'preview photo-preview', width: 900, height: 300, 'aria-label': 'Превью: колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — вписать' });
+      const view = createViewport();
+      $.fit = h('button', { type: 'button', title: 'Вписать в область (двойной щелчок или 0)', onclick: () => { view.reset(); $.canvas.style.touchAction = 'pan-y'; requestDraw(); } }, 'Вписать');
       $.showPhoto = h('input', { type: 'checkbox', checked: true, onchange: requestDraw });
       $.stats = h('div', { class: 'stats' });
       $.sendWarn = h('div', { class: 'warn' });
@@ -64,10 +67,10 @@ export function createPhotoSource() {
       const layersCard = h('div', { class: 'card' }, h('h2', {}, 'Слои'), $.layers,
         h('div', { class: 'row' }, $.addStyle, $.add));
       const previewCard = h('div', { class: 'card' }, $.canvas,
-        h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.showPhoto, 'фото под рисунком')),
+        h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.showPhoto, 'фото под рисунком'), $.fit),
         $.stats, $.sendWarn,
         h('div', { class: 'row' }, $.toPrint, $.exportSvg, $.exportPreset, $.importPreset, presetInput));
-      el.append(h('div', { class: 'columns' }, h('div', {}, imageCard, layersCard), h('div', { class: 'work-col' }, previewCard)));
+      el.append(h('div', { class: 'columns' }, h('div', {}, imageCard, layersCard), h('div', { class: 'work-col sticky' }, previewCard)));
 
       // --- runner: created after reading the model manifest (without it all plotterfun styles are "intermediate")
       function getRunner() {
@@ -133,6 +136,7 @@ export function createPhotoSource() {
         }
         if (decoded) decoded.bitmap.close();
         decoded = next;
+        view.reset();
         imageName = baseName(file.name, 'photo');
         $.warn.textContent = '';
         applyWorkingSize();
@@ -244,17 +248,18 @@ export function createPhotoSource() {
         const css = getComputedStyle(document.documentElement);
         const col = (n) => css.getPropertyValue(n).trim();
         const g = $.canvas.getContext('2d');
-        {
-          const cw = 900, ch = imageData ? Math.max(1, Math.round((900 * imageData.height) / imageData.width)) : 300;
-          if ($.canvas.width !== cw || $.canvas.height !== ch) { $.canvas.width = cw; $.canvas.height = ch; }
-        }
-        const W = $.canvas.width, H = $.canvas.height;
+        const W = $.canvas.width, H = $.canvas.height, dpr = window.devicePixelRatio || 1;
+        $.canvas.style.setProperty('--ar', imageData ? String(imageData.width / imageData.height) : '3');
+        view.setSize(W, H);
+        g.setTransform(1, 0, 0, 1, 0, 0);
         g.clearRect(0, 0, W, H);
         g.fillStyle = col('--paper'); g.fillRect(0, 0, W, H);
-        if (!imageData) { g.fillStyle = col('--muted'); g.font = '22px system-ui'; g.fillText('Фото не загружено', 24, 40); return; }
+        if (!imageData) { g.fillStyle = col('--muted'); g.font = `${16 * dpr}px system-ui`; g.fillText('Фото не загружено', 16 * dpr, 30 * dpr); return; }
+        view.apply(g);
         if ($.showPhoto.checked && decoded) { g.globalAlpha = 0.3; g.drawImage(decoded.bitmap, 0, 0, W, H); g.globalAlpha = 1; }
         const k = W / imageData.width;
-        g.lineJoin = 'round'; g.lineWidth = 1.4;
+        g.lineJoin = 'round'; g.lineWidth = (1.4 * dpr) / view.zoom; // constant thickness in screen pixels
+        const eps = (0.6 * dpr) / view.zoom;
         stack.layers.forEach((l, i) => {
           if (!l.visible || !l.lines.length) return;
           g.strokeStyle = col(`--layer-${i % 4}`);
@@ -264,7 +269,7 @@ export function createPhotoSource() {
             g.moveTo(px, py);
             for (let j = 2; j < line.length; j += 2) {
               const x = line[j] * k, y = line[j + 1] * k;
-              if (Math.abs(x - px) < 0.6 && Math.abs(y - py) < 0.6 && j < line.length - 2) continue; // decimation per screen pixel
+              if (Math.abs(x - px) < eps && Math.abs(y - py) < eps && j < line.length - 2) continue; // decimation per screen pixel
               g.lineTo(x, y); px = x; py = y;
             }
           }
@@ -335,6 +340,14 @@ export function createPhotoSource() {
         renderLayers(); requestDraw(); persist();
       });
       const offPrint = ctx.printParams.subscribe((p) => { printParams = p; for (const l of stack.layers) refreshLayerInfo(l.uid); });
+      const detachView = view.attach($.canvas, requestDraw);
+      const resizeObs = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+        const r = $.canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+        const w = Math.round(r.width * dpr), hh = Math.round(r.height * dpr);
+        if (w < 2 || hh < 2 || ($.canvas.width === w && $.canvas.height === hh)) return;
+        $.canvas.width = w; $.canvas.height = hh; requestDraw();
+      }) : null;
+      if (resizeObs) resizeObs.observe($.canvas);
       const dark = window.matchMedia('(prefers-color-scheme: dark)');
       dark.addEventListener('change', requestDraw);
 
@@ -352,7 +365,7 @@ export function createPhotoSource() {
         if (decoded) { applyWorkingSize(); rerunAll(); }
       });
 
-      cleanup = [offStack, offPrint, () => dark.removeEventListener('change', requestDraw), () => {
+      cleanup = [offStack, offPrint, detachView, () => { if (resizeObs) resizeObs.disconnect(); }, () => dark.removeEventListener('change', requestDraw), () => {
         disposed = true;
         clearTimeout(saveTimer);
         for (const t of timers.values()) clearTimeout(t);

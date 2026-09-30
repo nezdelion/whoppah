@@ -1,6 +1,7 @@
 // "Print" tab: settings, preview, statistics, download, sending, manual commands, job status.
 import { h } from '../ui/dom.js';
 import { mountSettingsPanel, calibrationSummary } from '../ui/settings-panel.js';
+import { createViewport } from '../ui/viewport.js';
 import { renderPreview } from '../ui/preview.js';
 import { buildPlan, fieldOf, cornerOf, sheetCheck } from '../../core/pipeline.js';
 import { exportSvg, exportOnPaper } from '../../core/svg-export.js';
@@ -48,6 +49,8 @@ export function createPrintTab({ state, store, service, transport, ui = {}, cali
       $.progress = h('progress', { max: 100, value: 0 });
       $.log = h('div', { class: 'log' });
 
+      const view = createViewport();
+      view.attach($.canvas, () => draw());
       const previewCard = h('div', { class: 'card' },
         $.canvas,
         h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.travel, 'переезды')),
@@ -160,7 +163,7 @@ export function createPrintTab({ state, store, service, transport, ui = {}, cali
         renderPreview($.canvas, {
           machine: plan ? plan.machine : null, field: fieldOf(s.job), corner: cornerOf(s.calibration),
           limits: axisLimits(s.profile), showTravel: $.travel.checked,
-          emptyText: planError || 'Рисунок не загружен',
+          emptyText: planError || 'Рисунок не загружен', view,
         });
       }
 

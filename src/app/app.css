@@ -77,7 +77,17 @@ fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7;
 .param-inputs { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 6px; align-items: center; }
 .param-inputs input[type=range] { padding: 0; border: 0; background: none; }
 .size { margin-top: 8px; }
-.photo-preview { aspect-ratio: auto; }
+/* photo preview: the area is limited by the window height, the canvas exactly matches the image proportions; zoom/pan are in the canvas */
+.photo-preview {
+  --stage-h: max(220px, calc(100vh - 270px));
+  width: min(100%, calc(var(--stage-h) * var(--ar, 3))); aspect-ratio: var(--ar, 3); height: auto; margin: 0 auto;
+  cursor: grab; touch-action: pan-y; user-select: none;
+}
+.photo-preview:active { cursor: grabbing; }
+.preview:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (min-width: 821px) {
+  .work-col.sticky { position: sticky; top: 8px; }
+}
 .layer .note:empty, .layer .warn:empty { display: none; }
 .layer .note, .layer .warn { margin-top: 0; }
 .layer-body > summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
