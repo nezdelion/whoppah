@@ -14,6 +14,8 @@ export const PROFILE_SCHEMA = Object.freeze([
   num('fTravel', 'Переезд', 6000, { unit: 'мм/мин', min: 1, group: 'Скорости' }),
   num('fZUp', 'Z вверх', 1200, { unit: 'мм/мин', min: 1, group: 'Скорости' }),
   num('fZDown', 'Z вниз', 600, { unit: 'мм/мин', min: 1, group: 'Скорости' }),
+  num('accelXY', 'Ускорение XY', 500, { unit: 'мм/с²', min: 1, group: 'Скорости' }),
+  num('accelZ', 'Ускорение Z', 100, { unit: 'мм/с²', min: 1, group: 'Скорости' }),
   num('limX0', 'X мин', -4, { unit: 'мм', group: 'Пределы хода сопла' }),
   num('limX1', 'X макс', 234, { unit: 'мм', group: 'Пределы хода сопла' }),
   num('limY0', 'Y мин', 1, { unit: 'мм', group: 'Пределы хода сопла' }),

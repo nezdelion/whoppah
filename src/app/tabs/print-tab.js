@@ -9,6 +9,12 @@ import { isPartial, partialReasons } from '../../core/drawing.js';
 import { axisLimits } from '../../core/profile.js';
 import { downloadText, baseName } from '../download.js';
 
+/** "A–B min" by the time estimate bounds; if equal — "A min". */
+const minutesText = (t) => {
+  const a = Math.ceil(t.min / 60), b = Math.ceil(t.max / 60);
+  return a === b ? `${a} мин` : `${a}–${b} мин`;
+};
+
 const MANUAL_BUTTONS = [
   ['up', 'Перо вверх'], ['corner', 'К углу бумаги'], ['touch', 'Перо на касание'], ['motorsOff', 'Моторы выкл'], ['home', 'Home (G28)'],
 ];
@@ -184,7 +190,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
         if (plan) {
           const st = plan.stats, o = plan.optimization;
           $.stats.textContent = `${st.lines} линий · рисунок ${st.size[0].toFixed(1)}×${st.size[1].toFixed(1)} мм` +
-            ` · перо ${(st.draw / 1000).toFixed(2)} м, переезды ${(st.travel / 1000).toFixed(2)} м · ≈${Math.ceil(st.seconds / 60)} мин` +
+            ` · перо ${(st.draw / 1000).toFixed(2)} м, переезды ${(st.travel / 1000).toFixed(2)} м · ≈${minutesText(st.time)}` +
             ` · X ${st.bbox.x0.toFixed(1)}…${st.bbox.x1.toFixed(1)}, Y ${st.bbox.y0.toFixed(1)}…${st.bbox.y1.toFixed(1)}` +
             ` · оптимизация: точек ${o.pointsBefore}→${o.pointsAfter}, линий ${o.linesBefore}→${o.linesAfter}, переезды ${(o.travelBefore / 1000).toFixed(2)}→${(o.travelAfter / 1000).toFixed(2)} м`;
         } else $.stats.textContent = '';

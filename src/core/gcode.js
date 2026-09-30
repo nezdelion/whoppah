@@ -1,6 +1,7 @@
 // Drawing (machine) + profile + calibration -> G-code, statistics, ready pen commands.
 import { SPACE, DrawingError, assertSpace, bbox, allLines } from './drawing.js';
 import { absoluteZ, axisLimits } from './profile.js';
+import { estimateTime } from './time-estimate.js';
 
 const f3 = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
 const fz = (v) => String(Number(v.toFixed(3)));
@@ -32,11 +33,18 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
   const g = ['G21', 'G90'];
   if (p.home) g.push('G28');
   g.push(`G0 Z${fz(z.start)} F${p.fZUp}`);
-  let draw = 0, travel = 0, pos = start;
+  let draw = 0, travel = 0, pos = start, zNow = z.start;
+  const moves = []; // moves for the time estimate — the same as in the G-code (the first Z from an unknown height is not counted)
+  const zMove = (to, feed) => { moves.push({ kind: 'z', len: Math.abs(to - zNow), feed }); zNow = to; };
   usedLayers.forEach((layer, index) => {
     g.push(...hook(layer, index));
     for (const l of layer.lines) {
-      travel += Math.hypot(l[0] - pos[0], l[1] - pos[1]);
+      const tl = Math.hypot(l[0] - pos[0], l[1] - pos[1]);
+      travel += tl;
+      zMove(z.up, p.fZUp);
+      moves.push({ kind: 'travel', len: tl, feed: p.fTravel });
+      zMove(z.down, p.fZDown);
+      moves.push({ kind: 'draw', pts: l, feed: p.fDraw });
       g.push(`G0 Z${fz(z.up)} F${p.fZUp}`, `G0 X${f3(l[0])} Y${f3(l[1])} F${p.fTravel}`, `G1 Z${fz(z.down)} F${p.fZDown}`);
       for (let i = 2; i < l.length; i += 2) {
         draw += Math.hypot(l[i] - l[i - 2], l[i + 1] - l[i - 1]);
@@ -45,6 +53,7 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
       pos = [l[l.length - 2], l[l.length - 1]];
     }
   });
+  zMove(z.up, p.fZUp); zMove(z.end, p.fZUp);
   g.push(`G0 Z${fz(z.up)} F${p.fZUp}`, `G0 Z${fz(z.end)} F${p.fZUp}`);
   if (p.motorsOff) g.push('M84');
 
@@ -54,16 +63,14 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
   if (over.x > 1e-6) warnings.push(`выход за X на ${over.x.toFixed(1)} мм`);
   if (over.y > 1e-6) warnings.push(`выход за Y на ${over.y.toFixed(1)} мм`);
 
-  const zTravel = z.up - z.down;
-  const seconds = draw / (p.fDraw / 60) + travel / (p.fTravel / 60) +
-    lines.length * (zTravel / (p.fZUp / 60) + zTravel / (p.fZDown / 60));
+  const time = estimateTime(moves, { accelXY: p.accelXY, accelZ: p.accelZ });
   const layoutInfo = drawing.meta.layout;
   return {
     gcode: g.join('\n') + '\n',
     warnings,
     outOfLimits,
     stats: {
-      lines: lines.length, draw, travel, seconds, bbox: ob,
+      lines: lines.length, draw, travel, time, bbox: ob,
       scale: layoutInfo ? layoutInfo.scale : null,
       size: [ob.w, ob.h],
     },

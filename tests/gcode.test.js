@@ -68,7 +68,7 @@ test('statistics: lines, lengths, bounds, scale, time', () => {
   assert.ok(Math.abs(stats.travel - Math.hypot(5, 10)) < 1e-9);
   assert.equal(stats.scale, 2);
   assert.deepEqual([stats.bbox.x0, stats.bbox.x1], [0, 30]);
-  assert.ok(stats.seconds > 0);
+  assert.ok(stats.time.min > 0 && stats.time.max >= stats.time.min);
 });
 
 test('a drawing in document coordinates is rejected', () => {
