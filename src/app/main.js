@@ -10,6 +10,8 @@ import { createState, createSourceContext } from './state.js';
 import { createPrintService } from './print/print-service.js';
 import { limitsCheck, partialCheck } from './print/checks.js';
 import { createOctoPrintPosition } from '../transport/octoprint-position.js';
+import { createPrinterFeed } from '../transport/octoprint-feed.js';
+import * as marlinReplies from '../core/marlin-replies.js';
 import { setupCalibration } from './calibration/setup.js';
 import { createSvgSource } from './tabs/svg-tab.js';
 import { createPhotoSource } from './tabs/photo-tab.js';
@@ -93,6 +95,18 @@ async function start() {
   if (!plugin) {
     state.subscribe((e) => { if (e.type === 'settings' && (e.section === 'connection' || e.section === '*')) connection.configChanged(); });
   }
+  // The printer connection feed (head position, firmware limits, foreign commands) — standalone only.
+  // Our own commands go through feed.command so that the feed can tell them from foreign log lines.
+  let feed = null;
+  if (!plugin) {
+    const rawTransport = transport;
+    feed = createPrinterFeed({
+      getBaseUrl: () => state.get('connection').url, getKey: () => state.get('connection').key,
+      sendCommands: (lines) => rawTransport.command(lines), replies: marlinReplies, visibility: pageVisibility(),
+    });
+    transport = { ...rawTransport, command: (lines) => feed.command(lines) };
+    state.subscribe((e) => { if (e.type === 'settings' && (e.section === 'connection' || e.section === '*')) feed.configChanged(); });
+  }
   document.querySelector('header h1').after(createConnectionIndicator(connection).element);
   const calibration = setupCalibration({ positionSource: plugin && plugin.positionSource, state, store, visibility: pageVisibility() });
   const calibrator = calibration && calibration.calibrator;
@@ -106,7 +120,7 @@ async function start() {
 
   const tabs = [
     ...[createSvgSource(), createPhotoSource()].map((source) => ({ id: source.id, title: source.title, source })),
-    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : {} }) },
+    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : { feed } }) },
   ];
 
   const nav = document.getElementById('tabs');
@@ -132,6 +146,7 @@ async function start() {
   }
   show(tabs[0].id);
   connection.start();
+  if (feed) feed.start();
 
   // after loading a drawing, show the result immediately
   state.subscribe((e) => { if (e.type === 'drawing') show('print'); });

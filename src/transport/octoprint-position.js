@@ -8,7 +8,7 @@
 // Errors are TransportError; kind: busy | offline | timeout | stale | unsupported | nocoords | forbidden | auth | network | http.
 import { TransportError } from './transport.js';
 
-const MESSAGES = {
+export const MESSAGES = {
   busy: 'нельзя во время печати (или чтение положения уже идёт)',
   offline: 'принтер не подключён',
   timeout: 'принтер не ответил',
@@ -17,6 +17,9 @@ const MESSAGES = {
   nocoords: 'принтер не прислал координаты',
 };
 const NETWORK = 'нет ответа от OctoPrint';
+
+/** Position read error by kind (busy | offline | timeout | stale | unsupported | nocoords) — shared by the plugin and the feed. */
+export const positionError = (kind, operation = 'position', message = MESSAGES[kind]) => new TransportError(message, { kind, operation });
 
 export function createOctoPrintPosition({ apiUrl, auth, fetch: fetchFn = globalThis.fetch.bind(globalThis) }) {
   const base = String(apiUrl).replace(/\/+$/, '');
