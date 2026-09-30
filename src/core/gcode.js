@@ -32,6 +32,7 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
 
   const g = ['G21', 'G90'];
   if (p.home) g.push('G28');
+  g.push(...meshLines(p));
   g.push(`G0 Z${fz(z.start)} F${p.fZUp}`);
   let draw = 0, travel = 0, pos = start, zNow = z.start;
   const moves = []; // moves for the time estimate — the same as in the G-code (the first Z from an unknown height is not counted)
@@ -79,20 +80,23 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
 
 // --- short pen programs: built by the core, the transport only passes them on
 
+/** Full mesh compensation at any height: the touch, the outline and the drawing must be computed with the same compensation. */
+export const meshLines = (p) => (p.meshNoFade ? ['M420 S1 Z0'] : []);
+
 /** Raises the pen to the start height (above the lift height used while drawing). */
 export function liftLines(p, cal) {
   const z = absoluteZ(p, cal);
-  return ['G90', `G0 Z${fz(z.start)} F${p.fZUp}`];
+  return ['G90', ...meshLines(p), `G0 Z${fz(z.start)} F${p.fZUp}`];
 }
 
 export function cornerLines(p, cal) {
   const z = absoluteZ(p, cal);
-  return ['G90', `G0 Z${fz(z.start)} F${p.fZUp}`, `G0 X${fz(cal.cornerX)} Y${fz(cal.cornerY)} F${p.fTravel}`];
+  return ['G90', ...meshLines(p), `G0 Z${fz(z.start)} F${p.fZUp}`, `G0 X${fz(cal.cornerX)} Y${fz(cal.cornerY)} F${p.fTravel}`];
 }
 
 export function touchLines(p, cal) {
   const z = absoluteZ(p, cal);
-  return ['G90', `G0 Z${fz(z.touch)} F${p.fZDown}`];
+  return ['G90', ...meshLines(p), `G0 Z${fz(z.touch)} F${p.fZDown}`];
 }
 
 export const homeLines = () => ['G28'];
@@ -104,6 +108,7 @@ export function frameLines(bounds, p, cal) {
   const xy = (x, y) => `G0 X${f3(x)} Y${f3(y)} F${p.fTravel}`;
   return [
     'G90',
+    ...meshLines(p),
     `G0 Z${fz(z.clearance)} F${p.fZUp}`,
     xy(bounds.x0, bounds.y0), xy(bounds.x1, bounds.y0), xy(bounds.x1, bounds.y1),
     xy(bounds.x0, bounds.y1), xy(bounds.x0, bounds.y0),

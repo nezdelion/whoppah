@@ -22,6 +22,8 @@ export const PROFILE_SCHEMA = Object.freeze([
   num('limY1', 'Y макс', 231, { unit: 'мм', group: 'Пределы хода сопла' }),
   { key: 'home', label: 'G28 в начале (ручку поднять!)', type: 'bool', default: false, group: 'Файл' },
   { key: 'motorsOff', label: 'M84 в конце', type: 'bool', default: true, group: 'Файл' },
+  // the mesh fade (Z10 on the Neptune 3 Pro) turns off compensation above the pen touch; Z0 — compensation at any height, until the printer reboots
+  { key: 'meshNoFade', label: 'Сетка стола на любой высоте (M420 S1 Z0)', type: 'bool', default: false, group: 'Файл' },
 ]);
 
 export const CALIBRATION_SCHEMA = Object.freeze([

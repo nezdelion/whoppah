@@ -91,3 +91,14 @@ test('short pen programs', () => {
   assert.deepEqual(touchLines(profile, { ...cal, zTouch: 9 }), ['G90', 'G0 Z9 F600']);
   assert.deepEqual(homeLines(), ['G28']);
 });
+
+test('meshNoFade: M420 S1 Z0 after G90/G28 in the file and in all pen programs; off — absent', () => {
+  const on = { ...profile, meshNoFade: true, home: true };
+  const g = generateGcode(one([[0, 60, 10, 60]]), { profile: on, calibration: cal }).gcode.split('\n');
+  assert.deepEqual(g.slice(0, 4), ['G21', 'G90', 'G28', 'M420 S1 Z0']);
+  for (const prog of [liftLines(on, cal), cornerLines(on, cal), touchLines(on, cal), frameLines({ x0: 0, y0: 55, x1: 10, y1: 60 }, on, cal)]) {
+    assert.deepEqual(prog.slice(0, 2), ['G90', 'M420 S1 Z0']);
+  }
+  assert.ok(!generateGcode(one([[0, 60, 10, 60]]), { profile, calibration: cal }).gcode.includes('M420'));
+  assert.ok(!touchLines(profile, cal).includes('M420 S1 Z0'));
+});
