@@ -15,6 +15,8 @@ import { createSvgSource } from './tabs/svg-tab.js';
 import { createPhotoSource } from './tabs/photo-tab.js';
 import { createPrintTab } from './tabs/print-tab.js';
 import { h } from './ui/dom.js';
+import { createConnectionMonitor, isValidBaseUrl } from './connection-monitor.js';
+import { createConnectionIndicator } from './ui/connection-indicator.js';
 
 const notice = (() => {
   const el = h('div', { class: 'notice', hidden: true, role: 'status' });
@@ -81,6 +83,17 @@ async function start() {
     if (message) { await state.load(); notice.show(message); }
   }
   // Calibration capture and tracking of its freshness — plugin mode only (in standalone there is nothing to read the position from).
+  // Connection monitor: in standalone "configured" = a valid address and a non-empty key; in the plugin — a session, no key.
+  const connection = createConnectionMonitor({
+    transport,
+    visibility: pageVisibility(),
+    configured: plugin ? () => transport.configured() : () => { const c = state.get('connection'); return isValidBaseUrl(c.url) && !!c.key; },
+    describeAuth: plugin ? (status) => `сессия OctoPrint не принята (${status}): войдите заново` : undefined,
+  });
+  if (!plugin) {
+    state.subscribe((e) => { if (e.type === 'settings' && (e.section === 'connection' || e.section === '*')) connection.configChanged(); });
+  }
+  document.querySelector('header h1').after(createConnectionIndicator(connection).element);
   const calibration = setupCalibration({ positionSource: plugin && plugin.positionSource, state, store, visibility: pageVisibility() });
   const calibrator = calibration && calibration.calibrator;
   const preflight = [limitsCheck, partialCheck, ...(calibration ? [calibration.check] : [])];
@@ -93,7 +106,7 @@ async function start() {
 
   const tabs = [
     ...[createSvgSource(), createPhotoSource()].map((source) => ({ id: source.id, title: source.title, source })),
-    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, calibrator, ui: plugin ? plugin.ui : {} }) },
+    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : {} }) },
   ];
 
   const nav = document.getElementById('tabs');
@@ -118,6 +131,7 @@ async function start() {
     else t.tab.mount(view);
   }
   show(tabs[0].id);
+  connection.start();
 
   // after loading a drawing, show the result immediately
   state.subscribe((e) => { if (e.type === 'drawing') show('print'); });

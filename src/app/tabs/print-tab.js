@@ -9,7 +9,6 @@ import { isPartial, partialReasons } from '../../core/drawing.js';
 import { axisLimits } from '../../core/profile.js';
 import { downloadText, baseName } from '../download.js';
 
-const POLL_MS = 3000;
 const MANUAL_BUTTONS = [
   ['up', 'Перо вверх'], ['corner', 'К углу бумаги'], ['touch', 'Перо на касание'], ['motorsOff', 'Моторы выкл'], ['home', 'Home (G28)'],
 ];
@@ -20,9 +19,13 @@ const readOffset = () => {
   return { x: 0, y: 0 };
 };
 
-/** calibrator — { capture, monitor } in plugin mode, otherwise null: no capture buttons. */
-export function createPrintTab({ state, store, service, transport, ui = {}, calibrator = null }) {
-  let timer = 0, pollTimer = 0, unsubscribe = () => {}, plan = null, planError = '';
+/**
+ * calibrator — { capture, monitor } in plugin mode, otherwise null: no capture buttons.
+ * connection — the connection monitor (connection-monitor.js): it alone holds the 3 s polling timer;
+ * the job state (/api/job) is requested right after each of its checks, there is no separate timer.
+ */
+export function createPrintTab({ state, store, service, transport, connection, ui = {}, calibrator = null }) {
+  let timer = 0, offCycle = () => {}, unsubscribe = () => {}, plan = null, planError = '';
   let lastJobState = '', darkQuery = null, redraw = null, stopMonitor = () => {};
 
   return {
@@ -35,7 +38,7 @@ export function createPrintTab({ state, store, service, transport, ui = {}, cali
 
       // --- left column: settings
       const settingsHost = h('div', { class: 'settings' });
-      mountSettingsPanel(settingsHost, { state, store, notify: (m) => log(m), ui });
+      mountSettingsPanel(settingsHost, { state, store, notify: (m) => log(m), ui: { ...ui, connectionMonitor: connection } });
 
       // --- right column
       $.canvas = h('canvas', { class: 'preview', width: 900, height: 900 });
@@ -141,11 +144,8 @@ export function createPrintTab({ state, store, service, transport, ui = {}, cali
       }
 
       async function testConnection() {
-        try {
-          const r = await transport.test();
-          log(`OctoPrint ${r.server}${r.printer ? `, принтер: ${r.printer}` : ''}`);
-        } catch (e) { log(`Связь: ${e.message}`); }
-        poll();
+        const s = await connection.checkNow();
+        log(s.status === 'ok' || s.status === 'printer-off' ? s.detail : `Связь: ${s.detail}`);
       }
 
       const fileName = () => (($.name.value.trim() || `${baseName(state.sourceName())}`).replace(/(\.gcode)?$/i, '') + '.gcode');
@@ -202,6 +202,12 @@ export function createPrintTab({ state, store, service, transport, ui = {}, cali
       $.name.addEventListener('input', () => { $.name.dataset.touched = '1'; });
 
       let polling = false;
+      // after the connection test: if OctoPrint responds, read the job, otherwise show the reason
+      function onCheck(s) {
+        if (s.status === 'ok' || s.status === 'printer-off') poll();
+        else if (transport.configured()) { lastJobState = ''; $.job.textContent = `Нет связи: ${s.detail}`; }
+      }
+
       async function poll() {
         if (polling || !transport.configured()) return;
         polling = true;
@@ -220,7 +226,7 @@ export function createPrintTab({ state, store, service, transport, ui = {}, cali
 
       stopMonitor = calibrator ? calibrator.monitor.subscribe(syncCapture) : () => {};
       unsubscribe = state.subscribe((e) => {
-        if (e.type === 'settings' && e.section === 'connection') { render(); poll(); return; }
+        if (e.type === 'settings' && e.section === 'connection') { render(); return; }
         if (e.type === 'drawing') $.name.dataset.touched = '';
         clearTimeout(timer);
         timer = setTimeout(render, 120);
@@ -228,17 +234,17 @@ export function createPrintTab({ state, store, service, transport, ui = {}, cali
       darkQuery = matchMedia('(prefers-color-scheme: dark)');
       redraw = draw;
       darkQuery.addEventListener('change', redraw);
-      pollTimer = setInterval(poll, POLL_MS);
+      offCycle = connection.onCycle(onCheck);
       render();
-      poll();
+      if (['ok', 'printer-off'].includes(connection.status().status)) poll();
     },
 
     unmount() {
       unsubscribe();
       stopMonitor();
+      offCycle();
       if (darkQuery) darkQuery.removeEventListener('change', redraw);
       clearTimeout(timer);
-      clearInterval(pollTimer);
     },
   };
 }

@@ -3,7 +3,7 @@
 // Transport {
 //   id, label,
 //   configured(): boolean,
-//   test():                          Promise<{server, printer}>,
+//   test({signal}?):                 Promise<{server, printer}>,  // signal — AbortSignal, optional
 //   upload(name, gcode, {select, print}): Promise<void>,
 //   job():                           Promise<{state, file, progress, timeLeft}>,
 //   pause(on: boolean):              Promise<void>,
@@ -13,7 +13,7 @@
 // Errors are TransportError.
 
 export class TransportError extends Error {
-  /** kind: 'network' | 'auth' | 'conflict' | 'http' | 'not-configured' */
+  /** kind: 'network' | 'aborted' | 'auth' | 'conflict' | 'http' | 'not-configured' */
   constructor(message, { kind = 'http', operation = '', status = null } = {}) {
     super(message);
     this.name = 'TransportError';

@@ -24,7 +24,7 @@ export function createOctoPrintTransport({ getBaseUrl, auth, fetch: fetchFn = gl
     return initPromise;
   };
 
-  async function attemptOnce(method, path, { json, form }, operation) {
+  async function attemptOnce(method, path, { json, form, signal }, operation) {
     let request = { url: base() + path, method, headers: {}, body: undefined };
     if (json !== undefined) {
       request.headers['Content-Type'] = 'application/json';
@@ -36,8 +36,10 @@ export function createOctoPrintTransport({ getBaseUrl, auth, fetch: fetchFn = gl
       res = await fetchFn(request.url, {
         method: request.method, headers: request.headers, body: request.body,
         ...(request.credentials ? { credentials: request.credentials } : {}),
+        ...(signal ? { signal } : {}),
       });
     } catch (e) {
+      if (signal && signal.aborted) throw new TransportError('запрос прерван', { kind: 'aborted', operation });
       throw new TransportError(NETWORK_HINT, { kind: 'network', operation });
     }
     const text = await res.text();
@@ -56,7 +58,7 @@ export function createOctoPrintTransport({ getBaseUrl, auth, fetch: fetchFn = gl
       try {
         return await attemptOnce(method, path, body, operation);
       } catch (e) {
-        if (!(e instanceof TransportError)) throw e;
+        if (!(e instanceof TransportError) || e.kind === 'aborted') throw e;
         const decision = await auth.recover(e, attempt);
         if (decision === 'retry' && attempt === 0) continue;
         const described = auth.describe(e);
@@ -73,13 +75,17 @@ export function createOctoPrintTransport({ getBaseUrl, auth, fetch: fetchFn = gl
     label: 'OctoPrint (REST)',
     configured: () => !!base() && (auth.ready ? auth.ready() : true),
 
-    async test() {
-      const v = await request('GET', '/api/version', {}, 'test');
+    /** signal (AbortSignal) — optional: aborts check requests (used by the connection monitor). */
+    async test({ signal } = {}) {
+      const v = await request('GET', '/api/version', { signal }, 'test');
       let printer = null;
       try {
-        const c = await request('GET', '/api/connection', {}, 'test');
+        const c = await request('GET', '/api/connection', { signal }, 'test');
         printer = c && c.current ? c.current.state : null;
-      } catch (e) { /* printer state — an optional part of the check */ }
+      } catch (e) {
+        if (e.kind === 'aborted') throw e;
+        /* printer state — an optional part of the check */
+      }
       return { server: v.server, printer };
     },
 

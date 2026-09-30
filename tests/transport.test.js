@@ -104,3 +104,16 @@ test('2xx non-JSON (a proxy page) — TransportError, not SyntaxError', async ()
   const t = make(fakeFetch({ body: '<html>proxy</html>' }));
   await assert.rejects(t.job(), (e) => e instanceof TransportError && e.kind === 'http' && e.operation === 'job' && e.message === 'OctoPrint вернул не JSON');
 });
+
+test('test({signal}): the signal goes to fetch, abort — TransportError kind=aborted without a retry', async () => {
+  const ac = new AbortController();
+  const seen = [];
+  const fetch = async (url, init) => {
+    seen.push(init.signal);
+    ac.abort();
+    throw new DOMException('aborted', 'AbortError');
+  };
+  await assert.rejects(make(fetch).test({ signal: ac.signal }), (e) => e instanceof TransportError && e.kind === 'aborted');
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0], ac.signal);
+});

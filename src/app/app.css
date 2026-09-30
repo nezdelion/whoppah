@@ -3,6 +3,7 @@
   --accent: #2f5fd0; --accent-text: #fff; --danger: #c43b2f; --warn-bg: #fff4d6; --warn: #7a5a00;
   --paper: #ffffff; --ink: #1d1d1b; --travel: #e0605a; --field: #9bb4ee; --limit: #c9c9c1;
   --layer-0: #1d1d1b; --layer-1: #c43b2f; --layer-2: #2f5fd0; --layer-3: #2c8a4b;
+  --conn-ok: #2c8a4b; --conn-off: #d99a00; --conn-bad: #c43b2f; --conn-idle: #9a9a94;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -10,6 +11,7 @@
     --accent: #6d93f0; --accent-text: #0e0e0d; --danger: #ef7a6f; --warn-bg: #3b3218; --warn: #f0d37a;
     --paper: #2b2b29; --ink: #ecece8; --travel: #ef7a6f; --field: #4a64a8; --limit: #4a4a46;
     --layer-0: #ecece8; --layer-1: #ef7a6f; --layer-2: #6d93f0; --layer-3: #6fcf8a;
+    --conn-ok: #6fcf8a; --conn-off: #f0b429; --conn-bad: #ef7a6f; --conn-idle: #77776f;
   }
 }
 * { box-sizing: border-box; }
@@ -91,3 +93,16 @@ fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7;
 .layer .note:empty, .layer .warn:empty { display: none; }
 .layer .note, .layer .warn { margin-top: 0; }
 .layer-body > summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+
+/* OctoPrint connection indicator */
+.conn { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.conn-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--conn-idle); flex: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--conn-idle); }
+.conn[data-status="ok"] .conn-dot { background: var(--conn-ok); box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--conn-ok); }
+.conn[data-status="printer-off"] .conn-dot { background: var(--conn-off); box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--conn-off); }
+.conn[data-status="auth"] .conn-dot, .conn[data-status="error"] .conn-dot { background: var(--conn-bad); box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--conn-bad); }
+.conn[data-status="checking"] .conn-dot { animation: conn-pulse 1.2s ease-in-out infinite; }
+@keyframes conn-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .conn[data-status="checking"] .conn-dot { animation: none; opacity: .5; } }
+.conn-block { margin: 0 0 8px; }
+.conn-label { font-size: 13px; color: var(--text); }
+.conn-detail { margin-top: 2px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }

@@ -4,6 +4,7 @@ import { renderForm } from './form.js';
 import { SCHEMAS } from '../../core/profile.js';
 import { serializeSettings, parseSettings, applySettings, SettingsFileError, SECTION_LABELS } from '../../storage/settings-file.js';
 import { downloadText } from '../download.js';
+import { createConnectionIndicator } from './connection-indicator.js';
 
 const CONNECTION_SCHEMA = [
   { key: 'url', label: 'Адрес', type: 'text', group: 'OctoPrint', placeholder: 'http://octopi.local' },
@@ -25,6 +26,7 @@ export function calibrationSummary(cal) {
 
 /**
  * ui.hideConnection — hide the address and key (plugin mode);
+ * ui.connectionMonitor — the connection monitor: in the "Connection" section an indicator is shown;
  * ui.needs(section) — the "permission required …" text for a section without write permission, or null (the section is then read-only).
  */
 export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
@@ -51,6 +53,7 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
     const body = need ? h('fieldset', { disabled: true, class: 'readonly' }, form.element) : form.element;
     host.append(h('section', { class: 'settings-section' },
       h('h3', {}, s.title),
+      s.id === 'connection' && ui.connectionMonitor ? createConnectionIndicator(ui.connectionMonitor, { text: true }).element : null,
       need ? h('div', { class: 'note' }, `Только чтение: ${need}`) : null,
       body, s.id === 'calibration' ? calibrationNote : null, h('div', { class: 'row' }, reset)));
   }
