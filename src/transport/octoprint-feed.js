@@ -8,6 +8,7 @@
 //   detail():         reason text for the UI
 //   readPosition():   Promise<{x, y, z, epochXY, epochZ}>
 //   readLimits():     Promise<{enabled, min: {x, y, z}, max: {x, y, z}}>
+//   readFirmwareSettings(): Promise<{maxAccel, maxFeed, accel, jerk, meshFade}> — M503, see parseFirmwareSettings
 //   session():        number — the connection session number (grows on every transition to "connected"); a limits read result is valid only within it
 //   epoch():          {xy, z} — coordinate epochs (sheet corner and touch): foreign G28/G92 advance only the affected axes,
 //                     a printer reconnect and a feed drop — both
@@ -54,8 +55,10 @@ export function createPrinterFeed({
   readTimeoutMs = READ_TIMEOUT_MS, expectTtlMs = EXPECT_TTL_MS, connectTimeoutMs = CONNECT_TIMEOUT_MS, debounceMs = DEBOUNCE_MS,
 }) {
   const {
-    FEED_LOG_FILTER, parseLogLine, normalizeSent, classifySent, epochParts, parsePosition, parseLimits, parseMarker, parseUnknownCommand,
+    FEED_LOG_FILTER, parseLogLine, normalizeSent, classifySent, epochParts, parsePosition, parseLimits, parseFirmwareSettings, parseMarker, parseUnknownCommand,
   } = replies;
+  // parsing the accumulated response text (position — line by line)
+  const PARSERS = { position: parsePosition, limits: parseLimits, settings: parseFirmwareSettings };
   const T = { ...defaultTimers, ...timers };
   const listeners = new Set();
   let state = 'off', detail = 'укажите адрес и API-ключ OctoPrint';
@@ -87,6 +90,8 @@ export function createPrinterFeed({
     if (active) finish(active, err);
   }
 
+  const NO_DATA = { limits: 'принтер не прислал границы прошивки (M211)', settings: 'принтер не прислал настройки прошивки (M503)' };
+
   function finish(rec, err, value) {
     if (active !== rec) return;
     T.clearTimeout(rec.timer);
@@ -94,7 +99,7 @@ export function createPrinterFeed({
     if (err) { rec.reject(err); return; }
     // a read is stale if any of the counters changed (the simplest rule: the read does not know which part the caller needs)
     if (epochXY !== rec.epoch0.xy || epochZ !== rec.epoch0.z) { rec.reject(positionError('stale')); return; }
-    if (!value) { rec.reject(positionError('nocoords', 'position', rec.kind === 'limits' ? 'принтер не прислал границы прошивки (M211)' : undefined)); return; }
+    if (!value) { rec.reject(positionError('nocoords', 'position', NO_DATA[rec.kind])); return; }
     if (rec.kind === 'position') change(() => { known = true; });
     rec.resolve(rec.kind === 'position' ? { ...value, epochXY: rec.epoch0.xy, epochZ: rec.epoch0.z } : value);
   }
@@ -113,8 +118,8 @@ export function createPrinterFeed({
     const unknown = parseUnknownCommand(text);
     if (unknown && unknown.includes(`PLT_B ${active.rid}`)) { finish(active, positionError('unsupported')); return; }
     if (!active.inside) return; // lines before the start marker belong to foreign requests
-    // M211 on Marlin 2.1 replies with two lines ("M211 S1 ; ON", "Min: … Max: …"): the limits are parsed from the accumulated text
-    const v = active.kind === 'position' ? parsePosition(text) : parseLimits(active.text = `${active.text || ''}\n${text}`);
+    // M211 on Marlin 2.1 replies with two lines ("M211 S1 ; ON", "Min: … Max: …"), M503 — with dozens: parsing from the accumulated text
+    const v = active.kind === 'position' ? parsePosition(text) : PARSERS[active.kind](active.text = `${active.text || ''}\n${text}`);
     if (v) active.value = v;
   }
 
@@ -337,6 +342,7 @@ export function createPrinterFeed({
     markHomed() { change(() => { homedXY = homedZ = true; }); },
     readPosition: () => read('position', 'M114'),
     readLimits: () => read('limits', 'M211'),
+    readFirmwareSettings: () => read('settings', 'M503'),
     command,
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     start() {

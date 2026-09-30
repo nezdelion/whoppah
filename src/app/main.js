@@ -11,6 +11,7 @@ import { createPrintService } from './print/print-service.js';
 import { limitsCheck, partialCheck } from './print/checks.js';
 import { createOctoPrintPosition } from '../transport/octoprint-position.js';
 import { createPrinterFeed, createFeedPositionSource } from '../transport/octoprint-feed.js';
+import { createFirmwareMemo } from './ui/feed-firmware.js';
 import * as marlinReplies from '../core/marlin-replies.js';
 import { setupCalibration } from './calibration/setup.js';
 import { createSvgSource } from './tabs/svg-tab.js';
@@ -132,9 +133,11 @@ async function start() {
     beforePlan: calibration ? [calibration.beforePlan] : [],
   });
 
+  // Firmware settings (M503) — standalone with a feed only; in plugin mode there is no feed and no read button (out of scope)
+  const firmware = feed ? createFirmwareMemo(feed) : null;
   const tabs = [
     ...[createSvgSource(), createPhotoSource()].map((source) => ({ id: source.id, title: source.title, source })),
-    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : { feed } }) },
+    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : { feed, firmware } }) },
   ];
 
   const nav = document.getElementById('tabs');

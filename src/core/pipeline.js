@@ -18,7 +18,7 @@ export function sheetCheck({ profile, calibration, job }) {
 /**
  * @param drawing  Drawing in document coordinates
  * @param settings { profile, calibration, job }
- * @param hooks    { beforeLayer? }
+ * @param hooks    { beforeLayer?, firmware? } — firmware: firmware settings (M503), only for the time estimate
  * @returns { machine, gcode, stats, warnings, outOfLimits, optimization, field }
  * Throws DrawingError if the drawing cannot be laid out or is empty.
  */
@@ -32,6 +32,6 @@ export function buildPlan(drawing, { profile, calibration, job }, hooks = {}) {
   const { drawing: machine, report } = optimize(laidOut, {
     simplifyTolMm: job.simplifyTolMm, mergeTolMm: job.mergeTolMm, linkTolMm: job.linkTolMm, start: [corner.x, corner.y],
   });
-  const out = generateGcode(machine, { profile, calibration, beforeLayer: hooks.beforeLayer });
+  const out = generateGcode(machine, { profile, calibration, beforeLayer: hooks.beforeLayer, firmware: hooks.firmware });
   return { machine, ...out, optimization: report, field, corner };
 }

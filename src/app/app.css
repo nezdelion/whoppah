@@ -111,3 +111,4 @@ fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7;
 .conn-block { margin: 0 0 8px; }
 .conn-label { font-size: 13px; color: var(--text); }
 .conn-detail { margin-top: 2px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.fw-info { white-space: pre-line; }

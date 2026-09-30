@@ -2,6 +2,7 @@
 import { SPACE, DrawingError, assertSpace, bbox, allLines } from './drawing.js';
 import { absoluteZ, axisLimits } from './profile.js';
 import { estimateTime } from './time-estimate.js';
+import { firmwareEstimateOptions } from './firmware-settings.js';
 
 const f3 = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
 const fz = (v) => String(Number(v.toFixed(3)));
@@ -17,10 +18,10 @@ export function overflow(bounds, limits) {
 }
 
 /**
- * @param ctx { profile, calibration, beforeLayer?: (layer, index) => string[] }
+ * @param ctx { profile, calibration, beforeLayer?: (layer, index) => string[], firmware?: firmware settings (M503) — only for the time estimate }
  * @returns { gcode, stats, warnings, outOfLimits: null | {x, y} }
  */
-export function generateGcode(drawing, { profile: p, calibration: cal, beforeLayer }) {
+export function generateGcode(drawing, { profile: p, calibration: cal, beforeLayer, firmware = null }) {
   assertSpace(drawing, SPACE.MACHINE, 'нужна раскладка на поле');
   const lines = allLines(drawing);
   const ob = bbox(drawing);
@@ -64,7 +65,7 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
   if (over.x > 1e-6) warnings.push(`выход за X на ${over.x.toFixed(1)} мм`);
   if (over.y > 1e-6) warnings.push(`выход за Y на ${over.y.toFixed(1)} мм`);
 
-  const time = estimateTime(moves, { accelXY: p.accelXY, accelZ: p.accelZ });
+  const time = estimateTime(moves, { accelXY: p.accelXY, accelZ: p.accelZ, ...firmwareEstimateOptions(firmware) });
   const layoutInfo = drawing.meta.layout;
   return {
     gcode: g.join('\n') + '\n',

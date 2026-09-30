@@ -5,12 +5,13 @@ const NUM = '(-?\\d+(?:\\.\\d+)?)';
 /**
  * Regular expression of the server log filter (OctoPrint applies it as Python re.search to the whole line).
  * The syntax is common to Python and JavaScript. Passes:
- * - Send: only G0–G3, G28, G90–G92, M211, M114, M118 (with or without a line number);
+ * - Send: only G0–G3, G28, G90–G92, M211, M503, M114, M118 (with or without a line number);
  * - Recv: coordinate lines (including "ok X:…"), the M211 reply (Soft endstops or "M211 S1 ; ON" + "Min: … Max: …"),
+ *   M503 settings lines (M201, M203, M204, M205, M420 — with and without "echo:"; comments "echo:; …", M92, M851, G29 and the rest are not passed),
  *   PLT_ markers, "Unknown command".
  */
-export const FEED_LOG_FILTER = '^(Send: (N[0-9]+ )?(G0?[0-3]|G28|G9[012]|M211|M114|M118)( |\\*|$)'
-  + '|Recv: ((ok )?X:|(echo:)?PLT_|.*Soft endstops|\\s*M211 S|\\s*Min:|.*Unknown command))';
+export const FEED_LOG_FILTER = '^(Send: (N[0-9]+ )?(G0?[0-3]|G28|G9[012]|M211|M503|M114|M118)( |\\*|$)'
+  + '|Recv: ((ok )?X:|(echo:)?PLT_|.*Soft endstops|\\s*M211 S|\\s*Min:|(echo:)?\\s*M(20[1345]|420) |.*Unknown command))';
 
 /** 'Send: N12 G0 X10*85' → { dir: 'send', text: 'N12 G0 X10*85' }; a foreign line form → null. */
 export function parseLogLine(line) {
@@ -31,7 +32,7 @@ export function normalizeSent(text) {
 
 /**
  * Command kind for coordinate tracking:
- * home (G28), setpos (G92), move (G0–G3, G91), mode (G90), query (M114, M211, M118), other.
+ * home (G28), setpos (G92), move (G0–G3, G91), mode (G90), query (M114, M211, M503, M118), other.
  */
 export function classifySent(command) {
   const c = normalizeSent(command);
@@ -42,7 +43,7 @@ export function classifySent(command) {
   if (code === 'G92') return 'setpos';
   if (['G0', 'G1', 'G2', 'G3', 'G91'].includes(code)) return 'move';
   if (code === 'G90') return 'mode';
-  if (['M114', 'M211', 'M118'].includes(code)) return 'query';
+  if (['M114', 'M211', 'M503', 'M118'].includes(code)) return 'query';
   return 'other';
 }
 
@@ -88,6 +89,42 @@ export function parseLimits(text) {
   };
   const min = axes('Min'), max = axes('Max');
   return min && max ? { enabled, min, max } : null;
+}
+
+/**
+ * Reply to M503 (several lines joined with a newline) → firmware settings; otherwise null.
+ * Lines like 'echo:  M203 X300.00 Y300.00 Z5.00 E60.00' (and without 'echo:'), units mm/s and mm/s²:
+ * M201 → maxAccel, M203 → maxFeed, M204 (P print, T travel) → accel, M205 (X Y Z, classic jerk) → jerk, M420 Z → meshFade.
+ * Other lines (comments 'echo:; …', M92, M851, M206, G29 mesh) are ignored. A part absent from the reply
+ * (or an axis without a number) is null; if there is no part at all — the whole result is null. M420 Z0 — fade is off (meshFade 0).
+ * @returns {maxAccel: {x,y,z}|null, maxFeed: {x,y,z}|null, accel: {print, travel}|null, jerk: {x,y,z}|null, meshFade: number|null}|null
+ */
+export function parseFirmwareSettings(text) {
+  const out = { maxAccel: null, maxFeed: null, accel: null, jerk: null, meshFade: null };
+  const num = (args, letter) => {
+    const m = new RegExp(`(?:^|\\s)${letter}\\s*${NUM}(?=\\s|$)`, 'i').exec(args);
+    return m ? Number(m[1]) : null;
+  };
+  const xyz = (args) => {
+    const v = { x: num(args, 'X'), y: num(args, 'Y'), z: num(args, 'Z') };
+    return v.x !== null && v.y !== null && v.z !== null ? v : null;
+  };
+  for (const raw of String(text).split(/\r?\n/)) {
+    const m = /^\s*(?:echo:\s*)?M(201|203|204|205|420)(?:\s+(.*))?$/i.exec(raw.replace(/;.*$/, ''));
+    if (!m) continue;
+    const args = m[2] || '';
+    if (m[1] === '201') out.maxAccel = xyz(args);
+    else if (m[1] === '203') out.maxFeed = xyz(args);
+    else if (m[1] === '205') out.jerk = xyz(args);
+    else if (m[1] === '204') {
+      const print = num(args, 'P'), travel = num(args, 'T');
+      if (print !== null || travel !== null) out.accel = { print, travel };
+    } else {
+      const z = num(args, 'Z');
+      if (z !== null) out.meshFade = z;
+    }
+  }
+  return Object.values(out).some((v) => v !== null) ? out : null;
 }
 
 /** Marker 'PLT_B 7' / 'echo:PLT_E 7' → { kind: 'B'|'E', rid }; otherwise null. */

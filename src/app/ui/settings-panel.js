@@ -57,7 +57,8 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
       h('h3', {}, s.title),
       s.id === 'connection' && ui.connectionMonitor ? createConnectionIndicator(ui.connectionMonitor, { text: true }).element : null,
       s.id === 'connection' && ui.feed ? createFeedIndicator(ui.feed, {
-        getProfile: () => state.get('profile'),
+        getProfile: () => state.get('profile'), getCalibration: () => state.get('calibration'),
+        firmware: ui.firmware, patchProfile: (changes) => state.patch('profile', changes), confirm: (m) => window.confirm(m),
         onProfile: (fn) => state.subscribe((e) => { if (e.type === 'settings') fn(); }),
       }).element : null,
       need ? h('div', { class: 'note' }, `Только чтение: ${need}`) : null,

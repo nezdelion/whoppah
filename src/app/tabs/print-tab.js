@@ -33,7 +33,7 @@ const readOffset = () => {
  */
 export function createPrintTab({ state, store, service, transport, connection, ui = {}, calibrator = null }) {
   let timer = 0, offCycle = () => {}, unsubscribe = () => {}, plan = null, planError = '';
-  let lastJobState = '', darkQuery = null, redraw = null, stopMonitor = () => {}, stopLink = () => {};
+  let lastJobState = '', darkQuery = null, redraw = null, stopMonitor = () => {}, stopLink = () => {}, stopFirmware = () => {};
 
   return {
     id: 'print',
@@ -201,9 +201,10 @@ export function createPrintTab({ state, store, service, transport, connection, u
       function render() {
         const s = state.settings();
         const drawing = state.drawing();
+        const fw = ui.firmware ? ui.firmware.get() : null; // the read firmware settings — only for the time estimate
         plan = null; planError = '';
         if (drawing) {
-          try { plan = buildPlan(drawing, s); } catch (e) { planError = e.message; }
+          try { plan = buildPlan(drawing, s, { firmware: fw }); } catch (e) { planError = e.message; }
         }
         const warnings = [...sheetCheck(s), ...(plan ? plan.warnings : [])];
         if (planError) warnings.push(planError);
@@ -215,7 +216,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
         if (plan) {
           const st = plan.stats, o = plan.optimization;
           $.stats.textContent = `${st.lines} линий · рисунок ${st.size[0].toFixed(1)}×${st.size[1].toFixed(1)} мм` +
-            ` · перо ${(st.draw / 1000).toFixed(2)} м, переезды ${(st.travel / 1000).toFixed(2)} м · ≈${minutesText(st.time)}` +
+            ` · перо ${(st.draw / 1000).toFixed(2)} м, переезды ${(st.travel / 1000).toFixed(2)} м · ≈${minutesText(st.time)}${fw ? ' (с учётом прошивки)' : ''}` +
             ` · X ${st.bbox.x0.toFixed(1)}…${st.bbox.x1.toFixed(1)}, Y ${st.bbox.y0.toFixed(1)}…${st.bbox.y1.toFixed(1)}` +
             ` · оптимизация: точек ${o.pointsBefore}→${o.pointsAfter}, линий ${o.linesBefore}→${o.linesAfter}, переезды ${(o.travelBefore / 1000).toFixed(2)}→${(o.travelAfter / 1000).toFixed(2)} м`;
         } else $.stats.textContent = '';
@@ -263,6 +264,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
         clearTimeout(timer);
         timer = setTimeout(render, 120);
       });
+      stopFirmware = ui.firmware ? ui.firmware.subscribe(() => { clearTimeout(timer); timer = setTimeout(render, 120); }) : () => {};
       darkQuery = matchMedia('(prefers-color-scheme: dark)');
       redraw = draw;
       darkQuery.addEventListener('change', redraw);
@@ -273,6 +275,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
 
     unmount() {
       unsubscribe();
+      stopFirmware();
       stopMonitor();
       stopLink();
       offCycle();

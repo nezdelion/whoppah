@@ -492,6 +492,26 @@ test('readLimits: a two-line M211 reply (Neptune 3 Pro)', async () => {
   s.feed.stop();
 });
 
+test('readFirmwareSettings: M503 between markers, a multi-line Neptune 3 Pro reply; without lines — nocoords', async () => {
+  const s = setup();
+  await s.live();
+  let p = s.feed.readFirmwareSettings();
+  await s.t.flush();
+  let rid = ridOf(s.sent);
+  assert.deepEqual(s.sent[0], [`M118 PLT_B ${rid}`, 'M400', 'M503', `M118 PLT_E ${rid}`]);
+  s.ws().push(current([`Recv: PLT_B ${rid}`, 'Recv: echo:  M203 X300.00 Y300.00 Z5.00 E60.00', 'Recv: echo:  M201 X1100.00 Y900.00 Z100.00 E5000.00',
+    'Recv: echo:  M204 P500.00 R1000.00 T500.00', 'Recv: echo:  M205 B20000 S0.00 T0.00 X8.00 Y8.00 Z0.40 E5.00', 'Recv: echo:  M420 S1 Z10.00', 'Recv: ok', `Recv: PLT_E ${rid}`]));
+  assert.deepEqual(await p, {
+    maxAccel: { x: 1100, y: 900, z: 100 }, maxFeed: { x: 300, y: 300, z: 5 }, accel: { print: 500, travel: 500 }, jerk: { x: 8, y: 8, z: 0.4 }, meshFade: 10,
+  });
+  p = s.feed.readFirmwareSettings();
+  await s.t.flush();
+  rid = ridOf(s.sent);
+  s.ws().push(current([`Recv: PLT_B ${rid}`, 'Recv: ok', `Recv: PLT_E ${rid}`]));
+  await assert.rejects(p, { kind: 'nocoords', message: /M503/ });
+  s.feed.stop();
+});
+
 test('own read commands are not considered foreign', async () => {
   const s = setup();
   await s.live();
