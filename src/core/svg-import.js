@@ -43,8 +43,10 @@ function parsePath(d) {
   for (;;) {
     ws();
     if (i >= s.length) break;
+    const start = i; // loop protection: each iteration must advance the position
     let cmd = s[i];
     if (/[a-zA-Z]/.test(cmd)) i++;
+    else if (lastCmd && 'Zz'.includes(lastCmd)) throw new SvgImportError('не удалось прочитать SVG: после Z данные без команды');
     else if (lastCmd) cmd = lastCmd === 'M' ? 'L' : lastCmd === 'm' ? 'l' : lastCmd;
     else throw new SvgImportError('не удалось прочитать SVG: path начинается не с команды');
     const rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase();
@@ -90,6 +92,7 @@ function parsePath(d) {
       default: throw new SvgImportError('не удалось прочитать SVG: неизвестная команда path ' + cmd);
     }
     if (!smooth) { lcx = cx; lcy = cy; }
+    if (i <= start) throw new SvgImportError('не удалось прочитать SVG: ошибка в данных path');
     lastCmd = cmd;
   }
   return subs;

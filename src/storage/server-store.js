@@ -30,7 +30,7 @@ export class ServerStore {
 
   #init() {
     if (!this.#ready) {
-      this.#ready = Promise.resolve(this.auth.init({ baseUrl: this.baseUrl, fetch: this.fetch }))
+      this.#ready = Promise.resolve(this.auth.init({ fetch: this.fetch }))
         .catch((e) => { this.#ready = null; throw e; });
     }
     return this.#ready;

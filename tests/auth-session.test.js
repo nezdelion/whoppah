@@ -14,7 +14,7 @@ authContract('auth-session', () => createSessionAuth({ csrfCookie: COOKIE, getCo
 function setup({ cookies = { v: `${COOKIE}=T1` }, login, handler, onExpired } = {}) {
   const loginCalls = [];
   const auth = createSessionAuth({
-    csrfCookie: COOKIE, getCookie: () => cookies.v, onExpired,
+    baseUrl: 'http://op/', csrfCookie: COOKIE, getCookie: () => cookies.v, onExpired,
     fetch: async (url, init) => { loginCalls.push({ url, ...init }); return login(loginCalls.length); },
   });
   const fetch = fakeFetch(handler || { body: { state: 'Operational' } });
@@ -116,4 +116,27 @@ test('refreshUrl: without a cookie at init and after a CSRF denial the token is 
   cookies.v = `${COOKIE}=STALE`;
   await createOctoPrintTransport({ getBaseUrl: () => 'http://op', auth, fetch: f2 }).cancel();
   assert.deepEqual(f2.calls.map((c) => c.headers['X-CSRF-Token']), ['STALE', 'FRESH']);
+});
+
+test('the login address is set by the strategy itself: /api/login does not depend on which client initialized it first', async () => {
+  const { createOctoPrintPosition } = await import('../src/transport/octoprint-position.js');
+  for (const first of ['position', 'transport']) {
+    const urls = [];
+    const auth = createSessionAuth({ baseUrl: 'http://op', csrfCookie: COOKIE, getCookie: () => `${COOKIE}=T`, fetch: async (u) => { urls.push(u); return ok(); } });
+    const f = fakeFetch({ body: { epoch: 1 } });
+    const pos = createOctoPrintPosition({ apiUrl: 'http://op/plugin/plotter/api', auth, fetch: f });
+    const tr = createOctoPrintTransport({ getBaseUrl: () => 'http://op', auth, fetch: fakeFetch({ body: {} }) });
+    if (first === 'position') { await pos.epoch(); await tr.job(); } else { await tr.job(); await pos.epoch(); }
+    assert.ok(urls.length >= 1 && urls.every((u) => u === 'http://op/api/login'), urls.join());
+  }
+});
+
+test('sameOrigin: the plugin empty address means configured, relative /api/... are preserved', async () => {
+  const auth = createSessionAuth({ csrfCookie: COOKIE, getCookie: () => `${COOKIE}=T`, fetch: async () => ok() });
+  const fetch = fakeFetch({ body: {} });
+  const t = createOctoPrintTransport({ getBaseUrl: () => '', auth, sameOrigin: true, fetch });
+  assert.equal(t.configured(), true);
+  await t.job();
+  assert.equal(fetch.calls[0].url, '/api/job');
+  assert.equal(createOctoPrintTransport({ getBaseUrl: () => '', auth, fetch }).configured(), false);
 });

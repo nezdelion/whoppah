@@ -10,13 +10,14 @@ function errorFromStatus(status, body, operation) {
   return new TransportError(`OctoPrint ответил ${status}${text ? ': ' + text : ''}`, { kind: 'http', operation, status });
 }
 
-export function createOctoPrintTransport({ getBaseUrl, auth, fetch: fetchFn = globalThis.fetch.bind(globalThis) }) {
+// sameOrigin: the address is intentionally empty (plugin, OctoPrint at the site root) — relative /api/... are correct and "configured" does not depend on the address.
+export function createOctoPrintTransport({ getBaseUrl, auth, sameOrigin = false, fetch: fetchFn = globalThis.fetch.bind(globalThis) }) {
   const base = () => String(getBaseUrl() || '').replace(/\/+$/, '');
   let initPromise = null;
 
   const ensureInit = () => {
     if (!initPromise) {
-      initPromise = Promise.resolve(auth.init({ baseUrl: base(), fetch: fetchFn })).catch((e) => {
+      initPromise = Promise.resolve(auth.init({ fetch: fetchFn })).catch((e) => {
         initPromise = null;
         throw e;
       });
@@ -73,7 +74,7 @@ export function createOctoPrintTransport({ getBaseUrl, auth, fetch: fetchFn = gl
   return {
     id: 'octoprint-http',
     label: 'OctoPrint (REST)',
-    configured: () => !!base() && (auth.ready ? auth.ready() : true),
+    configured: () => (sameOrigin || !!base()) && (auth.ready ? auth.ready() : true),
 
     /** signal (AbortSignal) — optional: aborts check requests (used by the connection monitor). */
     async test({ signal } = {}) {

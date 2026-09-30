@@ -188,7 +188,8 @@ test('a manual edit is saved: the epochs are pulled from the server after the wr
   a.server.g28();
   // manual input of Z only: the server (model) gives the current epoch of Z only
   a.server.calibration = { ...a.server.calibration, zTouch: 9, epochZ: 1 };
-  a.state.adoptCalibration(a.server.calibration, { epochsOnly: true });
+  await a.state.patch('calibration', { zTouch: 9 });
+  a.state.adoptCalibration(a.server.calibration, { merge: true });
   await a.timers.tick(POLL_MS);
   assert.deepEqual(a.monitor.status().stale, ['угол листа']);
 });
@@ -237,13 +238,38 @@ test('standalone: without a position source there are neither buttons nor a chec
   assert.equal(setupCalibration({ positionSource: undefined, state, store: new MemoryStore() }), null);
 });
 
-test('state.adoptCalibration: epochs only do not touch the entered values; without changes — no event', async () => {
+test('state.adoptCalibration merge: a written edit — the server values are accepted together with the epoch', async () => {
   const a = await app();
-  await a.state.patch('calibration', { cornerX: 7 });
+  await a.state.patch('calibration', { cornerX: 7, cornerY: 2, zTouch: 3 });
   let events = 0;
   a.state.subscribe((e) => { if (e.type === 'settings') events++; });
-  a.state.adoptCalibration({ cornerX: 1, cornerY: 2, zTouch: 3, epochXY: 4, epochZ: 5 }, { epochsOnly: true });
-  assert.deepEqual([cal(a).cornerX, cal(a).epochXY, cal(a).epochZ], [7, 4, 5]);
-  a.state.adoptCalibration({ cornerX: 1, epochXY: 4, epochZ: 5 }, { epochsOnly: true });
-  assert.equal(events, 1);
+  a.state.adoptCalibration({ cornerX: 1, cornerY: 2, zTouch: 3, epochXY: 4, epochZ: 5 }, { merge: true });
+  assert.deepEqual([cal(a).cornerX, cal(a).epochXY, cal(a).epochZ], [1, 4, 5]);
+  const n = events;
+  a.state.adoptCalibration({ cornerX: 1, cornerY: 2, zTouch: 3, epochXY: 4, epochZ: 5 }, { merge: true });
+  assert.equal(events, n);
+});
+
+test('state.adoptCalibration merge: an unwritten edit stays, its part is outdated', async () => {
+  const store = new MemoryStore();
+  const state = createState({ store });
+  await state.load();
+  store.save = async () => { throw new Error('сервер не принял'); };
+  await state.patch('calibration', { cornerX: 7, cornerY: 2, zTouch: 3 });
+  state.adoptCalibration({ cornerX: 1, cornerY: 2, zTouch: 3, epochXY: 4, epochZ: 5 }, { merge: true });
+  const c = state.get('calibration');
+  assert.deepEqual([c.cornerX, c.epochXY, c.epochZ], [7, null, 5]);
+});
+
+test('capture in another tab: the new coordinates from the server are accepted together with the epoch', async () => {
+  const a = await app();
+  a.monitor.start();
+  await a.capture.captureCorner(); await a.capture.captureTouch();
+  await a.timers.tick(POLL_MS);
+  assert.equal(a.monitor.status().message, '');
+  // another tab wrote a new corner at the same coordinate epoch
+  a.server.calibration = { ...a.server.calibration, cornerX: 99 };
+  await a.timers.tick(POLL_MS);
+  assert.equal(cal(a).cornerX, 99, 'print takes the new corner, not the old one');
+  assert.equal(a.monitor.status().message, '');
 });

@@ -6,10 +6,19 @@ import { PROGRESS, RESULT, ERROR, SLIDERS } from './protocol.js';
 
 export const STATUS = Object.freeze({ RUNNING: 'running', PARTIAL: 'partial', DONE: 'done', ERROR: 'error' });
 
+// After final a worker without live parameters is still listened to for GRACE_MS: a style could send data later than the declared
+// completion — then the layer returns to "intermediate" (style-engine spec). This is not "quiet time = completion":
+// the "done" status is already set by the signal, the timer only releases the worker.
+export const GRACE_MS = 1500;
+
 /**
  * @param opts { createSession(descriptor) -> session }  session — see plotterfun-adapter / native-adapter
+ *             graceMs, timers { setTimeout, clearTimeout } — the window for accepting late data after final; replaced in tests
  */
-export function createRunner({ createSession }) {
+export function createRunner({
+  createSession, graceMs = GRACE_MS,
+  timers = { setTimeout: (f, ms) => globalThis.setTimeout(f, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
+}) {
   const runs = new Map(); // key -> run
   let counter = 0;
 
@@ -22,6 +31,7 @@ export function createRunner({ createSession }) {
   function stop(run) {
     if (run.stopped) return;
     run.stopped = true;
+    if (run.graceTimer) { timers.clearTimeout(run.graceTimer); run.graceTimer = null; }
     run.worker.onmessage = null;
     run.worker.onerror = null;
     run.worker.onmessageerror = null;
@@ -71,6 +81,13 @@ export function createRunner({ createSession }) {
     emit();
   }
 
+  // A worker without live parameters is released after the late-data window; a late result extends the window.
+  function releaseLater(r) {
+    if (r.hasLive || r.stopped) return;
+    if (r.graceTimer) timers.clearTimeout(r.graceTimer);
+    r.graceTimer = timers.setTimeout(() => { r.graceTimer = null; stop(r); }, graceMs);
+  }
+
   function handle(r, ev, emit) {
     const s = r.state;
     if (s.status === STATUS.ERROR) return;
@@ -79,8 +96,8 @@ export function createRunner({ createSession }) {
     else if (ev.type === RESULT) {
       s.lines = ev.lines;
       s.reason = ev.reason || '';
-      if (ev.final) { s.status = STATUS.DONE; s.partial = false; s.reason = ''; if (!r.hasLive) stop(r); }
-      else { s.status = ev.late ? STATUS.PARTIAL : STATUS.RUNNING; s.partial = true; }
+      if (ev.final) { s.status = STATUS.DONE; s.partial = false; s.reason = ''; releaseLater(r); }
+      else { s.status = ev.late ? STATUS.PARTIAL : STATUS.RUNNING; s.partial = true; if (ev.late) releaseLater(r); }
     } else if (ev.type === ERROR) {
       s.status = STATUS.ERROR; s.message = ev.message; s.partial = true;
       stop(r);

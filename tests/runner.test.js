@@ -13,7 +13,13 @@ FakeWorker.all = [];
 
 const descriptor = (over = {}) => ({ id: 'own:fake', adapter: 'native', params: [], createWorker: () => new FakeWorker(), ...over });
 const image = () => ({ width: 2, height: 1, data: new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]) });
-const setup = () => { FakeWorker.all = []; return createRunner({ createSession: (d) => createNativeSession(d) }); };
+// Timers of the late-data window are manual: tick() fires everything that is scheduled.
+const fakeTimers = () => {
+  const pending = new Map(); let n = 0;
+  return { setTimeout: (f) => { pending.set(++n, f); return n; }, clearTimeout: (id) => pending.delete(id), tick() { for (const [id, f] of [...pending]) { pending.delete(id); f(); } }, count: () => pending.size };
+};
+let timers = fakeTimers();
+const setup = () => { FakeWorker.all = []; timers = fakeTimers(); return createRunner({ createSession: (d) => createNativeSession(d), timers }); };
 const line = (x) => Float64Array.of(x, 0, x + 1, 1);
 
 test('start: a copy of the image goes to the worker, the layer is computing', () => {
@@ -77,6 +83,35 @@ test('final: status done, the result is not intermediate, the worker is released
   w.emit({ type: 'result', runId: id, lines: [line(1), line(3)], final: true });
   assert.equal(seen.at(-1).status, STATUS.DONE);
   assert.equal(seen.at(-1).partial, false);
+  assert.equal(w.terminated, false, 'late data window is still open');
+  timers.tick();
+  assert.equal(w.terminated, true);
+});
+
+test('a style without live parameters: data after final within the late-data window returns the layer to intermediate', () => {
+  const runner = setup();
+  const seen = [];
+  runner.run('a', descriptor(), { image: image(), params: {} }, (s) => seen.push(s));
+  const w = FakeWorker.all[0], id = w.sent[0].msg.runId;
+  w.emit({ type: 'result', runId: id, lines: [line(1)], final: true });
+  assert.equal(seen.at(-1).status, STATUS.DONE);
+  w.emit({ type: 'result', runId: id, lines: [line(1), line(2)], final: false, late: true, reason: 'стиль продолжил вывод после завершения' });
+  assert.equal(seen.at(-1).status, STATUS.PARTIAL);
+  assert.equal(seen.at(-1).lines.length, 2);
+  assert.equal(w.terminated, false);
+  timers.tick();
+  assert.equal(w.terminated, true);
+  runner.cancel('a');
+});
+
+test('cancel and run replacement clear the release timer', () => {
+  const runner = setup();
+  runner.run('a', descriptor(), { image: image(), params: {} }, () => {});
+  const w = FakeWorker.all[0];
+  w.emit({ type: 'result', runId: w.sent[0].msg.runId, lines: [], final: true });
+  assert.equal(timers.count(), 1);
+  runner.cancel('a');
+  assert.equal(timers.count(), 0);
   assert.equal(w.terminated, true);
 });
 

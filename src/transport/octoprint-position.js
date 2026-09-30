@@ -23,7 +23,7 @@ export function createOctoPrintPosition({ apiUrl, auth, fetch: fetchFn = globalT
   let initPromise = null;
   const ensureInit = () => {
     if (!initPromise) {
-      initPromise = Promise.resolve(auth.init({ baseUrl: base, fetch: fetchFn })).catch((e) => { initPromise = null; throw e; });
+      initPromise = Promise.resolve(auth.init({ fetch: fetchFn })).catch((e) => { initPromise = null; throw e; });
     }
     return initPromise;
   };

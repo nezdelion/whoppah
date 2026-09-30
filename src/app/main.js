@@ -34,13 +34,13 @@ const pageVisibility = () => ({
 // Choosing implementations by mode: standalone — key and browser storage, plugin — session and OctoPrint server.
 function setupPlugin(env) {
   const auth = createSessionAuth({
-    csrfCookie: env.csrfCookie, refreshUrl: `${env.baseUrl}/plugin/plotter/env.json`,
+    baseUrl: env.baseUrl, csrfCookie: env.csrfCookie, refreshUrl: `${env.baseUrl}/plugin/plotter/env.json`,
     onExpired: () => notice.show('Сессия OctoPrint истекла. ',
       h('a', { href: `${env.loginUrl.replace(/\/+$/, '')}/?redirect=${encodeURIComponent(location.pathname + location.search)}`, target: '_blank', rel: 'noopener' }, 'Войти'),
       ' — рисунок и настройки на странице сохранятся.'),
   });
   const store = new ServerStore({ baseUrl: env.baseUrl, settingsUrl: env.settingsUrl, auth });
-  const transport = createOctoPrintTransport({ getBaseUrl: () => env.baseUrl, auth });
+  const transport = createOctoPrintTransport({ getBaseUrl: () => env.baseUrl, auth, sameOrigin: true });
   const needs = (section) => {
     if (section === 'profile' && !env.canEditProfile) return 'нужно право «изменение профиля машины»';
     if (section === 'calibration' && !env.canEditCalibration) return 'нужно право «управление принтером»';

@@ -28,7 +28,7 @@ export function createCalibrationMonitor({
   async function doRefresh() {
     try {
       const [next, doc] = await Promise.all([positionSource.epoch(), loadCalibration ? loadCalibration().catch(() => null) : null]);
-      if (doc) state.adoptCalibration(doc, { epochsOnly: true });
+      if (doc) state.adoptCalibration(doc, { merge: true });
       epoch = next;
     } catch (e) {
       // no connection: the previous state stays, no warning is invented

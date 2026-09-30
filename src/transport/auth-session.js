@@ -18,11 +18,12 @@ export function readCookie(cookieString, name) {
 /**
  * @param csrfCookie the full CSRF cookie name (computed by the plugin server)
  * @param getCookie  () => the document.cookie string
+ * @param baseUrl    OctoPrint root for login (`${baseUrl}/api/login`); independent of the clients calling init ('' — same origin)
  * @param fetch      optional: fetch for login requests (by default the one the client passed to init)
  * @param refreshUrl GET address whose response sets the CSRF cookie (the OctoPrint passive login does not refresh it)
  * @param onExpired  called when session expiry is detected
  */
-export function createSessionAuth({ csrfCookie, getCookie = () => globalThis.document?.cookie ?? '', fetch: ownFetch, refreshUrl = '', onExpired = () => {} }) {
+export function createSessionAuth({ baseUrl = '', csrfCookie, getCookie = () => globalThis.document?.cookie ?? '', fetch: ownFetch, refreshUrl = '', onExpired = () => {} }) {
   let http = null;
   let alive = null; // null — unknown; true/false — by the result of the last passive login
 
@@ -34,7 +35,7 @@ export function createSessionAuth({ csrfCookie, getCookie = () => globalThis.doc
     const headers = { 'Content-Type': 'application/json' };
     if (token()) headers['X-CSRF-Token'] = token();
     try {
-      const res = await fetchFn(http.baseUrl + '/api/login', {
+      const res = await fetchFn(String(baseUrl).replace(/\/+$/, '') + '/api/login', {
         method: 'POST', headers, body: JSON.stringify({ passive: true }), credentials: 'same-origin',
       });
       const text = await res.text();

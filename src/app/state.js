@@ -15,7 +15,9 @@ export function createState({ store, now = () => new Date().toISOString() }) {
   };
   let drawing = null;
   let sourceName = '';
+  let drawingSource = null;
   const listeners = new Set();
+  const unsaved = new Set(); // sections whose last edit is not yet written to the server (a write is in progress or failed)
 
   const emit = (event) => { for (const fn of [...listeners]) fn(event); };
   const normalizeSection = (section, values) => (section === 'connection'
@@ -24,10 +26,13 @@ export function createState({ store, now = () => new Date().toISOString() }) {
 
   // A storage failure (the server did not accept the write) must not break operation: the value stays in memory, the UI gets an event.
   const persist = async (section) => {
-    try { await store.save(section, settings[section]); } catch (e) {
+    unsaved.add(section);
+    const saving = settings[section];
+    try { await store.save(section, saving); } catch (e) {
       emit({ type: 'save-error', section, message: e.message });
       return;
     }
+    if (settings[section] === saving) unsaved.delete(section);
     emit({ type: 'saved', section });
   };
 
@@ -57,13 +62,25 @@ export function createState({ store, now = () => new Date().toISOString() }) {
 
     /**
      * Accept a calibration written or computed by the server (capture, confirmation, epochs), without writing it back.
-     * epochsOnly: update only the epochs, without touching the entered values.
+     * merge: merging on poll. Values and their epoch are accepted together, per part (xy: corner + epochXY; z: touch + epochZ).
+     * Edits are written to the server immediately, so a mismatch without an unwritten edit is a capture in another tab: take the server's.
+     * If our own edit is not yet written (a write is in progress or failed), the local values stay, and the part epoch
+     * is reset to null: the part is considered outdated, printing will warn instead of taking old coordinates for fresh ones.
      */
-    adoptCalibration(doc, { epochsOnly = false } = {}) {
+    adoptCalibration(doc, { merge = false } = {}) {
       const incoming = normalizeSection('calibration', doc);
-      const next = epochsOnly
-        ? { ...settings.calibration, epochXY: incoming.epochXY, epochZ: incoming.epochZ }
-        : incoming;
+      let next = incoming;
+      if (merge) {
+        const cur = settings.calibration;
+        const parts = [[['cornerX', 'cornerY'], 'epochXY'], [['zTouch'], 'epochZ']];
+        next = { ...cur };
+        const keepLocal = unsaved.has('calibration');
+        for (const [keys, epochKey] of parts) {
+          if (keys.every((k) => cur[k] === incoming[k])) next[epochKey] = incoming[epochKey];
+          else if (keepLocal) next[epochKey] = null;
+          else { for (const k of keys) next[k] = incoming[k]; next[epochKey] = incoming[epochKey]; }
+        }
+      }
       if (JSON.stringify(next) === JSON.stringify(settings.calibration)) return;
       settings.calibration = next;
       emit({ type: 'settings', section: 'calibration' });
@@ -72,12 +89,15 @@ export function createState({ store, now = () => new Date().toISOString() }) {
     /** A report of a failed write from places that write to storage themselves (source presets). */
     saveFailed(section, message) { emit({ type: 'save-error', section, message }); },
 
-    setDrawing(next, name = '') {
+    /** source — the id of the source tab that emitted the drawing: only it may recompute it automatically. */
+    setDrawing(next, name = '', source = null) {
       drawing = next;
+      drawingSource = source;
       sourceName = name || (next && next.meta.name) || '';
       emit({ type: 'drawing' });
     },
     drawing: () => drawing,
+    drawingSource: () => drawingSource,
     sourceName: () => sourceName,
 
     subscribe(fn) {
@@ -100,7 +120,9 @@ export function createState({ store, now = () => new Date().toISOString() }) {
  */
 export function createSourceContext({ state, store, sourceId }) {
   return {
-    emit: (drawing) => state.setDrawing(drawing),
+    emit: (drawing) => state.setDrawing(drawing, '', sourceId),
+    /** The current drawing was emitted by this source (otherwise its auto-recompute would overwrite another tab's drawing). */
+    ownsDrawing: () => state.drawingSource() === sourceId,
     presets: {
       async load() {
         const all = await store.load('presets');

@@ -86,3 +86,14 @@ test('fit picks the chord in mm on paper', () => {
   const coarse = importSvg(tree, { fit: { fieldMm: { w: 100, h: 100 }, marginMm: 0, rotate: false }, chordMm: 3 });
   assert.ok(allLines(fine)[0].length > allLines(coarse)[0].length * 5);
 });
+
+test('path: data after Z without a command — an error, not an infinite loop', async () => {
+  // a synchronous loop cannot be interrupted by a test timer, so the parser runs in a child process with a time limit
+  const { spawnSync } = await import('node:child_process');
+  const code = `import { importSvg, SvgImportError } from ${JSON.stringify(new URL('../src/core/svg-import.js', import.meta.url).href)};
+    try { importSvg({ tag: 'svg', attrs: {}, children: [{ tag: 'path', attrs: { d: 'M0 0 L1 1 Z 1' }, children: [] }] }); process.exit(1); }
+    catch (e) { process.exit(e instanceof SvgImportError ? 0 : 2); }`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { timeout: 3000 });
+  assert.equal(r.error, undefined, 'hung (timeout)');
+  assert.equal(r.status, 0);
+});

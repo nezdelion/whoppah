@@ -59,7 +59,7 @@ export function createSvgSource() {
 
       // the curve chord length depends on the scale on paper: recompute when the field changes
       unsubscribe = ctx.printParams.subscribe(() => {
-        if (!loaded) return;
+        if (!loaded || !ctx.ownsDrawing()) return; // the drawing was supplied by another tab — do not overwrite it
         const p = ctx.printParams.get();
         if (JSON.stringify({ fieldMm: p.fieldMm, marginMm: p.marginMm, rotate: p.rotate }) !== lastFit) runImport();
       });
