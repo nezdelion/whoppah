@@ -30,7 +30,7 @@ export function buildPlan(drawing, { profile, calibration, job }, hooks = {}) {
     rotate: job.rotate, asIs: job.asIs,
   });
   const { drawing: machine, report } = optimize(laidOut, {
-    simplifyTolMm: job.simplifyTolMm, mergeTolMm: job.mergeTolMm, start: [corner.x, corner.y],
+    simplifyTolMm: job.simplifyTolMm, mergeTolMm: job.mergeTolMm, linkTolMm: job.linkTolMm, start: [corner.x, corner.y],
   });
   const out = generateGcode(machine, { profile, calibration, beforeLayer: hooks.beforeLayer });
   return { machine, ...out, optimization: report, field, corner };

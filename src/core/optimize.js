@@ -65,8 +65,9 @@ function reversed(line) {
   return out;
 }
 
-// Greedy nearest-end search (with reversal); lines abutting within tol are joined.
-function sortMergeLines(lines, start, tol) {
+// Greedy nearest-end search (with reversal); lines abutting within tol are joined (the start of the next one is dropped),
+// and within linkTol are connected by a stroke without lifting the pen: all points stay in place, the transition is drawn.
+function sortMergeLines(lines, start, tol, linkTol) {
   const n = lines.length;
   if (!n) return [];
   const b = bounds(lines);
@@ -106,9 +107,9 @@ function sortMergeLines(lines, start, tol) {
     }
     used[best[0]] = 1;
     const pts = best[1] ? reversed(lines[best[0]]) : lines[best[0]].slice();
-    if (out.length && bd <= tol) {
+    if (out.length && (bd <= tol || bd <= linkTol)) {
       const target = out[out.length - 1];
-      for (let k = 2; k < pts.length; k++) target.push(pts[k]);
+      for (let k = bd <= tol ? 2 : 0; k < pts.length; k++) target.push(pts[k]);
     } else out.push(pts);
     p = [pts[pts.length - 2], pts[pts.length - 1]];
   }
@@ -116,10 +117,10 @@ function sortMergeLines(lines, start, tol) {
 }
 
 /** Lines within a layer are reordered, the layer order is preserved; each layer starts where the previous one ended. */
-export function sortMerge(drawing, { start = [0, 0], tol = 0.05 } = {}) {
+export function sortMerge(drawing, { start = [0, 0], tol = 0.05, linkTol = 0 } = {}) {
   let p = start;
   const layers = drawing.layers.map((layer) => {
-    const lines = sortMergeLines(layer.lines, p, tol);
+    const lines = sortMergeLines(layer.lines, p, tol, linkTol);
     if (lines.length) { const l = lines[lines.length - 1]; p = [l[l.length - 2], l[l.length - 1]]; }
     return { ...layer, lines };
   });
@@ -138,10 +139,10 @@ export function travelLength(drawing, start = [0, 0]) {
 }
 
 /** simplify -> sortMerge, plus a before/after report. */
-export function optimize(drawing, { simplifyTolMm = 0, mergeTolMm = 0.05, start = [0, 0] } = {}) {
+export function optimize(drawing, { simplifyTolMm = 0, mergeTolMm = 0.05, linkTolMm = 0, start = [0, 0] } = {}) {
   const before = stats(drawing);
   const travelBefore = travelLength(drawing, start);
-  const result = sortMerge(simplify(drawing, simplifyTolMm), { start, tol: mergeTolMm });
+  const result = sortMerge(simplify(drawing, simplifyTolMm), { start, tol: mergeTolMm, linkTol: linkTolMm });
   const after = stats(result);
   return {
     drawing: result,

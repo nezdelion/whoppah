@@ -56,6 +56,9 @@ export const JOB_SCHEMA = Object.freeze([
   { key: 'asIs', label: 'Как есть в мм (без масштабирования)', type: 'bool', default: false, group: 'Выравнивание' },
   num('simplifyTolMm', 'Упрощение линий (допуск)', 0.05, { unit: 'мм', min: 0, group: 'Оптимизация' }),
   num('mergeTolMm', 'Слияние концов (допуск)', 0.05, { unit: 'мм', min: 0, group: 'Оптимизация' }),
+  // hatching: adjacent parallel strokes are joined by a drawn transition — without lifting and lowering the pen (Z is slow)
+  // the transition is visible on paper (at the hatching edge it almost merges with the outline); set near the hatching step, 0 — off
+  num('linkTolMm', 'Соединять концы штрихом до', 0, { unit: 'мм', min: 0, group: 'Оптимизация' }),
   { key: 'customFormats', label: 'Свои форматы', type: 'formats', default: DEFAULT_CUSTOM_FORMATS, hidden: true },
 ]);
 

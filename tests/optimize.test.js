@@ -81,3 +81,19 @@ test('the report contains points, lines and travel path before and after', () =>
   assert.ok(report.travelBefore >= report.travelAfter - 1e-9);
   assert.equal(travelLength(draw([[3, 4, 5, 5]]), [0, 0]), 5);
 });
+
+test('joining by a stroke: the ends do not move, the transition is drawn', () => {
+  // two parallel hatching lines with a 1 mm step
+  const d = draw([[0, 0, 10, 0], [10, 1, 0, 1]]);
+  const merged = sortMerge(d, { start: [0, 0], tol: 1.5 });
+  assert.deepEqual(merged.layers[0].lines, [[0, 0, 10, 0, 0, 1]], 'merging drops the start of the next line');
+  const linked = sortMerge(d, { start: [0, 0], tol: 0.05, linkTol: 1.5 });
+  assert.deepEqual(linked.layers[0].lines, [[0, 0, 10, 0, 10, 1, 0, 1]]);
+});
+
+test('joining by a stroke: beyond the tolerance — a separate line with a lift', () => {
+  const d = draw([[0, 0, 10, 0], [10, 3, 0, 3]]);
+  const out = sortMerge(d, { start: [0, 0], tol: 0.05, linkTol: 1.5 });
+  assert.equal(out.layers[0].lines.length, 2);
+  assert.equal(sortMerge(d, { start: [0, 0] }).layers[0].lines.length, 2, 'off by default');
+});
