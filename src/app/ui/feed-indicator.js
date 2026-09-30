@@ -2,6 +2,7 @@
 // a dot and state label, the reason, a button to read the firmware limits (M211) and a warning about the profile limits.
 import { h } from './dom.js';
 import { FEED_LABELS } from '../../transport/octoprint-feed.js';
+import { createLimitsMemo } from './feed-limits.js';
 import { limitsWarnings, limitsWarningText } from '../../core/marlin-replies.js';
 
 // feed states → data-status values from app.css (--conn-*)
@@ -17,7 +18,8 @@ const axisRange = (l, a) => `${a.toUpperCase()} ${l.min[a]}…${l.max[a]}`;
  * @returns { element, destroy }
  */
 export function createFeedIndicator(feed, { getProfile, onProfile }) {
-  let limits = null, message = '', busy = false;
+  const memo = createLimitsMemo(feed);
+  let message = '', busy = false;
   const dot = h('span', { class: 'conn-dot', 'aria-hidden': 'true' });
   const label = h('span', { class: 'conn-label' });
   const badge = h('span', { class: 'conn conn-full' }, dot, label);
@@ -31,10 +33,8 @@ export function createFeedIndicator(feed, { getProfile, onProfile }) {
   async function readLimits() {
     busy = true; message = 'читаю границы прошивки (M211)…'; render();
     try {
-      limits = await feed.readLimits();
-      message = '';
+      message = await memo.read() ? '' : 'Поток переподключился во время чтения — прочитайте границы снова';
     } catch (e) {
-      limits = null;
       message = `Не удалось прочитать границы: ${e.message}`;
     }
     busy = false;
@@ -43,6 +43,7 @@ export function createFeedIndicator(feed, { getProfile, onProfile }) {
 
   function render() {
     const s = feed.state();
+    const limits = memo.get(); // a stale result (drop, reconnect, address change) is reset
     badge.dataset.status = DOT[s];
     label.textContent = FEED_LABELS[s];
     detail.textContent = feed.detail();

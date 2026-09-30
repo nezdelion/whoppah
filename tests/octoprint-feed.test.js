@@ -501,3 +501,112 @@ test('createFeedPositionSource: read and epoch on top of the feed', async () => 
   assert.equal(await src.epoch(), 1);
   s.feed.stop();
 });
+
+/** login fetch that does not respond; on abort by signal it rejects like a real one. */
+function hangingLogin() {
+  const f = { signals: [] };
+  f.fetch = (url, init) => new Promise((resolve, reject) => {
+    f.signals.push(init.signal);
+    if (init.signal) init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+  });
+  return f;
+}
+
+test('hung login: on the connection timeout the request is aborted, a retry with a pause is scheduled', async () => {
+  const login = hangingLogin();
+  const s = setup({ login });
+  s.feed.start();
+  await s.t.flush();
+  assert.equal(s.feed.state(), 'connecting');
+  assert.equal(login.signals.length, 1);
+  await s.t.tick(10000);
+  assert.equal(login.signals[0].aborted, true);
+  assert.equal(s.feed.state(), 'unavailable');
+  assert.equal(s.t.items.size, 1); // retry timer
+  await s.t.tick(1000);
+  assert.equal(login.signals.length, 2); // the retry happened
+  s.feed.stop();
+});
+
+test('hung login: stop() aborts the request and clears the timers', async () => {
+  const login = hangingLogin();
+  const s = setup({ login });
+  s.feed.start();
+  await s.t.flush();
+  s.feed.stop();
+  assert.equal(login.signals[0].aborted, true);
+  assert.equal(s.t.items.size, 0);
+});
+
+test('hung login: configChanged() aborts the request; a late response of the old attempt is ignored', async () => {
+  const late = [];
+  const s = setup({ login: { fetch: (url, init) => new Promise((resolve) => late.push({ init, resolve })) } });
+  s.feed.start();
+  await s.t.flush();
+  s.feed.configChanged();
+  assert.equal(late[0].init.signal.aborted, true);
+  s.feed.stop();
+  // a fetch that does not understand signal still responds late: the socket must not open
+  late[0].resolve({ ok: true, status: 200, json: async () => ({ name: 'plot', session: 'X' }) });
+  await s.t.flush();
+  assert.equal(FakeWebSocket.instances.length, 0);
+  assert.equal(s.feed.state(), 'off');
+});
+
+test('command: a server refusal (with a status) drops own entries; a foreign G28 after that is considered foreign', async () => {
+  const s = setup({ sendFail: new TransportError('409', { kind: 'conflict', status: 409 }) });
+  await s.live();
+  await assert.rejects(s.feed.command(['G28']), { kind: 'conflict' });
+  const e0 = s.feed.epoch();
+  s.ws().push(current(['Send: G28']));
+  assert.equal(s.feed.epoch(), e0 + 1);
+  s.feed.stop();
+});
+
+test('command: only the entries of this call are dropped (by identity), not all with the same text', async () => {
+  const s = setup();
+  await s.live();
+  await s.feed.command(['G28']); // sent successfully, waiting for the echo
+  s.env.sendFail = new TransportError('409', { kind: 'conflict', status: 409 });
+  await assert.rejects(s.feed.command(['G28']));
+  const e0 = s.feed.epoch();
+  s.ws().push(current(['Send: G28'])); // the echo of the first is own
+  assert.equal(s.feed.epoch(), e0);
+  s.ws().push(current(['Send: G28'])); // the second was not sent: this one is already foreign
+  assert.equal(s.feed.epoch(), e0 + 1);
+  s.feed.stop();
+});
+
+test('command: a network error is ambiguous — the entries stay (the command may have gone out)', async () => {
+  const s = setup({ sendFail: new TransportError('нет ответа', { kind: 'network' }) });
+  await s.live();
+  await assert.rejects(s.feed.command(['G28']), { kind: 'network' });
+  const e0 = s.feed.epoch();
+  s.ws().push(current(['Send: G28']));
+  assert.equal(s.feed.epoch(), e0);
+  s.feed.stop();
+});
+
+test('session(): grows on every transition to connected', async () => {
+  const s = setup();
+  await s.live();
+  const a = s.feed.session();
+  s.ws().drop();
+  await s.t.tick(1000);
+  s.ws().open();
+  s.ws().push(history());
+  await s.t.flush();
+  assert.equal(s.feed.state(), 'live');
+  assert.ok(s.feed.session() > a);
+  s.feed.stop();
+});
+
+test('command: 5xx is ambiguous (a proxy could have answered after acceptance) — the entries stay', async () => {
+  const s = setup({ sendFail: new TransportError('502', { kind: 'http', status: 502 }) });
+  await s.live();
+  await assert.rejects(s.feed.command(['G28']));
+  const e0 = s.feed.epoch();
+  s.ws().push(current(['Send: G28']));
+  assert.equal(s.feed.epoch(), e0);
+  s.feed.stop();
+});

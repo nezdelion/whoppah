@@ -8,6 +8,7 @@
 //   detail():         reason text for the UI
 //   readPosition():   Promise<{x, y, z, epoch}>
 //   readLimits():     Promise<{enabled, min: {x, y, z}, max: {x, y, z}}>
+//   session():        number — the connection session number (grows on every transition to "connected"); a limits read result is valid only within it
 //   epoch():          number — coordinate epoch (advances on foreign G28/G92, a printer reconnect, a feed drop)
 //   positionKnown():  boolean — false after a foreign move, a drop, printing; true after a read
 //   command(lines):   send commands via REST and record them as "own"
@@ -56,7 +57,7 @@ export function createPrinterFeed({
   const listeners = new Set();
   let state = 'off', detail = 'укажите адрес и API-ключ OctoPrint';
   let epochN = 0, known = false, busy = false;
-  let gen = 0, ws = null, wasLive = false, attempt = 0, retryTimer = null, connectTimer = null, debounceTimer = null;
+  let gen = 0, sessionN = 0, loginAbort = null, ws = null, wasLive = false, attempt = 0, retryTimer = null, connectTimer = null, debounceTimer = null;
   let started = false, offVisibility = () => {};
   let expected = [], active = null, ridCounter = 0;
 
@@ -152,7 +153,7 @@ export function createPrinterFeed({
     if (payload.state && payload.state.flags) busy = isBusyFlags(payload.state.flags);
     if (state !== 'live') {
       T.clearTimeout(connectTimer); connectTimer = null;
-      attempt = 0; wasLive = true;
+      attempt = 0; wasLive = true; sessionN++;
       setState('live', 'поток связи с принтером на связи');
     }
     if (busy !== wasBusy) {
@@ -169,6 +170,7 @@ export function createPrinterFeed({
 
   function closeSocket() {
     T.clearTimeout(connectTimer); connectTimer = null;
+    if (loginAbort) { const a = loginAbort; loginAbort = null; a.abort(); } // login in flight: cancel it, its late response is not needed
     if (ws) {
       const s = ws;
       ws = null;
@@ -215,20 +217,25 @@ export function createPrinterFeed({
     if (!visibility.visible()) { setState('off', 'страница скрыта'); return; }
     if (!configured()) { setState('off', 'укажите адрес и API-ключ OctoPrint'); return; }
     setState('connecting', 'подключение к потоку…');
+    // one deadline for the whole procedure: login, reading the response, opening the socket, auth/subscription and the first message
+    connectTimer = T.setTimeout(() => drop(my, 'поток не ответил за 10 с'), connectTimeoutMs);
+    const ac = new AbortController();
+    loginAbort = ac;
     let login;
     try {
       const res = await fetchFn(`${base()}/api/login`, {
-        method: 'POST', headers: { 'X-Api-Key': getKey(), 'Content-Type': 'application/json' }, body: JSON.stringify({ passive: true }),
+        signal: ac.signal, method: 'POST', headers: { 'X-Api-Key': getKey(), 'Content-Type': 'application/json' }, body: JSON.stringify({ passive: true }),
       });
       if (my !== gen) return;
       if (res.status === 400 || res.status === 401 || res.status === 403) { forbid(my, `ключ не принят (${res.status}): поток недоступен`); return; }
       if (!res.ok) { drop(my, `OctoPrint ответил ${res.status} на вход`); return; }
       login = await res.json();
     } catch (e) {
-      drop(my, HINT_CORS);
+      drop(my, HINT_CORS); // on cancel my is already stale — drop does nothing
       return;
     }
     if (my !== gen) return;
+    if (loginAbort === ac) loginAbort = null;
     if (!login || typeof login.name !== 'string' || typeof login.session !== 'string') { drop(my, 'OctoPrint не выдал сессию для потока'); return; }
     const auth = `${login.name}:${login.session}`; // in memory only, to the socket only
     login = null;
@@ -237,7 +244,6 @@ export function createPrinterFeed({
       socket = new WS(`${base().replace(/^http/i, 'ws')}/sockjs/websocket`);
     } catch (e) { drop(my, HINT_CORS); return; }
     ws = socket;
-    connectTimer = T.setTimeout(() => drop(my, 'поток не ответил за 10 с'), connectTimeoutMs);
     socket.onopen = () => {
       if (my !== gen) return;
       socket.send(JSON.stringify({ auth }));
@@ -286,14 +292,23 @@ export function createPrinterFeed({
   /** Record the commands in the "own" queue and send via REST. */
   function command(lines) {
     const now = T.now();
-    for (const l of lines) if (classifySent(l) !== 'other') expected.push({ text: normalizeSent(l), at: now });
-    return Promise.resolve(sendCommands(lines));
+    const mine = [];
+    for (const l of lines) if (classifySent(l) !== 'other') { const e = { text: normalizeSent(l), at: now }; mine.push(e); expected.push(e); }
+    return Promise.resolve(sendCommands(lines)).catch((err) => {
+      // OctoPrint refused (4xx): the command was definitely not queued — we remove exactly our entries, otherwise
+      // an identical foreign command from the terminal within the TTL would pass for "own". A network error/timeout/cancel and 5xx
+      // (a proxy may have answered when OctoPrint had already accepted) are ambiguous: the command may have gone out, we keep the entries
+      // (an extra one expires by TTL, while a lost one would give a false "foreign" G28).
+      if (err instanceof TransportError && err.status >= 400 && err.status < 500) expected = expected.filter((e) => !mine.includes(e));
+      throw err;
+    });
   }
 
   return {
     state: () => state,
     detail: () => detail,
     epoch: () => epochN,
+    session: () => sessionN,
     positionKnown: () => known,
     readPosition: () => read('position', 'M114'),
     readLimits: () => read('limits', 'M211'),
