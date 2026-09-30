@@ -23,9 +23,19 @@ function numberField(f, values, onChange) {
 
 function boolField(f, values, onChange) {
   const input = h('input', { type: 'checkbox', checked: !!values[f.key], onchange: () => onChange({ [f.key]: input.checked }) });
-  // warn — the ⚠ sign with details on hover; clicking the sign does not toggle the checkbox
-  const warn = f.warn ? h('span', { class: 'warn-icon', title: f.warn, tabindex: 0, role: 'img', 'aria-label': f.warn, onclick: (e) => e.preventDefault() }, '⚠') : null;
-  return { element: h('label', { class: 'check wide' }, input, f.label, warn), set(v) { input.checked = !!v[f.key]; } };
+  // warn — the ⚠ sign: details on hover, and on tap (phone) as text under the checkbox; tapping does not toggle the checkbox
+  let warn = null, text = null;
+  if (f.warn) {
+    text = h('span', { class: 'warn-text', hidden: true, onclick: (e) => e.preventDefault() }, f.warn);
+    const toggle = () => { text.hidden = !text.hidden; warn.setAttribute('aria-expanded', String(!text.hidden)); };
+    warn = h('span', {
+      class: 'warn-icon', title: f.warn, tabindex: 0, role: 'button', 'aria-label': 'Подробнее', 'aria-expanded': 'false',
+      onclick: (e) => { e.preventDefault(); toggle(); },
+      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } },
+    }, '⚠');
+  }
+  const body = warn ? [h('span', { class: 'check-text' }, f.label, ' ', warn), text] : [f.label];
+  return { element: h('label', { class: 'check wide' + (warn ? ' has-warn' : '') }, input, ...body), set(v) { input.checked = !!v[f.key]; } };
 }
 
 function enumField(f, values, onChange) {

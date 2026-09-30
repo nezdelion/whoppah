@@ -14,7 +14,8 @@ export function renderPreview(canvas, { machine, field, corner, limits, showTrav
   const x0 = Math.min(limits.x0, corner.x) - 5, x1 = Math.max(limits.x1, corner.x + field.w) + 5;
   const y0 = Math.min(limits.y0, corner.y) - 5, y1 = Math.max(limits.y1, corner.y + field.h) + 5;
   const k = Math.min(W / (x1 - x0), H / (y1 - y0));
-  const P = (x, y) => [(x - x0) * k, H - (y - y0) * k];
+  const ox = (W - (x1 - x0) * k) / 2, oy = (H - (y1 - y0) * k) / 2; // the area is centered in the canvas, not pressed to the bottom left
+  const P = (x, y) => [ox + (x - x0) * k, H - oy - (y - y0) * k];
   const rect = (ax, ay, bx, by) => { const [px, py] = P(ax, by), [qx, qy] = P(bx, ay); return [px, py, qx - px, qy - py]; };
 
   g.setLineDash([6 / z, 4 / z]); g.strokeStyle = col('--limit'); g.lineWidth = 1 / z;

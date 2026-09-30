@@ -38,6 +38,9 @@ header .subtitle { color: var(--muted); }
 label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
 label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
 .warn-icon { color: var(--danger); cursor: help; font-size: 14px; line-height: 1; }
+label.check.has-warn { flex-wrap: wrap; }
+label.check.has-warn .check-text { flex: 1; min-width: 0; }
+.warn-text { flex-basis: 100%; padding: 6px 8px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); font-size: 12px; line-height: 1.4; }
 input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; min-width: 0; width: 100%; }
 input.invalid { border-color: var(--danger); }
 input[type=checkbox] { width: auto; }
@@ -50,7 +53,8 @@ button:disabled { opacity: .45; cursor: default; }
 .row.spread { justify-content: space-between; }
 .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
 .drop.over { border-color: var(--accent); color: var(--accent); }
-.preview { width: 100%; height: auto; aspect-ratio: 1; display: block; background: var(--bg); border-radius: 6px; }
+/* the print preview is square, no taller than the window: on a wide screen it does not stretch to the whole column */
+.preview { width: min(100%, max(260px, calc(100vh - 200px))); height: auto; aspect-ratio: 1; display: block; margin: 0 auto; background: var(--bg); border-radius: 6px; }
 .stats, .note { margin-top: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .warn { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 6px 8px; margin-top: 8px; white-space: pre-line; }
 .warn:empty { display: none; }
