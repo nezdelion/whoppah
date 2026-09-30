@@ -10,7 +10,9 @@ test('absolute Z and the corner from the defaults match the old DEFAULTS', () =>
   const D = legacy.DEFAULTS;
   assert.deepEqual([z.down, z.up, z.start, z.end], [D.zDown, D.zUp, D.zStart, D.zEnd]);
   assert.deepEqual([c.cornerX, c.cornerY], [D.cornerX, D.cornerY]);
-  for (const k of ['fDraw', 'fTravel', 'fZUp', 'fZDown', 'home', 'motorsOff', 'limX0', 'limX1', 'limY0', 'limY1']) assert.equal(p[k], D[k], k);
+  for (const k of ['fDraw', 'fTravel', 'fZUp', 'fZDown', 'home', 'motorsOff']) assert.equal(p[k], D[k], k);
+  // limits per the Neptune 3 Pro M211 (X-5…235, Y0…232) with a 1 mm margin, not from the old app
+  assert.deepEqual([p.limX0, p.limX1, p.limY0, p.limY1], [-4, 234, 1, 231]);
   assert.deepEqual(resolveField(j), { w: D.fieldW, h: D.fieldH });
   assert.equal(j.marginMm, D.margin);
   assert.equal(j.mergeTolMm, D.mergeTol);

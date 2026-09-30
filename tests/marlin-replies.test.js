@@ -44,6 +44,12 @@ test('parseLimits: Soft endstops with different amounts of spaces', () => {
   assert.deepEqual(parseLimits('Soft endstops: Off   Min:  X-5.5 Y0 Z0   Max:  X235 Y235 Z280'),
     { enabled: false, min: { x: -5.5, y: 0, z: 0 }, max: { x: 235, y: 235, z: 280 } });
   assert.equal(parseLimits('echo:Soft endstops: On'), null);
+  // Neptune 3 Pro (Marlin 2.1): two lines joined by the feed
+  assert.deepEqual(parseLimits('\n  M211 S1 ; ON\n  Min:  X-5.00 Y0.00 Z0.00   Max:  X235.00 Y232.00 Z283.00'),
+    { enabled: true, min: { x: -5, y: 0, z: 0 }, max: { x: 235, y: 232, z: 283 } });
+  assert.equal(parseLimits('  M211 S0 ; OFF\n  Min:  X0 Y0 Z0   Max:  X1 Y1 Z1').enabled, false);
+  assert.equal(parseLimits('  M211 S1 ; ON'), null);
+  assert.equal(parseLimits('  Min:  X-5.00 Y0.00 Z0.00   Max:  X235.00 Y232.00 Z283.00'), null);
   assert.equal(parseLimits('ok'), null);
 });
 
@@ -63,6 +69,7 @@ test('log filter: passes the needed, cuts the rest', () => {
     'Send: M118 PLT_B 1', 'Send: G01 X1', 'Send: G2 X1 I1', 'Send: G90',
     'Recv: X:10.00 Y:20.00 Z:5.00 E:0.00 Count X:800', 'Recv: ok X:0.0 Y:0.0 Z:0.0 E:0.0',
     'Recv: echo:Soft endstops: On   Min:  X0.00 Y0.00 Z0.00   Max:  X235.00 Y235.00 Z280.00',
+    'Recv:   M211 S1 ; ON', 'Recv:   Min:  X-5.00 Y0.00 Z0.00   Max:  X235.00 Y232.00 Z283.00',
     'Recv: PLT_B 1', 'Recv: echo:PLT_E 1', 'Recv: echo:Unknown command: "M118 PLT_B 1"',
   ];
   const cut = [

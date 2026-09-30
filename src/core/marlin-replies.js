@@ -6,10 +6,11 @@ const NUM = '(-?\\d+(?:\\.\\d+)?)';
  * Regular expression of the server log filter (OctoPrint applies it as Python re.search to the whole line).
  * The syntax is common to Python and JavaScript. Passes:
  * - Send: only G0–G3, G28, G90–G92, M211, M114, M118 (with or without a line number);
- * - Recv: coordinate lines (including "ok X:…"), Soft endstops, PLT_ markers, "Unknown command".
+ * - Recv: coordinate lines (including "ok X:…"), the M211 reply (Soft endstops or "M211 S1 ; ON" + "Min: … Max: …"),
+ *   PLT_ markers, "Unknown command".
  */
 export const FEED_LOG_FILTER = '^(Send: (N[0-9]+ )?(G0?[0-3]|G28|G9[012]|M211|M114|M118)( |\\*|$)'
-  + '|Recv: ((ok )?X:|(echo:)?PLT_|.*Soft endstops|.*Unknown command))';
+  + '|Recv: ((ok )?X:|(echo:)?PLT_|.*Soft endstops|\\s*M211 S|\\s*Min:|.*Unknown command))';
 
 /** 'Send: N12 G0 X10*85' → { dir: 'send', text: 'N12 G0 X10*85' }; a foreign line form → null. */
 export function parseLogLine(line) {
@@ -51,17 +52,24 @@ export function parsePosition(text) {
   return m ? { x: Number(m[1]), y: Number(m[2]), z: Number(m[3]) } : null;
 }
 
-/** Reply to M211: 'echo:Soft endstops: On   Min:  X0.00 Y0.00 Z0.00   Max:  X235.00 Y235.00 Z280.00' → {enabled, min, max}; otherwise null. */
+/**
+ * Reply to M211 → {enabled, min, max}; otherwise null. Marlin formats:
+ * - one line: 'echo:Soft endstops: On   Min:  X0.00 Y0.00 Z0.00   Max:  X235.00 Y235.00 Z280.00';
+ * - two lines (Neptune 3 Pro, Marlin 2.1): '  M211 S1 ; ON' and '  Min:  X-5.00 Y0.00 Z0.00   Max:  X235.00 Y232.00 Z283.00' —
+ *   the lines are passed joined with a newline.
+ */
 export function parseLimits(text) {
   const s = String(text);
-  const head = /Soft endstops:?\s*(ON|OFF)/i.exec(s);
-  if (!head) return null;
+  const soft = /Soft endstops:?\s*(ON|OFF)/i.exec(s);
+  const report = /M211\s+S([01])/i.exec(s);
+  if (!soft && !report) return null;
+  const enabled = soft ? soft[1].toUpperCase() === 'ON' : report[1] === '1';
   const axes = (name) => {
     const m = new RegExp(`${name}:\\s*X\\s*${NUM}\\s+Y\\s*${NUM}\\s+Z\\s*${NUM}`, 'i').exec(s);
     return m ? { x: Number(m[1]), y: Number(m[2]), z: Number(m[3]) } : null;
   };
   const min = axes('Min'), max = axes('Max');
-  return min && max ? { enabled: head[1].toUpperCase() === 'ON', min, max } : null;
+  return min && max ? { enabled, min, max } : null;
 }
 
 /** Marker 'PLT_B 7' / 'echo:PLT_E 7' → { kind: 'B'|'E', rid }; otherwise null. */

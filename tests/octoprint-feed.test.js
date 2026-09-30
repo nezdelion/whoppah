@@ -478,6 +478,18 @@ test('readLimits: M211 between markers â†’ {enabled, min, max}; without a line â
   s.feed.stop();
 });
 
+test('readLimits: a two-line M211 reply (Neptune 3 Pro)', async () => {
+  const s = setup();
+  await s.live();
+  const p = s.feed.readLimits();
+  await s.t.flush();
+  const rid = ridOf(s.sent);
+  s.ws().push(current([`Recv: PLT_B ${rid}`, 'Recv:   M211 S1 ; ON', 'Recv:   Min:  X-5.00 Y0.00 Z0.00   Max:  X235.00 Y232.00 Z283.00',
+    'Recv: ok', `Recv: PLT_E ${rid}`]));
+  assert.deepEqual(await p, { enabled: true, min: { x: -5, y: 0, z: 0 }, max: { x: 235, y: 232, z: 283 } });
+  s.feed.stop();
+});
+
 test('own read commands are not considered foreign', async () => {
   const s = setup();
   await s.live();

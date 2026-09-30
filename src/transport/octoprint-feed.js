@@ -94,14 +94,15 @@ export function createPrinterFeed({
     const marker = parseMarker(text);
     if (marker) {
       if (marker.rid !== active.rid) return;
-      if (marker.kind === 'B') { active.inside = true; active.value = null; return; }
+      if (marker.kind === 'B') { active.inside = true; active.value = null; active.text = ''; return; }
       if (active.inside) finish(active, null, active.value);
       return;
     }
     const unknown = parseUnknownCommand(text);
     if (unknown && unknown.includes(`PLT_B ${active.rid}`)) { finish(active, positionError('unsupported')); return; }
     if (!active.inside) return; // lines before the start marker belong to foreign requests
-    const v = active.kind === 'position' ? parsePosition(text) : parseLimits(text);
+    // M211 on Marlin 2.1 replies with two lines ("M211 S1 ; ON", "Min: … Max: …"): the limits are parsed from the accumulated text
+    const v = active.kind === 'position' ? parsePosition(text) : parseLimits(active.text = `${active.text || ''}\n${text}`);
     if (v) active.value = v;
   }
 

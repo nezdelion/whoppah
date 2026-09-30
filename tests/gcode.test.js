@@ -35,7 +35,7 @@ test('drawing feed in the first working move of each line', () => {
 });
 
 test('exceeding the right limit: out of X limits by 12.0 mm, outOfLimits', () => {
-  const r = generateGcode(one([[200, 60, 242, 60]]), { profile, calibration: cal });
+  const r = generateGcode(one([[200, 60, 246, 60]]), { profile, calibration: cal });
   assert.ok(r.warnings.includes('выход за X на 12.0 мм'));
   assert.ok(Math.abs(r.outOfLimits.x - 12) < 1e-9);
   assert.equal(r.outOfLimits.y, 0);
