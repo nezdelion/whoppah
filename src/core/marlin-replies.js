@@ -46,6 +46,24 @@ export function classifySent(command) {
   return 'other';
 }
 
+/**
+ * Which coordinate parts (xy — sheet corner, z — touch) the command shifts: { xy, z } (both false — does not shift).
+ * G28 without axes — both; with axes — only the named ones (X/Y → xy, Z → z); other parameters (O, R, L) do not count as axes.
+ * G92: X/Y → xy, Z → z; only E (or other non-axis parameters) — neither; without parameters — both.
+ * Other commands (including G0–G3) do not shift coordinates.
+ */
+export function epochParts(command) {
+  const c = normalizeSent(command);
+  const m = /^G0*(28|92)(?![0-9.])\s*(.*)$/.exec(c);
+  if (!m) return { xy: false, z: false };
+  const args = m[2];
+  const letters = new Set(args.match(/[A-Z]/g) || []);
+  const xy = letters.has('X') || letters.has('Y'), z = letters.has('Z');
+  if (xy || z) return { xy, z };
+  if (m[1] === '92' && letters.size) return { xy: false, z: false };
+  return { xy: true, z: true };
+}
+
 /** Reply to M114: 'X:10.00 Y:20.00 Z:5.00 E:0.00 Count …' or 'ok X:… Y:… Z:…' → {x, y, z}; otherwise null. */
 export function parsePosition(text) {
   const m = new RegExp(`(?:^|\\s)X:\\s*${NUM}\\s+Y:\\s*${NUM}\\s+Z:\\s*${NUM}`).exec(String(text));

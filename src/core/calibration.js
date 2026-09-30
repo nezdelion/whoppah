@@ -25,14 +25,16 @@ export function touchFromPosition(position) {
 }
 
 /**
- * Part freshness: a part is fresh if its epoch equals the current printer coordinate epoch.
+ * Part freshness: a part is fresh if its epoch equals the current printer coordinate epoch for that part
+ * (sheet corner — the xy counter, touch — the z counter; G28 X Y does not affect the touch, G28 Z does not affect the corner).
  * A calibration without an epoch (entered before capture existed) is considered outdated.
+ * @param currentEpochs { xy: number, z: number }
  * @returns { xy: boolean, z: boolean, stale: string[] (labels of the outdated parts) }
  */
-export function calibrationFreshness(calibration, currentEpoch) {
+export function calibrationFreshness(calibration, currentEpochs) {
   const out = { stale: [] };
   for (const [part, { epochKey, label }] of Object.entries(CALIBRATION_PARTS)) {
-    out[part] = Number.isInteger(calibration[epochKey]) && calibration[epochKey] === currentEpoch;
+    out[part] = Number.isInteger(calibration[epochKey]) && calibration[epochKey] === currentEpochs[part];
     if (!out[part]) out.stale.push(label);
   }
   return out;

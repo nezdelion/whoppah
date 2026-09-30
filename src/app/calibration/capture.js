@@ -25,7 +25,7 @@ export function createCalibrationCapture({ state, positionSource, monitor }) {
       try {
         const pos = await positionSource.read();
         const { cornerX, cornerY } = cornerFromPosition(pos, offset);
-        const doc = await positionSource.saveCorner({ x: cornerX, y: cornerY, epoch: pos.epoch });
+        const doc = await positionSource.saveCorner({ x: cornerX, y: cornerY, epoch: pos.epochXY });
         return await apply(doc, `Угол листа: X${cornerX} Y${cornerY}`);
       } catch (e) { return fail(e); }
     },
@@ -35,7 +35,7 @@ export function createCalibrationCapture({ state, positionSource, monitor }) {
         const pos = await positionSource.read();
         const t = touchFromPosition(pos);
         if (t.error) return { ok: false, message: t.error };
-        const doc = await positionSource.saveTouch({ zTouch: t.zTouch, epoch: pos.epoch });
+        const doc = await positionSource.saveTouch({ zTouch: t.zTouch, epoch: pos.epochZ });
         return await apply(doc, `Касание: Z${t.zTouch}`);
       } catch (e) { return fail(e); }
     },

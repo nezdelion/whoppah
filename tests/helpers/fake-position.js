@@ -3,8 +3,9 @@ import { TransportError } from '../../src/transport/transport.js';
 
 export function fakeServer({ head = { x: -5, y: 50, z: 8 }, calibration = null } = {}) {
   const s = {
-    head: { ...head }, epoch: 0, calibration, fail: null, reads: 0, epochCalls: 0,
-    g28() { s.epoch++; },
+    head: { ...head }, epochs: { xy: 0, z: 0 }, calibration, fail: null, reads: 0, epochCalls: 0,
+    /** G28: without arguments — both epochs; 'xy' / 'z' — only its own (G28 X Y / G28 Z) */
+    g28(part) { if (part !== 'z') s.epochs.xy++; if (part !== 'xy') s.epochs.z++; },
     /** error of the next read(): kind from the source error list */
     failNext(kind, message = kind) { s.fail = new TransportError(message, { kind }); },
   };
@@ -14,21 +15,21 @@ export function fakeServer({ head = { x: -5, y: 50, z: 8 }, calibration = null }
     async read() {
       s.reads++;
       if (s.fail) { const e = s.fail; s.fail = null; throw e; }
-      return { ...s.head, epoch: s.epoch };
+      return { ...s.head, epochXY: s.epochs.xy, epochZ: s.epochs.z };
     },
-    async epoch() { s.epochCalls++; return s.epoch; },
+    async epoch() { s.epochCalls++; return { ...s.epochs }; },
     async saveCorner({ x, y, epoch }) {
-      if (epoch !== s.epoch) throw stale();
+      if (epoch !== s.epochs.xy) throw stale();
       s.calibration = { ...doc(), cornerX: x, cornerY: y, epochXY: epoch, updatedAt: 'T' };
       return structuredClone(s.calibration);
     },
     async saveTouch({ zTouch, epoch }) {
-      if (epoch !== s.epoch) throw stale();
+      if (epoch !== s.epochs.z) throw stale();
       s.calibration = { ...doc(), zTouch, epochZ: epoch, updatedAt: 'T' };
       return structuredClone(s.calibration);
     },
     async confirm(part) {
-      s.calibration = { ...doc(), [part === 'xy' ? 'epochXY' : 'epochZ']: s.epoch };
+      s.calibration = { ...doc(), [part === 'xy' ? 'epochXY' : 'epochZ']: s.epochs[part] };
       return structuredClone(s.calibration);
     },
   };

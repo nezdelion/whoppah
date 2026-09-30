@@ -34,6 +34,8 @@ function setup({ url = 'http://octopi.local', key = 'KEY-SECRET', login = fakeLo
   return { feed, t, env, sent, login, ws, live };
 }
 
+/** coordinate epochs grown by dxy and dz */
+const plus = (e, dxy, dz) => ({ xy: e.xy + dxy, z: e.z + dz });
 const ridOf = (sent) => /PLT_B (\S+)/.exec(sent[sent.length - 1][0])[1];
 
 test('connection: key login, ws address, auth and a subscription with a filter; connected after the first message', async () => {
@@ -160,7 +162,7 @@ test('a drop after connected: the coordinate epoch grows, the position is unknow
   s.ws().drop();
   await assert.rejects(p, { kind: 'offline' });
   assert.equal(s.feed.state(), 'connecting');
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
   assert.equal(s.feed.positionKnown(), false);
   await s.t.tick(1000);
   assert.equal(FakeWebSocket.instances.length, 2);
@@ -182,7 +184,7 @@ test('a hidden page closes the connection, a visible one opens it', async () => 
   s.env.setVisible(false);
   assert.ok(first.closed);
   assert.equal(s.feed.state(), 'off');
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
   await s.t.tick(60000);
   assert.equal(FakeWebSocket.instances.length, 1);
   s.env.setVisible(true);
@@ -220,9 +222,9 @@ test('printer events Connected/Disconnected raise the coordinate epoch', async (
   const e0 = s.feed.epoch();
   s.ws().push({ event: { type: 'Disconnected', payload: null } });
   s.ws().push({ event: { type: 'Connected', payload: { port: 'VIRTUAL', baudrate: 0 } } });
-  assert.equal(s.feed.epoch(), e0 + 2);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 2, 2));
   s.ws().push({ event: { type: 'PrintStarted' } });
-  assert.equal(s.feed.epoch(), e0 + 2);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 2, 2));
   s.feed.stop();
 });
 
@@ -249,9 +251,9 @@ test('an own command (with line number and checksum) does not change the epoch; 
   await s.feed.command(['G0 X10 Y10']);
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: N40 G0 X10 Y10*97']));
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   s.ws().push(current(['Send: N41 G28*12']));
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
   s.feed.stop();
 });
 
@@ -271,14 +273,14 @@ test('a foreign G92 raises the epoch; a foreign move and G91 — only unknown', 
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G0 X50']));
   assert.equal(s.feed.positionKnown(), false);
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   await readOk();
   s.ws().push(current(['Send: G91']));
   assert.equal(s.feed.positionKnown(), false);
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   await readOk();
   s.ws().push(current(['Send: G92 X0 Y0']));
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 0));
   assert.equal(s.feed.positionKnown(), false);
   s.feed.stop();
 });
@@ -288,7 +290,7 @@ test('foreign G90 and M114/M211 queries do not affect coordinates', async () => 
   await s.live();
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G90', 'Send: M114', 'Send: M211']));
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   s.feed.stop();
 });
 
@@ -299,7 +301,7 @@ test('an own command not seen within 10 s is dropped: the same one later is cons
   await s.t.tick(10001);
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G28']));
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
   s.feed.stop();
 });
 
@@ -310,9 +312,9 @@ test('an own command is dropped one at a time: two sends — two matches, the th
   await s.feed.command(['G28']);
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G28', 'Send: G28']));
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   s.ws().push(current(['Send: G28']));
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
   s.feed.stop();
 });
 
@@ -322,7 +324,7 @@ test('the log from history is not analyzed as foreign commands', async () => {
   await s.t.flush();
   s.ws().open();
   s.ws().push(history(['Send: G28', 'Send: G92 X0', 'Send: G0 X1']));
-  assert.equal(s.feed.epoch(), 0);
+  assert.deepEqual(s.feed.epoch(), { xy: 0, z: 0 });
   s.feed.stop();
 });
 
@@ -338,12 +340,12 @@ test('printing: Send lines are not analyzed, the log subscription is dropped; af
   assert.equal(s.feed.positionKnown(), true);
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G28', 'Send: G1 X5'], { printing: true }));
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   assert.equal(s.feed.positionKnown(), true);
   assert.deepEqual(s.ws().sent[s.ws().sent.length - 1].subscribe.state.logs, false);
   await assert.rejects(s.feed.readPosition(), { kind: 'busy' });
   s.ws().push(current(['Send: G1 X6'], { printing: true }));
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   s.ws().push(current([], { printing: false }));
   assert.equal(s.feed.positionKnown(), false);
   assert.equal(s.ws().sent[s.ws().sent.length - 1].subscribe.state.logs, FEED_LOG_FILTER);
@@ -368,8 +370,8 @@ test('readPosition: commands and result between own markers; foreign lines and m
     `Send: M118 PLT_E ${rid}`, `Recv: PLT_E ${rid}`,
     'Recv: X:55 Y:55 Z:55',                         // after the end
   ]));
-  assert.deepEqual(await p, { x: 10, y: 20, z: 5, epoch: e0 });
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(await p, { x: 10, y: 20, z: 5, epochXY: e0.xy, epochZ: e0.z });
+  assert.deepEqual(s.feed.epoch(), e0);
   assert.equal(s.feed.positionKnown(), true);
   s.feed.stop();
 });
@@ -382,7 +384,7 @@ test('readPosition: lines arrive in batches in different messages; the last coor
   const rid = ridOf(s.sent);
   s.ws().push(current([`Recv: PLT_B ${rid}`, 'Recv: ok X:1 Y:1 Z:1 E:0']));
   s.ws().push(current(['Recv: ok X:3.5 Y:4.5 Z:6 E:0', `Recv: echo:PLT_E ${rid}`]));
-  assert.deepEqual(await p, { x: 3.5, y: 4.5, z: 6, epoch: 0 });
+  assert.deepEqual(await p, { x: 3.5, y: 4.5, z: 6, epochXY: 0, epochZ: 0 });
   s.feed.stop();
 });
 
@@ -499,7 +501,7 @@ test('own read commands are not considered foreign', async () => {
   const e0 = s.feed.epoch();
   s.ws().push(current([`Send: N7 M118 PLT_B ${rid}*11`, `Recv: PLT_B ${rid}`, 'Send: N9 M114*3', 'Recv: X:1 Y:2 Z:3', `Send: N10 M118 PLT_E ${rid}*4`, `Recv: PLT_E ${rid}`]));
   await p;
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   assert.equal(s.feed.positionKnown(), true);
   s.feed.stop();
 });
@@ -508,9 +510,9 @@ test('createFeedPositionSource: read and epoch on top of the feed', async () => 
   const s = setup();
   await s.live();
   const src = createFeedPositionSource(s.feed);
-  assert.equal(await src.epoch(), 0);
+  assert.deepEqual(await src.epoch(), { xy: 0, z: 0 });
   s.ws().push(current(['Send: G28']));
-  assert.equal(await src.epoch(), 1);
+  assert.deepEqual(await src.epoch(), { xy: 1, z: 1 });
   s.feed.stop();
 });
 
@@ -571,7 +573,7 @@ test('command: a server refusal (with a status) drops own entries; a foreign G28
   await assert.rejects(s.feed.command(['G28']), { kind: 'conflict' });
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G28']));
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
   s.feed.stop();
 });
 
@@ -583,9 +585,9 @@ test('command: only the entries of this call are dropped (by identity), not all 
   await assert.rejects(s.feed.command(['G28']));
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G28'])); // the echo of the first is own
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   s.ws().push(current(['Send: G28'])); // the second was not sent: this one is already foreign
-  assert.equal(s.feed.epoch(), e0 + 1);
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
   s.feed.stop();
 });
 
@@ -595,7 +597,7 @@ test('command: a network error is ambiguous — the entries stay (the command ma
   await assert.rejects(s.feed.command(['G28']), { kind: 'network' });
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G28']));
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
   s.feed.stop();
 });
 
@@ -619,6 +621,78 @@ test('command: 5xx is ambiguous (a proxy could have answered after acceptance) �
   await assert.rejects(s.feed.command(['G28']));
   const e0 = s.feed.epoch();
   s.ws().push(current(['Send: G28']));
-  assert.equal(s.feed.epoch(), e0);
+  assert.deepEqual(s.feed.epoch(), e0);
+  s.feed.stop();
+});
+
+// --- independent corner (xy) and touch (z) epochs ---
+
+const foreign = async (cmds) => {
+  const s = setup();
+  await s.live();
+  const e0 = s.feed.epoch();
+  s.ws().push(current(cmds));
+  const e1 = s.feed.epoch();
+  s.feed.stop();
+  return [e1.xy - e0.xy, e1.z - e0.z];
+};
+
+test('foreign commands advance only the affected counters', async () => {
+  assert.deepEqual(await foreign(['Send: G28']), [1, 1]);
+  assert.deepEqual(await foreign(['Send: G28 O']), [1, 1]);
+  assert.deepEqual(await foreign(['Send: G28 X Y']), [1, 0]);
+  assert.deepEqual(await foreign(['Send: G28 Z']), [0, 1]);
+  assert.deepEqual(await foreign(['Send: G28 X Z']), [1, 1]);
+  assert.deepEqual(await foreign(['Send: G92 E0']), [0, 0]);
+  assert.deepEqual(await foreign(['Send: G92 Z5']), [0, 1]);
+  assert.deepEqual(await foreign(['Send: G92 X0 Y0']), [1, 0]);
+  assert.deepEqual(await foreign(['Send: G92']), [1, 1]);
+});
+
+test('G92 E0 does not make the position unknown, G28 Z does', async () => {
+  const s = setup();
+  await s.live();
+  const src = createFeedPositionSource(s.feed);
+  const p = src.read();
+  await s.t.flush();
+  const rid = ridOf(s.sent);
+  s.ws().push(current([`Recv: PLT_B ${rid}`, 'Recv: X:1 Y:2 Z:3 E:0', `Recv: PLT_E ${rid}`]));
+  await p;
+  s.ws().push(current(['Send: G92 E0']));
+  assert.equal(s.feed.positionKnown(), true);
+  s.ws().push(current(['Send: G28 Z']));
+  assert.equal(s.feed.positionKnown(), false);
+  s.feed.stop();
+});
+
+test('a printer reconnect and a feed drop advance both counters', async () => {
+  const s = setup();
+  await s.live();
+  const e0 = s.feed.epoch();
+  s.ws().push({ event: { type: 'Connected', payload: {} } });
+  assert.deepEqual(s.feed.epoch(), plus(e0, 1, 1));
+  s.ws().drop();
+  assert.deepEqual(s.feed.epoch(), plus(e0, 2, 2));
+  s.feed.stop();
+});
+
+test('readPosition: a foreign G28 Z during the read — stale (outdated when any counter changes)', async () => {
+  const s = setup();
+  await s.live();
+  const p = s.feed.readPosition();
+  await s.t.flush();
+  const rid = ridOf(s.sent);
+  s.ws().push(current([`Recv: PLT_B ${rid}`, 'Send: G28 Z', 'Recv: X:0 Y:0 Z:0', `Recv: PLT_E ${rid}`]));
+  await assert.rejects(p, { kind: 'stale' });
+  s.feed.stop();
+});
+
+test('an own G28 Z does not change the epochs', async () => {
+  const s = setup();
+  await s.live();
+  await s.feed.command(['G28 Z']);
+  const e0 = s.feed.epoch();
+  s.ws().push(current(['Send: G28 Z']));
+  assert.deepEqual(s.feed.epoch(), e0);
   s.feed.stop();
 });

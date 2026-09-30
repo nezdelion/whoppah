@@ -9,15 +9,15 @@ import { fakeFetch } from './helpers/fake-fetch.js';
 const make = (fetch, auth = createApiKeyAuth({ getKey: () => 'K' })) => createOctoPrintPosition({ apiUrl: 'http://op/plugin/plotter/api/', auth, fetch });
 
 test('read: POST /position, the position with an epoch', async () => {
-  const fetch = fakeFetch({ body: { x: -5, y: 50, z: 8.2, epoch: 3 } });
-  assert.deepEqual(await make(fetch).read(), { x: -5, y: 50, z: 8.2, epoch: 3 });
+  const fetch = fakeFetch({ body: { x: -5, y: 50, z: 8.2, epochXY: 3, epochZ: 4 } });
+  assert.deepEqual(await make(fetch).read(), { x: -5, y: 50, z: 8.2, epochXY: 3, epochZ: 4 });
   assert.equal(fetch.calls[0].url, 'http://op/plugin/plotter/api/position');
   assert.equal(fetch.calls[0].method, 'POST');
 });
 
 test('epoch: GET /position/epoch', async () => {
-  const fetch = fakeFetch({ body: { epoch: 7 } });
-  assert.equal(await make(fetch).epoch(), 7);
+  const fetch = fakeFetch({ body: { xy: 7, z: 2 } });
+  assert.deepEqual(await make(fetch).epoch(), { xy: 7, z: 2 });
   assert.equal(fetch.calls[0].url, 'http://op/plugin/plotter/api/position/epoch');
   assert.equal(fetch.calls[0].method, 'GET');
 });
@@ -37,6 +37,8 @@ test('network, non-JSON and an incomplete response', async () => {
   await assert.rejects(make(fakeFetch(new TypeError('Failed to fetch'))).read(), (e) => e.kind === 'network');
   await assert.rejects(make(fakeFetch({ body: '<html>' })).read(), (e) => e.kind === 'http');
   await assert.rejects(make(fakeFetch({ body: { x: 1 } })).read(), (e) => e.kind === 'http');
+  await assert.rejects(make(fakeFetch({ body: { x: 1, y: 2, z: 3, epoch: 1 } })).read(), (e) => e.kind === 'http'); // old format with a single epoch
+  await assert.rejects(make(fakeFetch({ body: { epoch: 1 } })).epoch(), (e) => e.kind === 'http');
   await assert.rejects(make(fakeFetch({ status: 500, body: 'oops' })).epoch(), (e) => e.kind === 'http' && /500/.test(e.message));
 });
 

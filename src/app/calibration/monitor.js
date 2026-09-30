@@ -1,5 +1,5 @@
 // Calibration freshness: polling the printer's coordinate epoch while the page is visible, and checking on demand.
-// Part epochs (epochXY/epochZ) live in the calibration (written by the plugin server); here they are only compared with the current one.
+// Part epochs (epochXY/epochZ) live in the calibration (written by the plugin server); here they are only compared with the current ones (the corner and touch have separate counters).
 import { calibrationFreshness, staleMessage } from '../../core/calibration.js';
 
 export const POLL_MS = 5000;
@@ -14,13 +14,13 @@ export function createCalibrationMonitor({
   timers = { setInterval: (f, ms) => globalThis.setInterval(f, ms), clearInterval: (id) => globalThis.clearInterval(id) },
   visibility = { visible: () => true, subscribe: () => () => {} },
 }) {
-  let epoch = null; // current coordinate epoch from the last successful poll
+  let epochs = null; // current coordinate epochs { xy, z } from the last successful poll
   let timer = null, unsubscribe = () => {}, offState = () => {}, running = false, inflight = null;
   const listeners = new Set();
 
   const status = (calibration = state.get('calibration')) => {
-    if (epoch === null) return { known: false, xy: true, z: true, stale: [], message: '' };
-    const f = calibrationFreshness(calibration, epoch);
+    if (epochs === null) return { known: false, xy: true, z: true, stale: [], message: '' };
+    const f = calibrationFreshness(calibration, epochs);
     return { known: true, ...f, message: staleMessage(f.stale) };
   };
   const emit = () => { const s = status(); for (const fn of [...listeners]) fn(s); };
@@ -29,7 +29,7 @@ export function createCalibrationMonitor({
     try {
       const [next, doc] = await Promise.all([positionSource.epoch(), loadCalibration ? loadCalibration().catch(() => null) : null]);
       if (doc) state.adoptCalibration(doc, { merge: true });
-      epoch = next;
+      epochs = next;
     } catch (e) {
       // no connection: the previous state stays, no warning is invented
     }

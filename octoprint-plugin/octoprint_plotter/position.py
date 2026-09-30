@@ -29,6 +29,30 @@ def parse_marker(line):
     return (m.group(1), m.group(2)) if m else None
 
 
+def epoch_parts(cmd):
+    """Which coordinate parts a sent command shifts: a subset of {"xy", "z"}.
+
+    ``G28`` without axes homes everything (both parts); with axes only the named ones (X/Y -> xy, Z -> z);
+    other parameters (O, R, L) are not axes. ``G92``: X/Y -> xy, Z -> z, only E (or other non-axis parameters) -> nothing,
+    bare ``G92`` -> both. Anything else shifts nothing.
+    """
+    text = cmd.split(";", 1)[0].strip().upper() if isinstance(cmd, str) else ""
+    m = re.match(r"^(?:N\d+\s+)?G0*(28|92)(?![0-9.])\s*(.*)$", text)
+    if not m:
+        return set()
+    letters = set(re.findall(r"[A-Z]", m.group(2)))
+    parts = set()
+    if letters & {"X", "Y"}:
+        parts.add("xy")
+    if "Z" in letters:
+        parts.add("z")
+    if parts:
+        return parts
+    if m.group(1) == "92" and letters:
+        return set()
+    return {"xy", "z"}
+
+
 def is_unknown_m118(line):
     return bool(UNKNOWN_M118.search(line))
 

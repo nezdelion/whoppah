@@ -27,9 +27,16 @@ test('touch: Z from the position; outside the schema range — an error', () => 
 });
 
 test('part freshness by epoch; without an epoch — outdated', () => {
-  assert.deepEqual(calibrationFreshness({ epochXY: 3, epochZ: 3 }, 3), { xy: true, z: true, stale: [] });
-  assert.deepEqual(calibrationFreshness({ epochXY: 3, epochZ: 2 }, 3), { xy: true, z: false, stale: ['касание'] });
-  assert.deepEqual(calibrationFreshness({ epochXY: null, epochZ: undefined }, 0), { xy: false, z: false, stale: ['угол листа', 'касание'] });
+  assert.deepEqual(calibrationFreshness({ epochXY: 3, epochZ: 3 }, { xy: 3, z: 3 }), { xy: true, z: true, stale: [] });
+  assert.deepEqual(calibrationFreshness({ epochXY: 3, epochZ: 2 }, { xy: 3, z: 3 }), { xy: true, z: false, stale: ['касание'] });
+  assert.deepEqual(calibrationFreshness({ epochXY: null, epochZ: undefined }, { xy: 0, z: 0 }), { xy: false, z: false, stale: ['угол листа', 'касание'] });
+});
+
+test('freshness: the corner is compared with the xy counter, the touch with the z counter', () => {
+  const cal = { epochXY: 3, epochZ: 7 };
+  assert.deepEqual(calibrationFreshness(cal, { xy: 3, z: 7 }), { xy: true, z: true, stale: [] });
+  assert.deepEqual(calibrationFreshness(cal, { xy: 4, z: 7 }), { xy: false, z: true, stale: ['угол листа'] });
+  assert.deepEqual(calibrationFreshness(cal, { xy: 3, z: 8 }), { xy: true, z: false, stale: ['касание'] });
   assert.equal(staleMessage([]), '');
   assert.match(staleMessage(['касание']), /^Калибровка могла устареть: касание/);
 });
@@ -272,4 +279,44 @@ test('capture in another tab: the new coordinates from the server are accepted t
   await a.timers.tick(POLL_MS);
   assert.equal(cal(a).cornerX, 99, 'print takes the new corner, not the old one');
   assert.equal(a.monitor.status().message, '');
+});
+
+// --- independent corner and touch epochs
+
+async function calibrated() {
+  const a = await app();
+  assert.equal((await a.capture.captureCorner()).ok, true);
+  assert.equal((await a.capture.captureTouch()).ok, true);
+  await a.monitor.refresh();
+  assert.deepEqual([a.monitor.status().xy, a.monitor.status().z], [true, true]);
+  return a;
+}
+
+test('G28 X Y: the corner is outdated, the touch is fresh', async () => {
+  const a = await calibrated();
+  a.server.g28('xy');
+  const s = await a.monitor.refresh();
+  assert.deepEqual([s.xy, s.z, s.stale], [false, true, ['угол листа']]);
+});
+
+test('G28 Z: the touch is outdated, the corner is fresh', async () => {
+  const a = await calibrated();
+  a.server.g28('z');
+  const s = await a.monitor.refresh();
+  assert.deepEqual([s.xy, s.z, s.stale], [true, false, ['касание']]);
+});
+
+test('bare G28: both parts are outdated', async () => {
+  const a = await calibrated();
+  a.server.g28();
+  const s = await a.monitor.refresh();
+  assert.deepEqual([s.xy, s.z], [false, false]);
+});
+
+test('corner capture takes the xy counter, touch capture takes the z counter', async () => {
+  const a = await app();
+  a.server.g28('z'); a.server.g28('z'); a.server.g28('xy');
+  assert.equal((await a.capture.captureCorner()).ok, true);
+  assert.equal((await a.capture.captureTouch()).ok, true);
+  assert.deepEqual([cal(a).epochXY, cal(a).epochZ], [1, 2]);
 });

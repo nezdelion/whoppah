@@ -6,10 +6,11 @@
 // PrinterFeed {
 //   state():          'off' | 'connecting' | 'live' | 'forbidden' | 'unavailable'
 //   detail():         reason text for the UI
-//   readPosition():   Promise<{x, y, z, epoch}>
+//   readPosition():   Promise<{x, y, z, epochXY, epochZ}>
 //   readLimits():     Promise<{enabled, min: {x, y, z}, max: {x, y, z}}>
 //   session():        number — the connection session number (grows on every transition to "connected"); a limits read result is valid only within it
-//   epoch():          number — coordinate epoch (advances on foreign G28/G92, a printer reconnect, a feed drop)
+//   epoch():          {xy, z} — coordinate epochs (sheet corner and touch): foreign G28/G92 advance only the affected axes,
+//                     a printer reconnect and a feed drop — both
 //   positionKnown():  boolean — false after a foreign move, a drop, printing; true after a read
 //   command(lines):   send commands via REST and record them as "own"
 //   onChange(fn):     unsubscribe
@@ -51,26 +52,27 @@ export function createPrinterFeed({
   readTimeoutMs = READ_TIMEOUT_MS, expectTtlMs = EXPECT_TTL_MS, connectTimeoutMs = CONNECT_TIMEOUT_MS, debounceMs = DEBOUNCE_MS,
 }) {
   const {
-    FEED_LOG_FILTER, parseLogLine, normalizeSent, classifySent, parsePosition, parseLimits, parseMarker, parseUnknownCommand,
+    FEED_LOG_FILTER, parseLogLine, normalizeSent, classifySent, epochParts, parsePosition, parseLimits, parseMarker, parseUnknownCommand,
   } = replies;
   const T = { ...defaultTimers, ...timers };
   const listeners = new Set();
   let state = 'off', detail = 'укажите адрес и API-ключ OctoPrint';
-  let epochN = 0, known = false, busy = false;
+  let epochXY = 0, epochZ = 0, known = false, busy = false;
   let gen = 0, sessionN = 0, loginAbort = null, ws = null, wasLive = false, attempt = 0, retryTimer = null, connectTimer = null, debounceTimer = null;
   let started = false, offVisibility = () => {};
   let expected = [], active = null, ridCounter = 0;
 
   const base = () => String(getBaseUrl() || '').replace(/\/+$/, '');
   const configured = () => /^https?:\/\/[^\s/?#]+/i.test(base()) && !!getKey();
-  const snapshot = () => `${state}|${detail}|${epochN}|${known}`;
+  const snapshot = () => `${state}|${detail}|${epochXY}|${epochZ}|${known}`;
   const change = (fn) => {
     const before = snapshot();
     fn();
     if (snapshot() !== before) for (const l of [...listeners]) l();
   };
   const setState = (s, d) => change(() => { state = s; detail = d; });
-  const bump = () => { epochN++; known = false; };
+  // parts — { xy, z }: which counters to advance (both by default); the head position is unknown after this
+  const bump = (parts = { xy: true, z: true }) => { if (parts.xy) epochXY++; if (parts.z) epochZ++; known = false; };
 
   function failRead(err) {
     if (active) finish(active, err);
@@ -81,10 +83,11 @@ export function createPrinterFeed({
     T.clearTimeout(rec.timer);
     active = null;
     if (err) { rec.reject(err); return; }
-    if (epochN !== rec.epoch0) { rec.reject(positionError('stale')); return; }
+    // a read is stale if any of the counters changed (the simplest rule: the read does not know which part the caller needs)
+    if (epochXY !== rec.epoch0.xy || epochZ !== rec.epoch0.z) { rec.reject(positionError('stale')); return; }
     if (!value) { rec.reject(positionError('nocoords', 'position', rec.kind === 'limits' ? 'принтер не прислал границы прошивки (M211)' : undefined)); return; }
     if (rec.kind === 'position') change(() => { known = true; });
-    rec.resolve(rec.kind === 'position' ? { ...value, epoch: rec.epoch0 } : value);
+    rec.resolve(rec.kind === 'position' ? { ...value, epochXY: rec.epoch0.xy, epochZ: rec.epoch0.z } : value);
   }
 
   // --- log line parsing ---
@@ -115,7 +118,10 @@ export function createPrinterFeed({
     const i = expected.findIndex((e) => e.text === cmd);
     if (i >= 0) { expected.splice(i, 1); return; } // own command
     change(() => {
-      if (kind === 'home' || kind === 'setpos') bump();
+      if (kind === 'home' || kind === 'setpos') {
+        const parts = epochParts(cmd);
+        if (parts.xy || parts.z) bump(parts); // G92 E0 does not shift coordinates
+      }
       else if (kind === 'move') known = false;
     });
   }
@@ -141,7 +147,7 @@ export function createPrinterFeed({
     if (msg.reauthRequired) { drop(my, 'сессия OctoPrint устарела, вхожу заново'); return; }
     if (msg.event) {
       const type = msg.event.type;
-      if (type === 'Connected' || type === 'Disconnected') { change(bump); failRead(positionError('stale')); }
+      if (type === 'Connected' || type === 'Disconnected') { change(() => bump()); failRead(positionError('stale')); }
       return;
     }
     const isHistory = !!msg.history, payload = msg.history || msg.current;
@@ -280,7 +286,7 @@ export function createPrinterFeed({
     if (busy || active) return Promise.reject(positionError('busy'));
     const rid = `${(T.now()).toString(36)}${(++ridCounter).toString(36)}`;
     return new Promise((resolve, reject) => {
-      const rec = { kind, rid, inside: false, value: null, epoch0: epochN, resolve, reject, timer: null };
+      const rec = { kind, rid, inside: false, value: null, epoch0: { xy: epochXY, z: epochZ }, resolve, reject, timer: null };
       rec.timer = T.setTimeout(() => finish(rec, positionError('timeout')), readTimeoutMs);
       active = rec;
       command([`M118 PLT_B ${rid}`, 'M400', query, `M118 PLT_E ${rid}`]).catch((e) => {
@@ -308,7 +314,7 @@ export function createPrinterFeed({
   return {
     state: () => state,
     detail: () => detail,
-    epoch: () => epochN,
+    epoch: () => ({ xy: epochXY, z: epochZ }),
     session: () => sessionN,
     positionKnown: () => known,
     readPosition: () => read('position', 'M114'),

@@ -1,8 +1,8 @@
 // Head position source and writing the captured calibration (plugin mode): routes of the Plotter plugin.
 // PositionSource {
-//   read():            Promise<{x, y, z, epoch}>
-//   epoch():           Promise<number>
-//   saveCorner({x, y, epoch}) / saveTouch({zTouch, epoch}): Promise<calibration>  (the server returned the document)
+//   read():            Promise<{x, y, z, epochXY, epochZ}>
+//   epoch():           Promise<{xy, z}>  (coordinate epochs: sheet corner and touch — independent counters)
+//   saveCorner({x, y, epoch}) / saveTouch({zTouch, epoch}): Promise<calibration>  (epoch — the counter of its part; the server returned the document)
 //   confirm('xy'|'z'): Promise<calibration>
 // }
 // Errors are TransportError; kind: busy | offline | timeout | stale | unsupported | nocoords | forbidden | auth | network | http.
@@ -87,14 +87,14 @@ export function createOctoPrintPosition({ apiUrl, auth, fetch: fetchFn = globalT
 
     async read() {
       const r = await request('POST', '/position', {}, 'position');
-      if (![r.x, r.y, r.z, r.epoch].every(Number.isFinite)) throw new TransportError('OctoPrint вернул неполное положение', { kind: 'http', operation: 'position' });
-      return { x: r.x, y: r.y, z: r.z, epoch: r.epoch };
+      if (![r.x, r.y, r.z, r.epochXY, r.epochZ].every(Number.isFinite)) throw new TransportError('OctoPrint вернул неполное положение', { kind: 'http', operation: 'position' });
+      return { x: r.x, y: r.y, z: r.z, epochXY: r.epochXY, epochZ: r.epochZ };
     },
 
     async epoch() {
       const r = await request('GET', '/position/epoch', undefined, 'position');
-      if (!Number.isInteger(r.epoch)) throw new TransportError('OctoPrint вернул неверную версию координат', { kind: 'http', operation: 'position' });
-      return r.epoch;
+      if (!Number.isInteger(r.xy) || !Number.isInteger(r.z)) throw new TransportError('OctoPrint вернул неверную версию координат', { kind: 'http', operation: 'position' });
+      return { xy: r.xy, z: r.z };
     },
 
     async saveCorner({ x, y, epoch }) { return (await request('POST', '/calibration/xy', { x, y, epoch }, 'position')).calibration; },

@@ -96,12 +96,20 @@ def calibration(env):
     return env.client.get("/plugin/plotter/api/settings/calibration").get_json()
 
 
-def epoch(env):
-    return env.client.get("/plugin/plotter/api/position/epoch").get_json()["epoch"]
+def epochs(env):
+    return env.client.get("/plugin/plotter/api/position/epoch").get_json()
 
 
-def g28(env):
-    env.plugin.on_gcode_sent(None, "sent", "G28", None, "G28")
+def epoch(env, part="xy"):
+    return epochs(env)[part]
+
+
+def sent(env, cmd):
+    env.plugin.on_gcode_sent(None, "sent", cmd, None, cmd.split()[0].upper())
+
+
+def g28(env, args=""):
+    sent(env, f"G28 {args}".strip())
 
 
 # ~~ position read
@@ -110,7 +118,7 @@ def test_read_success_sends_markers_in_order(env, printer):
     r = read(env)
     assert r.status_code == 200
     data = r.get_json()
-    assert (data["x"], data["y"], data["z"], data["epoch"]) == (-5.0, 50.0, 8.0, 0)
+    assert (data["x"], data["y"], data["z"], data["epochXY"], data["epochZ"]) == (-5.0, 50.0, 8.0, 0, 0)
     b, m400, m114, e = printer.sent[0]
     rid = b.split()[-1]
     assert (b, m400, m114, e) == (f"M118 PLT_B {rid}", "M400", "M114", f"M118 PLT_E {rid}") and len(rid) == 8
@@ -228,16 +236,101 @@ def test_g28_during_the_read_makes_it_stale(env, printer):
 # ~~ epoch
 
 def test_epoch_changes_on_g28_and_connect(env):
-    assert epoch(env) == 0
+    assert epochs(env) == {"xy": 0, "z": 0}
     g28(env)
-    assert epoch(env) == 1
+    assert epochs(env) == {"xy": 1, "z": 1}
     env.plugin.on_gcode_sent(None, "sent", "G1 X1", None, "G1")
     env.plugin.on_gcode_sent(None, "sent", "M114", None, "M114")
-    assert epoch(env) == 1
+    assert epochs(env) == {"xy": 1, "z": 1}
     env.plugin.on_event("Connected", {})
     env.plugin.on_event("Disconnected", {})
-    assert epoch(env) == 2
-    assert env.plugin._settings.data["positionEpoch"] == 2  # persisted in the plugin settings
+    assert epochs(env) == {"xy": 2, "z": 2}
+    data = env.plugin._settings.data  # persisted in the plugin settings
+    assert (data["positionEpochXY"], data["positionEpochZ"]) == (2, 2)
+
+
+@pytest.mark.parametrize("cmd, expected", [
+    ("G28", {"xy": 1, "z": 1}),
+    ("G28 O", {"xy": 1, "z": 1}),  # O is not an axis: same as a bare G28
+    ("G28 X Y", {"xy": 1, "z": 0}),
+    ("G28 X", {"xy": 1, "z": 0}),
+    ("G28 Z", {"xy": 0, "z": 1}),
+    ("G28 X Z", {"xy": 1, "z": 1}),
+    ("G28 O Z", {"xy": 0, "z": 1}),
+    ("G92 E0", {"xy": 0, "z": 0}),
+    ("G92 Z5", {"xy": 0, "z": 1}),
+    ("G92 X0 Y0", {"xy": 1, "z": 0}),
+    ("G92 X0 E0", {"xy": 1, "z": 0}),
+    ("G92", {"xy": 1, "z": 1}),
+    ("G1 X10 Z5", {"xy": 0, "z": 0}),
+])
+def test_epoch_parts_per_command(env, cmd, expected):
+    sent(env, cmd)
+    assert epochs(env) == expected
+
+
+def test_g28_xy_keeps_touch_fresh_and_stales_corner(env):
+    env.who.rights = {"CONTROL"}
+    post(env, "xy", {"x": 1, "y": 2, "epoch": 0})
+    post(env, "z", {"zTouch": 7, "epoch": 0})
+    assert fresh(env) == {"xy": True, "z": True}
+    g28(env, "X Y")
+    assert fresh(env) == {"xy": False, "z": True}
+
+
+def test_g28_z_keeps_corner_fresh_and_stales_touch(env):
+    env.who.rights = {"CONTROL"}
+    post(env, "xy", {"x": 1, "y": 2, "epoch": 0})
+    post(env, "z", {"zTouch": 7, "epoch": 0})
+    g28(env, "Z")
+    assert fresh(env) == {"xy": True, "z": False}
+
+
+def test_bare_g28_and_g28_o_stale_both_and_g92_e_neither(env):
+    env.who.rights = {"CONTROL"}
+    post(env, "xy", {"x": 1, "y": 2, "epoch": 0})
+    post(env, "z", {"zTouch": 7, "epoch": 0})
+    sent(env, "G92 E0")
+    assert fresh(env) == {"xy": True, "z": True}
+    g28(env, "O")
+    assert fresh(env) == {"xy": False, "z": False}
+
+
+def test_connect_stales_both(env):
+    env.who.rights = {"CONTROL"}
+    post(env, "xy", {"x": 1, "y": 2, "epoch": 0})
+    post(env, "z", {"zTouch": 7, "epoch": 0})
+    env.plugin.on_event("Connected", {})
+    assert fresh(env) == {"xy": False, "z": False}
+
+
+def test_capture_uses_the_counter_of_its_own_part(env):
+    env.who.rights = {"CONTROL"}
+    g28(env, "Z")  # xy stays 0, z is 1
+    assert post(env, "xy", {"x": 1, "y": 2, "epoch": 0}).status_code == 200
+    assert post(env, "z", {"zTouch": 7, "epoch": 0}).status_code == 409  # z counter is 1 now
+    assert post(env, "z", {"zTouch": 7, "epoch": 1}).status_code == 200
+    c = calibration(env)
+    assert (c["epochXY"], c["epochZ"]) == (0, 1)
+
+
+def test_position_read_is_stale_when_either_counter_changes(env, printer):
+    def reply(lines):
+        g28(env, "Z")
+        return FakePrinter.default(lines)
+    printer.reply = reply
+    r = read(env)
+    assert r.status_code == 409 and r.get_json()["code"] == "stale"
+
+
+def test_migration_counters_start_from_the_single_position_epoch(env):
+    env.plugin._settings.data["positionEpoch"] = 5  # settings of the version before the split
+    env.plugin._settings.data["calibration"] = {"cornerX": 1, "cornerY": 2, "zTouch": 7, "epochXY": 5, "epochZ": 5}
+    assert epochs(env) == {"xy": 5, "z": 5}
+    assert fresh(env) == {"xy": True, "z": True}
+    g28(env, "X Y")
+    assert epochs(env) == {"xy": 6, "z": 5}
+    assert fresh(env) == {"xy": False, "z": True}
 
 
 def test_epoch_needs_login_not_control(env):
@@ -255,8 +348,8 @@ def test_hooks_are_registered_and_pass_lines_through():
 # ~~ capture and confirm
 
 def fresh(env):
-    c, now = calibration(env), epoch(env)
-    return {"xy": c.get("epochXY") == now, "z": c.get("epochZ") == now}
+    c, now = calibration(env), epochs(env)
+    return {"xy": c.get("epochXY") == now["xy"], "z": c.get("epochZ") == now["z"]}
 
 
 def test_capture_xy_and_z_store_values_and_epochs(env):

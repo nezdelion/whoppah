@@ -123,7 +123,7 @@ test('the login address is set by the strategy itself: /api/login does not depen
   for (const first of ['position', 'transport']) {
     const urls = [];
     const auth = createSessionAuth({ baseUrl: 'http://op', csrfCookie: COOKIE, getCookie: () => `${COOKIE}=T`, fetch: async (u) => { urls.push(u); return ok(); } });
-    const f = fakeFetch({ body: { epoch: 1 } });
+    const f = fakeFetch({ body: { xy: 1, z: 1 } });
     const pos = createOctoPrintPosition({ apiUrl: 'http://op/plugin/plotter/api', auth, fetch: f });
     const tr = createOctoPrintTransport({ getBaseUrl: () => 'http://op', auth, fetch: fakeFetch({ body: {} }) });
     if (first === 'position') { await pos.epoch(); await tr.job(); } else { await tr.job(); await pos.epoch(); }

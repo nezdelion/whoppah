@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FEED_LOG_FILTER, parseLogLine, normalizeSent, classifySent, parsePosition, parseLimits, parseMarker, parseUnknownCommand,
+  FEED_LOG_FILTER, parseLogLine, normalizeSent, classifySent, epochParts, parsePosition, parseLimits, parseMarker, parseUnknownCommand,
   limitsWarnings, limitsWarningText,
 } from '../src/core/marlin-replies.js';
 
@@ -16,6 +16,17 @@ test('normalizeSent: without line number, checksum, comment; case and spaces', (
   assert.equal(normalizeSent('N40 G0 X10 Y10*97'), 'G0 X10 Y10');
   assert.equal(normalizeSent('g1  x5   ; вверх'), 'G1 X5');
   assert.equal(normalizeSent('M118 PLT_B 7'), 'M118 PLT_B 7');
+});
+
+test('epochParts: which coordinate parts a command shifts', () => {
+  const both = { xy: true, z: true }, xy = { xy: true, z: false }, z = { xy: false, z: true }, none = { xy: false, z: false };
+  const cases = [
+    ['G28', both], ['G28 O', both], ['G28 R5 L', both], ['N5 G28*12', both],
+    ['G28 X Y', xy], ['G28 X', xy], ['G28 Y', xy], ['G28 Z', z], ['G28 X Z', both], ['G28 O Z', z], ['g28 x y ; домой', xy],
+    ['G92 E0', none], ['G92 Z5', z], ['G92 X0 Y0', xy], ['G92 X0 Z0', both], ['G92 X0 E0', xy], ['G92', both],
+    ['G0 X1 Z5', none], ['G1 Y2', none], ['G91', none], ['M114', none], ['G280', none], ['', none],
+  ];
+  for (const [c, want] of cases) assert.deepEqual(epochParts(c), want, c);
 });
 
 test('classifySent: command kinds', () => {

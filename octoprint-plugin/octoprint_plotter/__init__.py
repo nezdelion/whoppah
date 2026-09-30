@@ -17,7 +17,7 @@ from octoprint.access import ADMIN_GROUP
 from octoprint.access.permissions import Permissions
 
 from ._version import __version__
-from .position import PositionReader
+from .position import PositionReader, epoch_parts
 
 __plugin_name__ = "Plotter"
 __plugin_version__ = __version__
@@ -36,6 +36,10 @@ NEEDS_PROFILE = "PLUGIN_PLOTTER_MACHINE_PROFILE"
 CALIBRATION_DEFAULTS = {"cornerX": -5, "cornerY": 50, "zTouch": 8}
 CALIBRATION_PARTS = {"xy": ("cornerX", "cornerY"), "z": ("zTouch",)}
 EPOCH_KEYS = {"xy": "epochXY", "z": "epochZ"}
+# Two independent coordinate counters (corner / pen touch). Before the split there was one ``positionEpoch``:
+# a counter that was never stored starts from its value, so calibration stamped with it stays fresh after the upgrade.
+EPOCH_SETTINGS = {"xy": "positionEpochXY", "z": "positionEpochZ"}
+LEGACY_EPOCH_SETTING = "positionEpoch"
 
 
 def csrf_cookie_name(request):
@@ -77,6 +81,7 @@ class PlotterPlugin(
     # ~~ SettingsPlugin: storage for the app settings
 
     def get_settings_defaults(self):
+        # positionEpochXY / positionEpochZ have no defaults on purpose: an absent counter starts from the legacy positionEpoch
         return {"profile": None, "calibration": None, "users": {}, "positionEpoch": 0}
 
     # The app has its own REST API for these values; keep them out of OctoPrint's generic /api/settings.
@@ -268,15 +273,26 @@ class PlotterPlugin(
 
     # ~~ calibration: coordinate epoch, capture and confirmation
 
-    def current_epoch(self):
-        value = self._settings.get(["positionEpoch"])
-        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    @staticmethod
+    def _as_counter(value):
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
 
-    def bump_epoch(self, reason=""):
+    def current_epoch(self, part):
+        """Counter of one part ("xy" | "z"); a never-stored counter falls back to the pre-split ``positionEpoch``."""
+        value = self._as_counter(self._settings.get([EPOCH_SETTINGS[part]]))
+        if value is None:
+            value = self._as_counter(self._settings.get([LEGACY_EPOCH_SETTING]))
+        return value if value is not None else 0
+
+    def current_epochs(self):
+        return {part: self.current_epoch(part) for part in EPOCH_SETTINGS}
+
+    def bump_epoch(self, reason="", parts=("xy", "z")):
         with self._epoch_lock:
-            self._settings.set(["positionEpoch"], self.current_epoch() + 1)
+            for part in parts:
+                self._settings.set([EPOCH_SETTINGS[part]], self.current_epoch(part) + 1)
             self._settings.save()
-        self._logger.debug(f"plotter: coordinate epoch is now {self.current_epoch()} ({reason})")
+        self._logger.debug(f"plotter: coordinate epochs are now {self.current_epochs()} ({reason})")
 
     def _stored_calibration(self):
         value = self._settings.get(["calibration"])
@@ -287,13 +303,12 @@ class PlotterPlugin(
         return tuple(doc.get(k, CALIBRATION_DEFAULTS[k]) for k in CALIBRATION_PARTS[part])
 
     def _manual_calibration(self, body):
-        """Manual input: only the parts whose values changed get the current epoch; the others keep theirs."""
+        """Manual input: only the parts whose values changed get the current epoch of that part; the others keep theirs."""
         old = self._stored_calibration()
         new = {k: v for k, v in body.items() if k not in EPOCH_KEYS.values()}
-        epoch = self.current_epoch()
         for part, key in EPOCH_KEYS.items():
             if self._part_values(new, part) != self._part_values(old, part):
-                new[key] = epoch
+                new[key] = self.current_epoch(part)
             elif key in old:
                 new[key] = old[key]
         return new
@@ -317,7 +332,7 @@ class PlotterPlugin(
             if not isinstance(body.get("epoch"), int) or isinstance(body.get("epoch"), bool):
                 return self._error(400, "epoch must be an integer")
         with self._calibration_lock:
-            current = self.current_epoch()
+            current = self.current_epoch(part)  # the counter of the captured part only
             if not confirm and body["epoch"] != current:
                 return self._error(409, "coordinates changed since the position was read", code="stale")
             doc = {**CALIBRATION_DEFAULTS, **self._stored_calibration()}
@@ -351,7 +366,7 @@ class PlotterPlugin(
     def get_epoch(self):
         if self._session_user() is None:
             return self._error(403, "login required")
-        return self._json({"epoch": self.current_epoch()})
+        return self._json(self.current_epochs())
 
     def _printer_problem(self):
         """(status, code, message) when the head cannot be read now, else None."""
@@ -376,7 +391,7 @@ class PlotterPlugin(
         rid = self._reader.start()
         if rid is None:
             return self._error(409, "another position read is running", code="busy")
-        epoch0 = self.current_epoch()
+        epoch0 = self.current_epochs()
         try:
             self._printer.commands(self._reader.commands(rid), tags={"plugin:plotter"})
         except Exception as e:
@@ -389,10 +404,10 @@ class PlotterPlugin(
             return self._error(504, "the printer did not answer", code="timeout")
         if outcome == "nocoords":
             return self._error(502, "no coordinates in the printer answer", code="nocoords")
-        if self.current_epoch() != epoch0:
+        if self.current_epochs() != epoch0:  # either counter changed: the read is stale (the route does not know which part is wanted)
             return self._error(409, "coordinates changed while reading", code="stale")
         x, y, z = coords
-        return self._json({"x": x, "y": y, "z": z, "epoch": epoch0})
+        return self._json({"x": x, "y": y, "z": z, "epochXY": epoch0["xy"], "epochZ": epoch0["z"]})
 
     # ~~ hooks
 
@@ -407,8 +422,10 @@ class PlotterPlugin(
         return line
 
     def on_gcode_sent(self, comm_instance, phase, cmd, cmd_type, gcode, *args, **kwargs):
-        if gcode == "G28":
-            self.bump_epoch("G28")
+        if gcode in ("G28", "G92"):
+            parts = epoch_parts(cmd)
+            if parts:  # G92 E0 shifts no axis
+                self.bump_epoch(str(cmd), tuple(sorted(parts)))
 
     def body_size_limits(self, current_max_body_sizes, *args, **kwargs):
         # OctoPrint's default request body limit is 100 KB; sections may be up to 1 MB (routes are relative to /plugin/plotter/)
