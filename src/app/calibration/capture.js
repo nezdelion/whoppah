@@ -2,8 +2,10 @@
 // Each result is { ok, message }; the calibration changes only after a successful write on the server.
 import { cornerFromPosition, touchFromPosition } from '../../core/calibration.js';
 
-export function createCalibrationCapture({ state, positionSource, monitor }) {
+/** guard — (part) => {ok, message}: the "Not homed" guard (standalone); by default forbids nothing. */
+export function createCalibrationCapture({ state, positionSource, monitor, guard = () => ({ ok: true, message: '' }) }) {
   let unsupported = false;
+  const blocked = (part) => { const g = guard(part); return g.ok ? null : { ok: false, message: g.message }; };
 
   const fail = (e) => {
     if (e && e.kind === 'unsupported') unsupported = true;
@@ -23,6 +25,7 @@ export function createCalibrationCapture({ state, positionSource, monitor }) {
     /** offset — pen offset relative to the sheet corner, mm (pen left of/below the corner is negative). */
     async captureCorner(offset = { x: 0, y: 0 }) {
       try {
+        const b = blocked('xy'); if (b) return b;
         const pos = await positionSource.read();
         const { cornerX, cornerY } = cornerFromPosition(pos, offset);
         const doc = await positionSource.saveCorner({ x: cornerX, y: cornerY, epoch: pos.epochXY });
@@ -32,6 +35,7 @@ export function createCalibrationCapture({ state, positionSource, monitor }) {
 
     async captureTouch() {
       try {
+        const b = blocked('z'); if (b) return b;
         const pos = await positionSource.read();
         const t = touchFromPosition(pos);
         if (t.error) return { ok: false, message: t.error };
@@ -42,6 +46,7 @@ export function createCalibrationCapture({ state, positionSource, monitor }) {
 
     async confirm(part) {
       try {
+        const b = blocked(part); if (b) return b;
         const doc = await positionSource.confirm(part);
         return await apply(doc, part === 'xy' ? 'Угол листа подтверждён' : 'Касание подтверждено');
       } catch (e) { return fail(e); }

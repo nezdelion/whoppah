@@ -12,6 +12,8 @@
 //   epoch():          {xy, z} — coordinate epochs (sheet corner and touch): foreign G28/G92 advance only the affected axes,
 //                     a printer reconnect and a feed drop — both
 //   positionKnown():  boolean — false after a foreign move, a drop, printing; true after a read
+//   markHomed():      accept Home as done on the user's word (coordinate epochs do not change; reset by the same events)
+//   homed():          {xy, z} — whether G28 (own or foreign) happened on the axes since (re)connecting to the printer; a drop and feed stop reset it
 //   command(lines):   send commands via REST and record them as "own"
 //   onChange(fn):     unsubscribe
 //   start(), stop(), configChanged()
@@ -58,13 +60,14 @@ export function createPrinterFeed({
   const listeners = new Set();
   let state = 'off', detail = 'укажите адрес и API-ключ OctoPrint';
   let epochXY = 0, epochZ = 0, known = false, busy = false;
+  let homedXY = false, homedZ = false; // G28 per axes since (re)connecting; initially — none
   let gen = 0, sessionN = 0, loginAbort = null, ws = null, wasLive = false, attempt = 0, retryTimer = null, connectTimer = null, debounceTimer = null;
   let started = false, offVisibility = () => {};
   let expected = [], active = null, ridCounter = 0;
 
   const base = () => String(getBaseUrl() || '').replace(/\/+$/, '');
   const configured = () => /^https?:\/\/[^\s/?#]+/i.test(base()) && !!getKey();
-  const snapshot = () => `${state}|${detail}|${epochXY}|${epochZ}|${known}`;
+  const snapshot = () => `${state}|${detail}|${epochXY}|${epochZ}|${known}|${homedXY}|${homedZ}`;
   const change = (fn) => {
     const before = snapshot();
     fn();
@@ -72,7 +75,13 @@ export function createPrinterFeed({
   };
   const setState = (s, d) => change(() => { state = s; detail = d; });
   // parts — { xy, z }: which counters to advance (both by default); the head position is unknown after this
-  const bump = (parts = { xy: true, z: true }) => { if (parts.xy) epochXY++; if (parts.z) epochZ++; known = false; };
+  // Without parts (reconnect, drop, denial) homing is also considered not done.
+  const bump = (parts) => {
+    if (!parts) { parts = { xy: true, z: true }; homedXY = homedZ = false; }
+    if (parts.xy) epochXY++;
+    if (parts.z) epochZ++;
+    known = false;
+  };
 
   function failRead(err) {
     if (active) finish(active, err);
@@ -116,8 +125,14 @@ export function createPrinterFeed({
     const now = T.now();
     expected = expected.filter((e) => now - e.at <= expectTtlMs);
     const i = expected.findIndex((e) => e.text === cmd);
-    if (i >= 0) { expected.splice(i, 1); return; } // own command
+    const mark = () => { // homing is done by our own G28 (the Home button) as well as by a foreign one
+      const parts = epochParts(cmd);
+      if (parts.xy) homedXY = true;
+      if (parts.z) homedZ = true;
+    };
+    if (i >= 0) { expected.splice(i, 1); if (kind === 'home') change(mark); return; } // own command
     change(() => {
+      if (kind === 'home') mark();
       if (kind === 'home' || kind === 'setpos') {
         const parts = epochParts(cmd);
         if (parts.xy || parts.z) bump(parts); // G92 E0 does not shift coordinates
@@ -268,7 +283,7 @@ export function createPrinterFeed({
     const was = wasLive;
     wasLive = false;
     attempt = 0;
-    change(() => { if (was || known) bump(); });
+    change(() => { if (was || known) bump(); homedXY = homedZ = false; });
     failRead(positionError('offline'));
     if (reconnect && started) connect();
   }
@@ -317,6 +332,9 @@ export function createPrinterFeed({
     epoch: () => ({ xy: epochXY, z: epochZ }),
     session: () => sessionN,
     positionKnown: () => known,
+    homed: () => ({ xy: homedXY, z: homedZ }),
+    /** The user confirmed that Home is already done (on the printer screen, in OctoPrint, before the page was opened): both axis groups, epochs untouched. Reset as usual. */
+    markHomed() { change(() => { homedXY = homedZ = true; }); },
     readPosition: () => read('position', 'M114'),
     readLimits: () => read('limits', 'M211'),
     command,
@@ -346,13 +364,40 @@ export function createPrinterFeed({
 }
 
 /**
- * PositionSource for standalone on top of the feed: position reading and coordinate epoch.
- * Saving the calibration (saveCorner/saveTouch/confirm) is a separate change: in standalone the app stores it.
+ * PositionSource for standalone on top of the feed: position reading, coordinate epoch and writing the captured calibration.
+ * @param calibration { get(): doc, patch(changes): Promise } — in standalone the app stores the calibration (the transport layer
+ *   does not access storage, it comes as a parameter). The part epoch is compared with the feed counter at save time:
+ *   a mismatch is `stale`, the calibration does not change. The order is as in the plugin: the values and the part epoch are written together.
+ * Additionally for the UI: link() — feed state and homing, onChange(fn).
  */
-export function createFeedPositionSource(feed) {
+export function createFeedPositionSource(feed, { calibration = null } = {}) {
+  const need = () => { if (!calibration) throw new Error('хранилище калибровки не подключено'); return calibration; };
+  const fresh = (part, epoch) => { if (epoch !== feed.epoch()[part]) throw positionError('stale'); };
   return {
     id: 'octoprint-feed',
     read: () => feed.readPosition(),
     epoch: async () => feed.epoch(),
+    markHomed: () => feed.markHomed(),
+    link: () => ({ state: feed.state(), detail: feed.detail(), homed: feed.homed() }),
+    onChange: (fn) => feed.onChange(fn),
+    async saveCorner({ x, y, epoch }) {
+      const c = need();
+      fresh('xy', epoch);
+      await c.patch({ cornerX: x, cornerY: y, epochXY: epoch });
+      return c.get();
+    },
+    async saveTouch({ zTouch, epoch }) {
+      const c = need();
+      fresh('z', epoch);
+      await c.patch({ zTouch, epochZ: epoch });
+      return c.get();
+    },
+    async confirm(part) {
+      const c = need();
+      if (part !== 'xy' && part !== 'z') throw new Error(`неизвестная часть калибровки: ${part}`);
+      // confirmation does not change the values: the calibration date stays the same
+      await c.patch({ [part === 'xy' ? 'epochXY' : 'epochZ']: feed.epoch()[part], updatedAt: c.get().updatedAt });
+      return c.get();
+    },
   };
 }

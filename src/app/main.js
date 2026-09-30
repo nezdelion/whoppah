@@ -10,7 +10,7 @@ import { createState, createSourceContext } from './state.js';
 import { createPrintService } from './print/print-service.js';
 import { limitsCheck, partialCheck } from './print/checks.js';
 import { createOctoPrintPosition } from '../transport/octoprint-position.js';
-import { createPrinterFeed } from '../transport/octoprint-feed.js';
+import { createPrinterFeed, createFeedPositionSource } from '../transport/octoprint-feed.js';
 import * as marlinReplies from '../core/marlin-replies.js';
 import { setupCalibration } from './calibration/setup.js';
 import { createSvgSource } from './tabs/svg-tab.js';
@@ -64,8 +64,20 @@ async function start() {
     store = new LocalStorageStore(localStorage);
     await migrateLegacy(localStorage, store);
   }
-  const state = createState({ store });
+  // The connection feed (standalone) is created below; manual input of corner/touch sets the part to the feed's current epoch, like the plugin server.
+  let feed = null;
+  const stampEdit = (changes) => {
+    if (!feed) return {};
+    const e = feed.epoch(), out = {};
+    if (('cornerX' in changes || 'cornerY' in changes) && !('epochXY' in changes)) out.epochXY = e.xy;
+    if ('zTouch' in changes && !('epochZ' in changes)) out.epochZ = e.z;
+    return out;
+  };
+  const state = createState({ store, stampEdit: plugin ? null : stampEdit });
   await state.load();
+  // Standalone epochs live in the feed memory and start over after a reload: the saved ones cannot be matched against them
+  // (the app does not know what was done with the printer while the page was closed) — both parts are outdated until a capture/confirmation.
+  if (!plugin) state.adoptCalibration({ ...state.get('calibration'), epochXY: null, epochZ: null });
   state.subscribe((e) => {
     if (e.type === 'save-error') notice.show(`Не удалось сохранить настройки: ${e.message}`);
   });
@@ -84,7 +96,6 @@ async function start() {
     }).catch((e) => `Перенос настроек: ${e.message}`);
     if (message) { await state.load(); notice.show(message); }
   }
-  // Calibration capture and tracking of its freshness — plugin mode only (in standalone there is nothing to read the position from).
   // Connection monitor: in standalone "configured" = a valid address and a non-empty key; in the plugin — a session, no key.
   const connection = createConnectionMonitor({
     transport,
@@ -97,7 +108,6 @@ async function start() {
   }
   // The printer connection feed (head position, firmware limits, foreign commands) — standalone only.
   // Our own commands go through feed.command so that the feed can tell them from foreign log lines.
-  let feed = null;
   if (!plugin) {
     const rawTransport = transport;
     feed = createPrinterFeed({
@@ -108,7 +118,10 @@ async function start() {
     state.subscribe((e) => { if (e.type === 'settings' && (e.section === 'connection' || e.section === '*')) feed.configChanged(); });
   }
   document.querySelector('header h1').after(createConnectionIndicator(connection).element);
-  const calibration = setupCalibration({ positionSource: plugin && plugin.positionSource, state, store, visibility: pageVisibility() });
+  // Capture and jog panel: plugin — the plugin source (epochs and write on the server); standalone — the feed source, the app stores the calibration.
+  const positionSource = plugin ? plugin.positionSource
+    : createFeedPositionSource(feed, { calibration: { get: () => state.get('calibration'), patch: (changes) => state.patch('calibration', changes) } });
+  const calibration = setupCalibration({ positionSource, state, store, visibility: pageVisibility(), standalone: !plugin, transport });
   const calibrator = calibration && calibration.calibrator;
   const preflight = [limitsCheck, partialCheck, ...(calibration ? [calibration.check] : [])];
   const service = createPrintService({

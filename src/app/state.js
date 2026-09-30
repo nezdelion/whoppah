@@ -5,8 +5,13 @@ import { fieldOf } from '../core/pipeline.js';
 export const CONNECTION_DEFAULTS = Object.freeze({ url: 'http://octopi.local', key: '' });
 
 const clone = (v) => structuredClone(v);
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
 
-export function createState({ store, now = () => new Date().toISOString() }) {
+/**
+ * stampEdit — optional (changes) => extra: an addition to a calibration edit that is not in the edit itself
+ * (standalone sets the current coordinate epoch on a part at manual input; in the plugin the server sets epochs).
+ */
+export function createState({ store, now = () => new Date().toISOString(), stampEdit = null }) {
   const settings = {
     profile: defaultsOf(SCHEMAS.profile),
     calibration: defaultsOf(SCHEMAS.calibration),
@@ -50,6 +55,7 @@ export function createState({ store, now = () => new Date().toISOString() }) {
     /** Merging a change into a section; the calibration gets a modification date. */
     async patch(section, changes) {
       const next = { ...settings[section], ...changes };
+      if (section === 'calibration' && stampEdit) Object.assign(next, stampEdit(changes), pick(changes, ['epochXY', 'epochZ']));
       if (section === 'calibration' && !('updatedAt' in changes)) next.updatedAt = now();
       edits[section] = (edits[section] || 0) + 1;
       settings[section] = normalizeSection(section, next);

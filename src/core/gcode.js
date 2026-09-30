@@ -99,6 +99,16 @@ export function touchLines(p, cal) {
   return ['G90', ...meshLines(p), `G0 Z${fz(z.touch)} F${p.fZDown}`];
 }
 
+/**
+ * A relative step along one axis (jog panel): G91 → step → G90. Feed: fTravel for X/Y, fZUp/fZDown for Z.
+ * The bed mesh is enabled the same way as for the other short programs (the compensation must match the drawing).
+ */
+export function jogLines(p, axis, delta) {
+  const a = String(axis).toUpperCase();
+  const f = a === 'Z' ? (delta > 0 ? p.fZUp : p.fZDown) : p.fTravel;
+  return ['G91', ...meshLines(p), `G0 ${a}${fz(delta)} F${f}`, 'G90'];
+}
+
 export const homeLines = () => ['G28'];
 export const motorsOffLines = () => ['M84'];
 
