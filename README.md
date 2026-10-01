@@ -1,5 +1,7 @@
 # Neptune Plotter
 
+[Русская версия](README.ru.md)
+
 Web app for a pen plotter on an Elegoo Neptune 3 Pro (Marlin) controlled by OctoPrint 1.11:
 drawing (currently SVG) → layout on the sheet → pen G-code → download or send to OctoPrint.
 
