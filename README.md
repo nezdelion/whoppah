@@ -20,7 +20,7 @@ Open <http://localhost:8000/>. Does not work from `file://` (ES modules), an htt
 
 1. In OctoPrint: Settings → API → enable **Enable Cross Origin Resource Sharing (CORS)**.
 2. Get the **API key** there too (Settings → API → Application Keys or the global key).
-3. In the app, "Print" tab → "Connection": the address (`http://octopi.local`) and the key; the "Test connection" button.
+3. In the app, "Print" tab → "Connection": the address (`http://localhost:5000` for OctoPrint on the same machine, default; `http://octopi.local` for OctoPi on a Raspberry Pi) and the key; the "Test connection" button.
 
 Without an address and key the send buttons are inactive; G-code download works. The key is stored only in the browser's localStorage and is not included in the settings export file.
 

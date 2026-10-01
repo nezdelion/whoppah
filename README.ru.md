@@ -20,7 +20,7 @@ python3 -m http.server 8000
 
 1. В OctoPrint: Settings → API → включить **Enable Cross Origin Resource Sharing (CORS)**.
 2. Там же взять **API key** (Settings → API → Application Keys или глобальный ключ).
-3. В приложении, вкладка «Печать» → «Подключение»: адрес (`http://octopi.local`) и ключ; кнопка «Проверить связь».
+3. В приложении, вкладка «Печать» → «Подключение»: адрес (`http://localhost:5000` для OctoPrint на этой же машине, по умолчанию; `http://octopi.local` для OctoPi на Raspberry Pi) и ключ; кнопка «Проверить связь».
 
 Без адреса и ключа кнопки отправки неактивны, скачивание G-code работает. Ключ хранится только в localStorage браузера и не попадает в файл экспорта настроек.
 

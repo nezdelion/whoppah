@@ -9,7 +9,7 @@ import { createFeedIndicator } from './feed-indicator.js';
 import { t, getLocale } from '../../i18n/index.js';
 
 const connectionSchema = () => [
-  { key: 'url', label: t('settings.connection.url'), type: 'text', group: 'OctoPrint', placeholder: 'http://octopi.local' },
+  { key: 'url', label: t('settings.connection.url'), type: 'text', group: 'OctoPrint', placeholder: 'http://localhost:5000' },
   { key: 'key', label: t('settings.connection.key'), type: 'password', group: 'OctoPrint' },
 ];
 

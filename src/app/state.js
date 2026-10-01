@@ -2,7 +2,7 @@
 import { SCHEMAS, defaultsOf, normalize } from '../core/profile.js';
 import { fieldOf } from '../core/pipeline.js';
 
-export const CONNECTION_DEFAULTS = Object.freeze({ url: 'http://octopi.local', key: '' });
+export const CONNECTION_DEFAULTS = Object.freeze({ url: 'http://localhost:5000', key: '' });
 
 const clone = (v) => structuredClone(v);
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
