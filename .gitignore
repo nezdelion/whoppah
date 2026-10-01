@@ -7,3 +7,8 @@ __pycache__/
 .octoprint-dev/
 octoprint-plugin/octoprint_plotter/static/app/
 .pytest_cache/
+
+# OpenSpec lives in its own repository (../plotter-openspec), linked here by symlinks
+/openspec
+/.claude/skills
+/.claude/commands
