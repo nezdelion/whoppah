@@ -8,6 +8,7 @@ import { createCalibrationCapture } from '../src/app/calibration/capture.js';
 import { setupCalibration } from '../src/app/calibration/setup.js';
 import { calibrationFreshCheck } from '../src/app/print/checks.js';
 import { fakeServer, fakeTimers, fakeVisibility } from './helpers/fake-position.js';
+import './helpers/ru.js';
 
 // --- pure functions
 

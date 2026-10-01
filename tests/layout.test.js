@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createDrawing, bbox, SPACE } from '../src/core/drawing.js';
 import { layout, resolveField, sheetOverflow, sheetWarnings, PAPER_FORMATS } from '../src/core/layout.js';
 import { closeTo } from './helpers/fixtures.js';
+import './helpers/ru.js';
 
 const doc = (lines, meta) => createDrawing({ layers: [{ id: 'l', name: 'l', lines }], meta });
 const WORK = { field: { w: 180, h: 180 }, corner: { x: -5, y: 50 }, marginMm: 5 };
@@ -65,11 +66,11 @@ test('A4 on the working profile exceeds the axis limits', () => {
   const o = sheetOverflow(field, WORK.corner, limits);
   assert.equal(o.x, 0);
   assert.ok(closeTo(o.y, 117));
-  assert.match(sheetWarnings(field, WORK.corner, limits)[0], /по Y на 117\.0 мм/);
+  assert.match(sheetWarnings(field, WORK.corner, limits)[0], /по Y на 117,0 мм/);
   assert.deepEqual(sheetWarnings({ w: 180, h: 180 }, WORK.corner, limits), []);
 });
 
 test('the layout does not accept a drawing in machine coordinates', () => {
   const m = createDrawing({ space: 'machine', layers: [{ id: 'l', name: 'l', lines: [[0, 0, 1, 1]] }] });
-  assert.throws(() => layout(m, WORK), /координатах документа/);
+  assert.throws(() => layout(m, WORK), /document coordinates/);
 });

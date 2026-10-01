@@ -3,6 +3,7 @@ import { SPACE, DrawingError, assertSpace, bbox, allLines } from './drawing.js';
 import { absoluteZ, axisLimits } from './profile.js';
 import { estimateTime } from './time-estimate.js';
 import { firmwareEstimateOptions } from './firmware-settings.js';
+import { t, fmtNumber } from '../i18n/index.js';
 
 const f3 = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
 const fz = (v) => String(Number(v.toFixed(3)));
@@ -22,10 +23,10 @@ export function overflow(bounds, limits) {
  * @returns { gcode, stats, warnings, outOfLimits: null | {x, y} }
  */
 export function generateGcode(drawing, { profile: p, calibration: cal, beforeLayer, firmware = null }) {
-  assertSpace(drawing, SPACE.MACHINE, 'нужна раскладка на поле');
+  assertSpace(drawing, SPACE.MACHINE, 'layout to the field is required');
   const lines = allLines(drawing);
   const ob = bbox(drawing);
-  if (!ob) throw new DrawingError('нечего рисовать');
+  if (!ob) throw new DrawingError(t('err.nothingToDraw'));
   const z = absoluteZ(p, cal);
   const start = [cal.cornerX, cal.cornerY];
   const usedLayers = drawing.layers.filter((l) => l.lines.length);
@@ -62,8 +63,8 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
   const warnings = [...drawing.meta.warnings];
   const over = overflow(ob, axisLimits(p));
   const outOfLimits = over.x > 1e-6 || over.y > 1e-6 ? over : null;
-  if (over.x > 1e-6) warnings.push(`выход за X на ${over.x.toFixed(1)} мм`);
-  if (over.y > 1e-6) warnings.push(`выход за Y на ${over.y.toFixed(1)} мм`);
+  if (over.x > 1e-6) warnings.push(t('warn.overX', { mm: fmtNumber(over.x, { minFrac: 1 }) }));
+  if (over.y > 1e-6) warnings.push(t('warn.overY', { mm: fmtNumber(over.y, { minFrac: 1 }) }));
 
   const time = estimateTime(moves, { accelXY: p.accelXY, accelZ: p.accelZ, ...firmwareEstimateOptions(firmware) });
   const layoutInfo = drawing.meta.layout;

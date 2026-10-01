@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { crosshatch, thresholdOf, DEFAULT_ANGLES, defaultParams } from '../src/styles/own/crosshatch.js';
+import './helpers/ru.js';
 
 // horizontal gradient: white (255) on the left, black (0) on the right
 const gradient = (w, h) => {

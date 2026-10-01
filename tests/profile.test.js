@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { PROFILE_SCHEMA, CALIBRATION_SCHEMA, JOB_SCHEMA, defaultsOf, validate, normalize, absoluteZ, normalizeJob } from '../src/core/profile.js';
 import { resolveField } from '../src/core/layout.js';
 import legacy from './tools/legacy-core.cjs';
+import './helpers/ru.js';
 
 test('absolute Z and the corner from the defaults match the old DEFAULTS', () => {
   const p = defaultsOf(PROFILE_SCHEMA), c = defaultsOf(CALIBRATION_SCHEMA), j = defaultsOf(JOB_SCHEMA);

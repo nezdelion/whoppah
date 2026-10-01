@@ -4,13 +4,11 @@
 import { defaultParams as crosshatchDefaults, PARAMS as CROSSHATCH_PARAMS } from './own/crosshatch.js';
 import { createPlotterfunSession } from './plotterfun-adapter.js';
 import { createNativeSession } from './native-adapter.js';
+import { t } from '../i18n/index.js';
 
-export const GROUPS = Object.freeze({
-  lines: 'Линии и волны',
-  contour: 'Контур и штриховка',
-  dots: 'Точки и сетки',
-  patterns: 'Узоры',
-});
+// Group identifiers; the label is groupLabel(id) from the dictionary (style.group.<id>)
+export const GROUPS = Object.freeze({ lines: 'lines', contour: 'contour', dots: 'dots', patterns: 'patterns' });
+export const groupLabel = (id) => t(`style.group.${id}`);
 
 const PF_HOST = new URL('./plotterfun-host.js', import.meta.url).href;
 
@@ -77,7 +75,7 @@ export function groupedStyles() {
   return out;
 }
 
-export const originLabel = (s) => (s.origin === 'plotterfun' ? 'plotterfun' : 'свой');
+export const originLabel = (s) => (s.origin === 'plotterfun' ? 'plotterfun' : t('style.origin.own'));
 
 export const defaultsOfParams = (params) => Object.fromEntries(params.map((p) => [p.key, p.default]));
 export { crosshatchDefaults };

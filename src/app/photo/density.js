@@ -1,4 +1,5 @@
 // Estimate of the minimum line step of a layer on paper and comparison with the pen width. No DOM.
+import { t, fmtNumber } from '../../i18n/index.js';
 
 /** The "image pixel -> mm" scale when laying out on the field (the same formula as core/layout.js for a drawing the size of the image). */
 export function scaleToPaper(image, { fieldMm, marginMm, rotate }) {
@@ -20,11 +21,11 @@ export function estimateSpacing(spacingPx, image, printParams) {
   return { stepMm, tooDense: stepMm < printParams.penWidthMm };
 }
 
-const fmt = (v) => (Math.round(v * 100) / 100).toString();
+const fmt = (v) => fmtNumber(v, { maxFrac: 2 });
 
 export function densityText(est, penWidthMm) {
   if (!est) return '';
   return est.tooDense
-    ? `шаг ${fmt(est.stepMm)} мм меньше ширины пера ${fmt(penWidthMm)} мм: линии сливаются`
-    : `шаг ${fmt(est.stepMm)} мм`;
+    ? t('photo.density.tooDense', { step: fmt(est.stepMm), pen: fmt(penWidthMm) })
+    : t('photo.density.step', { step: fmt(est.stepMm) });
 }

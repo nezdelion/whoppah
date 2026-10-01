@@ -4,6 +4,7 @@ import { createDrawing, stats, allLines } from '../src/core/drawing.js';
 import { simplify, sortMerge, optimize, travelLength } from '../src/core/optimize.js';
 import { pointSegmentDistance } from '../src/core/geometry.js';
 import { deepFreeze } from './helpers/fixtures.js';
+import './helpers/ru.js';
 
 const draw = (lines, name = 'L') => createDrawing({ space: 'machine', layers: [{ id: name, name, lines }] });
 

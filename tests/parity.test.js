@@ -6,6 +6,7 @@ import { importSvg } from '../src/core/svg-import.js';
 import { buildPlan, fieldOf, cornerOf } from '../src/core/pipeline.js';
 import { legacyToSettings } from './helpers/legacy.js';
 import { loadTree, fixturesDir } from './helpers/fixtures.js';
+import './helpers/ru.js';
 
 const cases = JSON.parse(readFileSync(join(fixturesDir, 'cases.json'), 'utf8'));
 

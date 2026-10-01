@@ -9,16 +9,16 @@ import { isPartial, partialReasons } from '../../core/drawing.js';
 import { axisLimits } from '../../core/profile.js';
 import { downloadText, baseName } from '../download.js';
 import { JOG_STEPS } from '../../core/jog.js';
+import { reasonText } from '../photo/layer-stack.js';
+import { t, fmtNumber } from '../../i18n/index.js';
 
 /** "A–B min" by the time estimate bounds; if equal — "A min". */
-const minutesText = (t) => {
-  const a = Math.ceil(t.min / 60), b = Math.ceil(t.max / 60);
-  return a === b ? `${a} мин` : `${a}–${b} мин`;
+const minutesText = (time) => {
+  const a = Math.ceil(time.min / 60), b = Math.ceil(time.max / 60);
+  return a === b ? t('print.minutes', { a }) : t('print.minutesRange', { a, b });
 };
 
-const MANUAL_BUTTONS = [
-  ['up', 'Перо вверх'], ['corner', 'К углу бумаги'], ['touch', 'Перо на касание'], ['motorsOff', 'Моторы выкл'], ['home', 'Home (G28)'],
-];
+const MANUAL_BUTTONS = ['up', 'corner', 'touch', 'motorsOff', 'home'];
 
 const OFFSET_KEY = 'neptune-plotter.capture-offset';
 const readOffset = () => {
@@ -37,7 +37,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
 
   return {
     id: 'print',
-    title: 'Печать',
+    get title() { return t('tab.print'); },
 
     mount(el) {
       const $ = {};
@@ -55,7 +55,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
       $.partial = h('div', { class: 'warn' });
       $.warn = h('div', { class: 'warn' });
       $.name = h('input', { placeholder: 'plot.gcode' });
-      $.job = h('div', { class: 'job' }, 'Нет связи');
+      $.job = h('div', { class: 'job' }, t('print.jobNone'));
       $.progress = h('progress', { max: 100, value: 0 });
       $.log = h('div', { class: 'log' });
 
@@ -63,31 +63,31 @@ export function createPrintTab({ state, store, service, transport, connection, u
       view.attach($.canvas, () => draw());
       const previewCard = h('div', { class: 'card' },
         $.canvas,
-        h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.travel, 'переезды')),
+        h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.travel, t('print.travel'))),
         $.stats, $.calibration, $.partial, $.warn,
         h('div', { class: 'row' },
-          button('dlGcode', 'Скачать G-code', () => download('gcode')),
-          button('dlSvg', 'Скачать SVG', () => download('svg')),
-          button('dlPaper', 'SVG как на бумаге', () => download('paper'))));
+          button('dlGcode', t('print.dl.gcode'), () => download('gcode')),
+          button('dlSvg', t('print.dl.svg'), () => download('svg')),
+          button('dlPaper', t('print.dl.paper'), () => download('paper'))));
 
       const calibrationCard = calibrator ? mountCaptureCard() : null;
 
       const sendCard = h('div', { class: 'card' },
-        h('h2', {}, 'Отправка'),
-        h('label', {}, 'Имя файла в OctoPrint', $.name),
+        h('h2', {}, t('print.send.title')),
+        h('label', {}, t('print.fileName'), $.name),
         h('div', { class: 'row' },
-          button('frame', 'Обвести рамку', () => run('Рамка', () => service.frame(state.drawing()))),
-          button('upload', 'Загрузить в OctoPrint', () => run('Загрузка', () => service.send(state.drawing(), { print: false, name: fileName() }))),
-          button('print', 'Отправить и печатать', () => run('Рисование', () => service.send(state.drawing(), { print: true, name: fileName() })), 'primary')));
+          button('frame', t('print.frame'), () => run(t('print.log.frame'), () => service.frame(state.drawing()))),
+          button('upload', t('print.upload'), () => run(t('print.log.upload'), () => service.send(state.drawing(), { print: false, name: fileName() }))),
+          button('print', t('print.print'), () => run(t('print.log.drawing'), () => service.send(state.drawing(), { print: true, name: fileName() })), 'primary')));
 
       const printerCard = h('div', { class: 'card' },
-        h('h2', {}, 'Принтер'),
-        h('div', { class: 'row' }, button('test', 'Проверить связь', testConnection),
-          MANUAL_BUTTONS.map(([id, text]) => button('m-' + id, text, () => run(text, () => service.manual(id))))),
+        h('h2', {}, t('print.printer.title')),
+        h('div', { class: 'row' }, button('test', t('print.test'), testConnection),
+          MANUAL_BUTTONS.map((id) => button('m-' + id, t(`print.manual.${id}`), () => run(t(`print.manual.${id}`), () => service.manual(id))))),
         $.job, $.progress,
         h('div', { class: 'row' },
-          button('pause', 'Пауза / продолжить', () => run('Пауза', () => service.pause(!/^Paus/.test(lastJobState)))),
-          button('cancel', 'Отмена', () => { if (confirm('Отменить рисование?')) run('Отмена', () => service.cancel()); }, 'danger')),
+          button('pause', t('print.pauseResume'), () => run(t('print.log.pause'), () => service.pause(!/^Paus/.test(lastJobState)))),
+          button('cancel', t('print.cancel'), () => { if (confirm(t('print.cancelConfirm'))) run(t('print.log.cancel'), () => service.cancel()); }, 'danger')),
         $.log);
 
       el.append(h('div', { class: 'columns' }, h('div', {}, settingsHost), h('div', { class: 'work-col' }, previewCard, calibrationCard, sendCard, printerCard)));
@@ -101,8 +101,8 @@ export function createPrintTab({ state, store, service, transport, connection, u
       function mountCaptureCard() {
         const need = ui.needs ? ui.needs('calibration') : null;
         const initial = readOffset();
-        $.offX = h('input', { type: 'number', step: '0.1', value: initial.x, 'aria-label': 'Смещение пера по X, мм' });
-        $.offY = h('input', { type: 'number', step: '0.1', value: initial.y, 'aria-label': 'Смещение пера по Y, мм' });
+        $.offX = h('input', { type: 'number', step: '0.1', value: initial.x, 'aria-label': t('print.offX') });
+        $.offY = h('input', { type: 'number', step: '0.1', value: initial.y, 'aria-label': t('print.offY') });
         $.fresh = h('div', { class: 'warn', role: 'status' });
         const offset = () => {
           const n = (el) => (Number.isFinite(parseFloat(el.value)) ? parseFloat(el.value) : 0);
@@ -119,30 +119,30 @@ export function createPrintTab({ state, store, service, transport, connection, u
         $.homeHint = h('div', { class: 'warn', role: 'status' });
         // Home may have been done before the page was opened (G28 is dangerous once the pen is installed): the user's word instead of G28
         $.homeDone = h('button', { type: 'button', hidden: true, onclick: () => {
-          if (confirm('Принтер точно выполнил Home после включения? Если нет — координаты неверны, перо может упереться в стол.')) {
-            calibrator.markHomed(); log('Home принят как выполненный (по подтверждению)'); syncCapture();
+          if (confirm(t('print.homeConfirm'))) {
+            calibrator.markHomed(); log(t('print.homeAccepted')); syncCapture();
           }
-        } }, 'Home уже сделан');
-        $.step = h('select', { 'aria-label': 'Шаг перемещения, мм' }, JOG_STEPS.map((v) => h('option', { value: v, selected: v === 1 }, `${v} мм`)));
+        } }, t('print.homeDone'));
+        $.step = h('select', { 'aria-label': t('print.stepLabel') }, JOG_STEPS.map((v) => h('option', { value: v, selected: v === 1 }, t('print.stepOption', { v }))));
         const jogBtn = (axis, dir) => act(`jog${axis}${dir}`, `${axis.toUpperCase()}${dir > 0 ? '+' : '−'}`, () => calibrator.jog.move(axis, dir, Number($.step.value)));
         const jogCard = calibrator.jog ? [
-          h('div', { class: 'note' }, 'Перемещение пера: положение читается перед каждым шагом, шаг не выходит за пределы профиля, а Z — ниже касания больше чем на 2 мм.'),
-          h('div', { class: 'row' }, h('label', {}, 'Шаг', $.step),
+          h('div', { class: 'note' }, t('print.jogNote')),
+          h('div', { class: 'row' }, h('label', {}, t('print.step'), $.step),
             ['x', 'y', 'z'].flatMap((a) => [jogBtn(a, -1), jogBtn(a, 1)])),
         ] : [];
         return h('div', { class: 'card' },
-          h('h2', {}, 'Калибровка по положению головы'),
-          h('div', { class: 'note' }, 'Подведите перо кнопками перемещения ниже или вкладкой Control в OctoPrint, затем нажмите кнопку. Во время печати недоступно.'),
-          need ? h('div', { class: 'note' }, `Недоступно: ${need}`) : null,
+          h('h2', {}, t('print.capture.title')),
+          h('div', { class: 'note' }, t('print.capture.note')),
+          need ? h('div', { class: 'note' }, t('print.capture.unavailable', { need })) : null,
           $.homeHint, $.homeDone,
           h('div', { class: 'row' },
-            h('label', {}, 'Смещение пера от угла листа, мм: X', $.offX), h('label', {}, 'Y', $.offY)),
+            h('label', {}, t('print.capture.offset'), $.offX), h('label', {}, 'Y', $.offY)),
           h('div', { class: 'row' },
-            act('capCorner', 'Угол здесь', () => cap.captureCorner(offset())),
-            act('capTouch', 'Касание здесь', () => cap.captureTouch())),
+            act('capCorner', t('print.capture.corner'), () => cap.captureCorner(offset())),
+            act('capTouch', t('print.capture.touch'), () => cap.captureTouch())),
           h('div', { class: 'row' },
-            act('okCorner', 'Угол верен', () => cap.confirm('xy')),
-            act('okTouch', 'Касание верно', () => cap.confirm('z'))),
+            act('okCorner', t('print.capture.cornerOk'), () => cap.confirm('xy')),
+            act('okTouch', t('print.capture.touchOk'), () => cap.confirm('z'))),
           ...jogCard,
           $.fresh);
       }
@@ -167,7 +167,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
       async function run(label, action) {
         try {
           const r = await action();
-          log(`${label}: ${r.ok ? (r.message || 'ок') : r.message}`);
+          log(`${label}: ${r.ok ? (r.message || t('common.ok')) : r.message}`);
         } catch (e) {
           log(`${label}: ${e.message}`);
         }
@@ -176,7 +176,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
 
       async function testConnection() {
         const s = await connection.checkNow();
-        log(s.status === 'ok' || s.status === 'printer-off' ? s.detail : `Связь: ${s.detail}`);
+        log(s.status === 'ok' || s.status === 'printer-off' ? s.detail : t('print.link', { detail: s.detail }));
       }
 
       const fileName = () => (($.name.value.trim() || `${baseName(state.sourceName())}`).replace(/(\.gcode)?$/i, '') + '.gcode');
@@ -194,7 +194,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
         renderPreview($.canvas, {
           machine: plan ? plan.machine : null, field: fieldOf(s.job), corner: cornerOf(s.calibration),
           limits: axisLimits(s.profile), showTravel: $.travel.checked,
-          emptyText: planError || 'Рисунок не загружен', view,
+          emptyText: planError || t('print.noDrawing'), view,
         });
       }
 
@@ -211,21 +211,24 @@ export function createPrintTab({ state, store, service, transport, connection, u
         $.warn.textContent = warnings.join('\n');
         $.calibration.textContent = calibrationSummary(s.calibration);
         $.partial.textContent = drawing && isPartial(drawing)
-          ? `Рисунок промежуточный${partialReasons(drawing).length ? ': ' + partialReasons(drawing).join('; ') : ''}. Отправка на принтер потребует подтверждения.` : '';
+          ? (partialReasons(drawing).length ? t('print.partialWith', { reasons: partialReasons(drawing).map(reasonText).join('; ') }) : t('print.partial')) : '';
 
         if (plan) {
           const st = plan.stats, o = plan.optimization;
-          $.stats.textContent = `${st.lines} линий · рисунок ${st.size[0].toFixed(1)}×${st.size[1].toFixed(1)} мм` +
-            ` · перо ${(st.draw / 1000).toFixed(2)} м, переезды ${(st.travel / 1000).toFixed(2)} м · ≈${minutesText(st.time)}${fw ? ' (с учётом прошивки)' : ''}` +
-            ` · X ${st.bbox.x0.toFixed(1)}…${st.bbox.x1.toFixed(1)}, Y ${st.bbox.y0.toFixed(1)}…${st.bbox.y1.toFixed(1)}` +
-            ` · оптимизация: точек ${o.pointsBefore}→${o.pointsAfter}, линий ${o.linesBefore}→${o.linesAfter}, переезды ${(o.travelBefore / 1000).toFixed(2)}→${(o.travelAfter / 1000).toFixed(2)} м`;
+          const f1 = (v) => fmtNumber(v, { minFrac: 1 }), f2 = (v) => fmtNumber(v, { minFrac: 2, maxFrac: 2 });
+          $.stats.textContent = t('print.stats', {
+            lines: t('svgtab.lines', { count: st.lines }), w: f1(st.size[0]), h: f1(st.size[1]), draw: f2(st.draw / 1000), travel: f2(st.travel / 1000),
+            time: minutesText(st.time), fw: fw ? t('print.withFirmware') : '',
+            x0: f1(st.bbox.x0), x1: f1(st.bbox.x1), y0: f1(st.bbox.y0), y1: f1(st.bbox.y1),
+            pb: o.pointsBefore, pa: o.pointsAfter, lb: o.linesBefore, la: o.linesAfter, tb: f2(o.travelBefore / 1000), ta: f2(o.travelAfter / 1000),
+          });
         } else $.stats.textContent = '';
 
         const online = transport.configured();
         for (const k of ['dlGcode', 'dlSvg', 'dlPaper']) $[k].disabled = !plan;
         for (const k of ['frame', 'upload', 'print']) $[k].disabled = !plan || !online;
-        for (const k of ['test', 'pause', 'cancel', ...MANUAL_BUTTONS.map(([id]) => 'm-' + id)]) $[k].disabled = !online;
-        if (!online) $.job.textContent = 'Принтер не настроен: укажите адрес и API-ключ OctoPrint';
+        for (const k of ['test', 'pause', 'cancel', ...MANUAL_BUTTONS.map((id) => 'm-' + id)]) $[k].disabled = !online;
+        if (!online) $.job.textContent = t('print.notConfigured');
         if (!$.name.dataset.touched) $.name.value = drawing ? `${baseName(state.sourceName())}.gcode` : '';
         syncCapture();
         draw();
@@ -237,7 +240,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
       // after the connection test: if OctoPrint responds, read the job, otherwise show the reason
       function onCheck(s) {
         if (s.status === 'ok' || s.status === 'printer-off') poll();
-        else if (transport.configured()) { lastJobState = ''; $.job.textContent = `Нет связи: ${s.detail}`; }
+        else if (transport.configured()) { lastJobState = ''; $.job.textContent = t('print.noConnection', { detail: s.detail }); }
       }
 
       async function poll() {
@@ -246,12 +249,12 @@ export function createPrintTab({ state, store, service, transport, connection, u
         try {
           const j = await transport.job();
           lastJobState = j.state || '';
-          const left = j.timeLeft != null ? ` · осталось ≈${Math.ceil(j.timeLeft / 60)} мин` : '';
-          $.job.textContent = `${j.state}${j.file ? ` · ${j.file}` : ''}${j.progress != null ? ` · ${j.progress.toFixed(1)}%` : ''}${left}`;
+          const left = j.timeLeft != null ? t('print.timeLeft', { min: Math.ceil(j.timeLeft / 60) }) : '';
+          $.job.textContent = `${j.state}${j.file ? ` · ${j.file}` : ''}${j.progress != null ? ` · ${fmtNumber(j.progress, { minFrac: 1 })}%` : ''}${left}`;
           $.progress.value = j.progress || 0;
         } catch (e) {
           lastJobState = '';
-          $.job.textContent = `Нет связи: ${e.message}`;
+          $.job.textContent = t('print.noConnection', { detail: e.message });
         }
         polling = false;
       }

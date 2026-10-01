@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLimitsMemo } from '../src/app/ui/feed-limits.js';
+import './helpers/ru.js';
 
 const L = { enabled: true, min: { x: 0, y: 0, z: 0 }, max: { x: 235, y: 235, z: 280 } };
 

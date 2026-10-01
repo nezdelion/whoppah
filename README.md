@@ -22,6 +22,21 @@ Open <http://localhost:8000/>. Does not work from `file://` (ES modules), an htt
 
 Without an address and key the send buttons are inactive; G-code download works. The key is stored only in the browser's localStorage and is not included in the settings export file.
 
+## Interface language
+
+Languages: English (`en`, fallback) and Russian (`ru`). Dictionaries are flat modules `src/i18n/en.js` and `ru.js` with stable dotted keys (`print.upload`); a value is a string with `{params}` or plural forms `{ one, few, many, other }` (chosen by `Intl.PluralRules` from the `count` parameter). `t(key, params)`: if the key is missing in the current language, English is used; if missing there too, the key itself. Numbers in text are formatted by `fmtNumber` (`Intl.NumberFormat`: "1.5" / "1,5"); in G-code and input fields always a dot. `tests/i18n.test.js` checks that the key sets and `{name}` parameters in `en` and `ru` match, that all `t('…')` from `src` are in the dictionary, and that no Cyrillic remains in `src` outside the dictionary.
+
+Which language to enable (`src/i18n/detect.js`, `src/app/lang.js`), in descending priority:
+
+1. an explicit choice in settings ("Language": Auto / English / Russian), stored in `localStorage` (`neptune-plotter.lang`);
+2. plugin: the interface language of the current OctoPrint user — `language` in the dynamic `env.json` (user setting `interface.language`, otherwise the global `appearance.defaultLanguage`; "_default" means "not chosen");
+3. `navigator.languages`: the first supported one (`ru*` → Russian, `en*` → English);
+4. otherwise English (including for an unsupported OctoPrint language, e.g. `de`, in which case the browser language is checked).
+
+The language is chosen once at startup, before the UI is built; changing it in settings saves the choice and **reloads the page** (simpler and more reliable than rebuilding live tabs). Texts that appear in schemas, constants and the registry are computed on access (getters), so they do not get "frozen" in the language at module load. The plugin server (Python) texts stay English: the app shows them only as error details.
+
+**New string**: add the key to both dictionaries (in `en.js` and `ru.js`, same parameters), in code — `t('key', { param })`. Tests that check Russian texts import `tests/helpers/ru.js` (pins `ru`).
+
 ## Settings
 
 Three sections with different change frequency:
@@ -78,6 +93,7 @@ index.html                entry point
 src/core/                 pure functions over Drawing: geometry, svg-import, svg-export, optimize, layout, gcode, profile, pipeline
 src/transport/            Transport interface, OctoPrint REST (fetch), auth by key and by session (plugin)
 src/storage/              SettingsStore (localStorage, OctoPrint server), settings file
+src/i18n/                 localization: t(key, params), dictionaries en.js / ru.js, language choice (detect.js); imports nothing
 src/styles/               "image → lines" styles: registry, runner (workers), plotterfun adapter, own styles (own/)
 vendor/plotterfun/        third-party plotterfun code (unmodified copy), version in vendor/plotterfun/UPSTREAM
 octoprint-plugin/         OctoPrint Python plugin (page, env.json, settings API, permission)
@@ -86,7 +102,7 @@ src/app/                  shell: state, tabs, forms, preview, print service
 tests/                    node --test
 ```
 
-`core` → nothing; `transport` → nothing; `storage` → nothing; `styles` → `core` (`styles/tone.js` and `styles/own/*` — only `core`, no DOM); `app` → everything. The rule is checked by `tests/deps.test.js`.
+`i18n` → nothing (and does not touch the DOM); `core`, `transport`, `storage`, `styles`, `app` may import `i18n` (core returns ready-made error and warning texts); `core` → only `core` and `i18n`; `transport`, `storage` — likewise only their own layer and `i18n`; `styles` → `core` (`styles/tone.js` and `styles/own/*` — only `core`, no DOM); `app` → everything. The rule is checked by `tests/deps.test.js`.
 All modules exchange the `Drawing` model (layers of polylines, flat arrays `[x0, y0, x1, y1, ...]`, "document" or "machine" coordinate system).
 
 Processing order (`core/pipeline.js`): import → layout (mm) → simplification → sorting/merging → G-code.

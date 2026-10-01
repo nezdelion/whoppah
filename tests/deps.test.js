@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkDeps, importsOf } from './helpers/deps.js';
+import './helpers/ru.js';
 
 const srcDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
@@ -74,5 +75,24 @@ test('styles: pure styles — core only; other styles — core and styles; app i
     writeFileSync(join(dir, 'styles', 'runner.js'), 'export const r = 1;\n');
     writeFileSync(join(dir, 'core', 'c.js'), "import { r } from '../styles/runner.js';\n");
     assert.match(checkDeps(dir).join('\n'), /core\/c\.js/);
+  } finally { rmSync(dir, { recursive: true }); }
+});
+
+test('i18n: allowed from any layer, i18n itself imports no other layers and does not touch the DOM', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deps-'));
+  try {
+    for (const d of ['core', 'transport', 'storage', 'styles', 'styles/own', 'app', 'i18n']) mkdirSync(join(dir, d), { recursive: true });
+    writeFileSync(join(dir, 'i18n', 'index.js'), "import en from './en.js';\n");
+    writeFileSync(join(dir, 'i18n', 'en.js'), "export default { 'nothing.to.export': 'nothing to export' };\n");
+    for (const [d, rel] of [['core', '../i18n/index.js'], ['transport', '../i18n/index.js'], ['storage', '../i18n/index.js'],
+      ['styles', '../i18n/index.js'], ['styles/own', '../../i18n/index.js'], ['app', '../i18n/index.js']]) {
+      writeFileSync(join(dir, d, 'a.js'), `import { t } from '${rel}';\n`);
+    }
+    assert.deepEqual(checkDeps(dir), [], 'the word export at a dictionary line end is not taken for an import');
+
+    writeFileSync(join(dir, 'i18n', 'index.js'), "import { c } from '../core/a.js';\n");
+    assert.match(checkDeps(dir).join('\n'), /i18n\/index\.js/);
+    writeFileSync(join(dir, 'i18n', 'index.js'), 'export const l = navigator.language;\n');
+    assert.match(checkDeps(dir).join('\n'), /i18n\/index\.js.*DOM/);
   } finally { rmSync(dir, { recursive: true }); }
 });

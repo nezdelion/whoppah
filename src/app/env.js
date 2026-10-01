@@ -1,6 +1,6 @@
 // Environment description: env.json next to the page. Standalone serves a static file, the OctoPrint plugin a dynamic one.
 // Returns { mode: 'standalone' } or { mode: 'plugin', baseUrl, apiBase, settingsUrl, octoprintUrl, loginUrl,
-// version, csrfCookie, user, canEditProfile, canEditCalibration }; the addresses in the result are absolute.
+// version, csrfCookie, user, canEditProfile, canEditCalibration, language }; the addresses in the result are absolute.
 
 const PLUGIN_FIELDS = ['baseUrl', 'settingsUrl', 'octoprintUrl', 'csrfCookie'];
 
@@ -8,7 +8,7 @@ const PLUGIN_FIELDS = ['baseUrl', 'settingsUrl', 'octoprintUrl', 'csrfCookie'];
 export function resolveEnv(raw, origin) {
   if (!raw || typeof raw !== 'object' || raw.mode !== 'plugin') return { mode: 'standalone' };
   for (const f of PLUGIN_FIELDS) {
-    if (typeof raw[f] !== 'string') throw new Error(`env.json: нет поля «${f}»`);
+    if (typeof raw[f] !== 'string') throw new Error(`env.json: missing field "${f}"`);
   }
   const abs = (v) => (/^https?:\/\//i.test(v) ? v : origin + v);
   const trim = (v) => v.replace(/\/+$/, '');
@@ -24,6 +24,7 @@ export function resolveEnv(raw, origin) {
     user: raw.user ?? null,
     canEditProfile: !!raw.canEditProfile,
     canEditCalibration: !!raw.canEditCalibration,
+    language: typeof raw.language === 'string' && raw.language ? raw.language : null, // the interface language of the current OctoPrint user
   };
 }
 

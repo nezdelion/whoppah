@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createConnectionMonitor, isValidBaseUrl, printerIsUp, INTERVAL_MS } from '../src/app/connection-monitor.js';
 import { TransportError } from '../src/transport/transport.js';
 import { fakeVisibility } from './helpers/fake-position.js';
+import './helpers/ru.js';
 
 // Virtual time: setTimeout/setInterval/now; tick(ms) advances timers and microtasks.
 function clock() {

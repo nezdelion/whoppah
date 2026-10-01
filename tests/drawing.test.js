@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createDrawing, bbox, stats, SPACE, DrawingError, assertSpace, isPartial, partialReasons, derive } from '../src/core/drawing.js';
 import { layout } from '../src/core/layout.js';
 import { deepFreeze } from './helpers/fixtures.js';
+import './helpers/ru.js';
 
 const layer = (lines, id = 'l1', name = 'Слой') => ({ id, name, lines });
 

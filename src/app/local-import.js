@@ -3,6 +3,7 @@
 import { SECTIONS } from '../storage/settings-store.js';
 import { applySettings } from '../storage/settings-file.js';
 import { importMessage } from './ui/settings-panel.js';
+import { t } from '../i18n/index.js';
 
 const USER_SECTIONS = ['job', 'presets'];
 
@@ -17,7 +18,7 @@ export async function offerLocalImport({ serverStore, localStore, flags, flagKey
   if (!Object.keys(sections).length) return null;
   for (const key of USER_SECTIONS) if (await serverStore.load(key) !== null) return null;
 
-  const ok = await confirm('В этом браузере найдены настройки standalone-версии. Перенести их на сервер OctoPrint?');
+  const ok = await confirm(t('localImport.confirm'));
   flags.setItem(flagKey, '1');
   if (!ok) return null;
   const { applied, skipped } = await applySettings(serverStore, { sections }, undefined, { needs });

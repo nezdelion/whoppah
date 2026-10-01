@@ -1,5 +1,6 @@
 // Pen jog panel: computing one step clamped to the limits. Pure functions, no DOM or transport.
 import { axisLimits } from './profile.js';
+import { t } from '../i18n/index.js';
 
 export const JOG_STEPS = Object.freeze([0.1, 1, 10]);
 /** How far below the touch (zTouch) the nozzle may be lowered by jog steps, mm: a margin for touch inaccuracy, no more. */
@@ -22,7 +23,7 @@ export function jogRange(axis, profile, calibration) {
     const zt = Number.isFinite(calibration && calibration.zTouch) ? calibration.zTouch : 0;
     return [Math.max(0, zt - JOG_Z_MARGIN), JOG_Z_MAX];
   }
-  throw new Error(`неизвестная ось: ${axis}`);
+  throw new Error(`unknown axis: ${axis}`);
 }
 
 /**
@@ -33,12 +34,12 @@ export function jogRange(axis, profile, calibration) {
  */
 export function planJog({ axis, dir, step, position, profile, calibration }) {
   const pos = position && position[axis];
-  if (!Number.isFinite(pos)) return { ok: false, message: 'положение неизвестно' };
-  if (!(step > 0) || (dir !== 1 && dir !== -1)) return { ok: false, message: 'неверный шаг' };
+  if (!Number.isFinite(pos)) return { ok: false, message: t('jog.err.position') };
+  if (!(step > 0) || (dir !== 1 && dir !== -1)) return { ok: false, message: t('jog.err.step') };
   const [lo, hi] = jogRange(axis, profile, calibration);
   const want = pos + dir * step;
   const target = dir > 0 ? Math.min(want, hi) : Math.max(want, lo);
   const delta = round3(target - pos);
-  if (delta * dir < EPS) return { ok: false, message: `предел оси ${axis.toUpperCase()}` };
+  if (delta * dir < EPS) return { ok: false, message: t('jog.err.limit', { axis: axis.toUpperCase() }) };
   return { ok: true, delta, target: round3(target), clamped: Math.abs(delta) < step - EPS };
 }

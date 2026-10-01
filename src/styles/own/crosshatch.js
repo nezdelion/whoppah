@@ -1,18 +1,22 @@
 // Crosshatch: parallel hatching layers by darkness thresholds. A pure deterministic function.
 import { toDarkness, boxBlur } from '../tone.js';
+import { t } from '../../i18n/index.js';
 
 export const DEFAULT_ANGLES = Object.freeze([45, 135, 0, 90]);
 const SAMPLE_STEP = 0.5;
 
+// label is lazy (by the current language): key crosshatch.param.<key>
+const param = (def) => Object.defineProperty({ ...def }, 'label', { get: () => t(`crosshatch.param.${def.key}`), enumerable: true });
+
 export const PARAMS = Object.freeze([
-  { key: 'levels', label: 'Уровней штриховки', type: 'number', min: 1, max: 4, step: 1, default: 3 },
-  { key: 'spacing', label: 'Шаг линий, px', type: 'number', min: 1, max: 30, step: 0.5, default: 4 },
-  { key: 'angle', label: 'Базовый угол, °', type: 'number', min: -90, max: 90, step: 1, default: 0 },
-  { key: 'minLength', label: 'Мин. длина отрезка, px', type: 'number', min: 0, max: 50, step: 0.5, default: 4 },
-  { key: 'blur', label: 'Размытие, px', type: 'number', min: 0, max: 10, step: 1, default: 1 },
-  { key: 'invert', label: 'Инверсия', type: 'bool', default: false },
-  { key: 'brightness', label: 'Яркость', type: 'number', min: -100, max: 100, step: 1, default: 0 },
-  { key: 'contrast', label: 'Контраст', type: 'number', min: -100, max: 100, step: 1, default: 0 },
+  param({ key: 'levels', type: 'number', min: 1, max: 4, step: 1, default: 3 }),
+  param({ key: 'spacing', type: 'number', min: 1, max: 30, step: 0.5, default: 4 }),
+  param({ key: 'angle', type: 'number', min: -90, max: 90, step: 1, default: 0 }),
+  param({ key: 'minLength', type: 'number', min: 0, max: 50, step: 0.5, default: 4 }),
+  param({ key: 'blur', type: 'number', min: 0, max: 10, step: 1, default: 1 }),
+  param({ key: 'invert', type: 'bool', default: false }),
+  param({ key: 'brightness', type: 'number', min: -100, max: 100, step: 1, default: 0 }),
+  param({ key: 'contrast', type: 'number', min: -100, max: 100, step: 1, default: 0 }),
 ]);
 
 export const defaultParams = () => Object.fromEntries(PARAMS.map((p) => [p.key, p.default]));

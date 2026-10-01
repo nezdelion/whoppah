@@ -1,5 +1,6 @@
 // DOMParser -> a neutral tree {tag, attrs, children} that core/svg-import understands.
 import { SvgImportError } from '../core/svg-import.js';
+import { t } from '../i18n/index.js';
 
 function toTree(el) {
   const attrs = {};
@@ -10,7 +11,7 @@ function toTree(el) {
 export function svgTextToTree(text) {
   const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
   if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') {
-    throw new SvgImportError('не удалось прочитать SVG');
+    throw new SvgImportError(t('svg.err.read'));
   }
   return toTree(doc.documentElement);
 }

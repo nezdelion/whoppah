@@ -7,16 +7,17 @@
 // }
 // Errors are TransportError; kind: busy | offline | timeout | stale | unsupported | nocoords | forbidden | auth | network | http.
 import { TransportError } from './transport.js';
+import { t } from '../i18n/index.js';
 
+// texts are computed on access (they depend on the current language)
 export const MESSAGES = {
-  busy: 'нельзя во время печати (или чтение положения уже идёт)',
-  offline: 'принтер не подключён',
-  timeout: 'принтер не ответил',
-  stale: 'положение сбилось — повторите захват',
-  unsupported: 'прошивка не отвечает на M118 — введите координаты вручную',
-  nocoords: 'принтер не прислал координаты',
+  get busy() { return t('position.busy'); },
+  get offline() { return t('position.offline'); },
+  get timeout() { return t('position.timeout'); },
+  get stale() { return t('position.stale'); },
+  get unsupported() { return t('position.unsupported'); },
+  get nocoords() { return t('position.nocoords'); },
 };
-const NETWORK = 'нет ответа от OctoPrint';
 
 /** Position read error by kind (busy | offline | timeout | stale | unsupported | nocoords) — shared by the plugin and the feed. */
 export const positionError = (kind, operation = 'position', message = MESSAGES[kind]) => new TransportError(message, { kind, operation });
@@ -35,10 +36,10 @@ export function createOctoPrintPosition({ apiUrl, auth, fetch: fetchFn = globalT
     let body = null;
     try { body = JSON.parse(text); } catch (e) { /* not JSON */ }
     const code = body && typeof body.code === 'string' ? body.code : '';
-    if (status === 401 || status === 403) return new TransportError(`OctoPrint отклонил запрос (${status})`, { kind: status === 403 ? 'forbidden' : 'auth', operation, status });
+    if (status === 401 || status === 403) return new TransportError(t('net.rejected', { status }), { kind: status === 403 ? 'forbidden' : 'auth', operation, status });
     if (MESSAGES[code]) return new TransportError(MESSAGES[code], { kind: code, operation, status });
     const detail = body && body.error ? body.error : String(text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
-    return new TransportError(`OctoPrint ответил ${status}${detail ? ': ' + detail : ''}`, { kind: 'http', operation, status });
+    return new TransportError(t('net.status', { status }) + (detail ? ': ' + detail : ''), { kind: 'http', operation, status });
   }
 
   async function once(method, path, json, operation) {
@@ -56,10 +57,10 @@ export function createOctoPrintPosition({ apiUrl, auth, fetch: fetchFn = globalT
       });
       text = await res.text();
     } catch (e) {
-      throw new TransportError(NETWORK, { kind: 'network', operation });
+      throw new TransportError(t('net.noResponse'), { kind: 'network', operation });
     }
     if (!res.ok) throw toError(res.status, text, operation);
-    try { return JSON.parse(text); } catch (e) { throw new TransportError('OctoPrint вернул не JSON', { kind: 'http', operation, status: res.status }); }
+    try { return JSON.parse(text); } catch (e) { throw new TransportError(t('net.notJson'), { kind: 'http', operation, status: res.status }); }
   }
 
   async function request(method, path, json, operation) {
@@ -87,20 +88,20 @@ export function createOctoPrintPosition({ apiUrl, auth, fetch: fetchFn = globalT
 
     async read() {
       const r = await request('POST', '/position', {}, 'position');
-      if (![r.x, r.y, r.z, r.epochXY, r.epochZ].every(Number.isFinite)) throw new TransportError('OctoPrint вернул неполное положение', { kind: 'http', operation: 'position' });
+      if (![r.x, r.y, r.z, r.epochXY, r.epochZ].every(Number.isFinite)) throw new TransportError(t('position.incomplete'), { kind: 'http', operation: 'position' });
       return { x: r.x, y: r.y, z: r.z, epochXY: r.epochXY, epochZ: r.epochZ };
     },
 
     async epoch() {
       const r = await request('GET', '/position/epoch', undefined, 'position');
-      if (!Number.isInteger(r.xy) || !Number.isInteger(r.z)) throw new TransportError('OctoPrint вернул неверную версию координат', { kind: 'http', operation: 'position' });
+      if (!Number.isInteger(r.xy) || !Number.isInteger(r.z)) throw new TransportError(t('position.badEpoch'), { kind: 'http', operation: 'position' });
       return { xy: r.xy, z: r.z };
     },
 
     async saveCorner({ x, y, epoch }) { return (await request('POST', '/calibration/xy', { x, y, epoch }, 'position')).calibration; },
     async saveTouch({ zTouch, epoch }) { return (await request('POST', '/calibration/z', { zTouch, epoch }, 'position')).calibration; },
     async confirm(part) {
-      if (part !== 'xy' && part !== 'z') throw new Error(`неизвестная часть калибровки: ${part}`);
+      if (part !== 'xy' && part !== 'z') throw new Error(`unknown calibration part: ${part}`);
       return (await request('POST', `/calibration/${part}/confirm`, {}, 'position')).calibration;
     },
   };

@@ -12,8 +12,8 @@ self.onmessage = (e) => {
   const { runId, styleId, image, params } = msg;
   try {
     const fn = IMPL[styleId];
-    if (!fn) throw new Error(`неизвестный стиль ${styleId}`);
-    self.postMessage({ type: PROGRESS, runId, text: 'Расчёт штриховки' });
+    if (!fn) throw new Error(`unknown style ${styleId}`);
+    self.postMessage({ type: PROGRESS, runId, text: 'styles.progress.hatch' });
     const gray = toGray(image.data, image.width, image.height);
     const lines = fn(gray, image.width, image.height, params);
     self.postMessage({ type: RESULT, runId, lines, final: true }, lines.map((l) => l.buffer));

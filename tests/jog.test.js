@@ -4,7 +4,8 @@ import { planJog, jogRange, JOG_Z_MAX } from '../src/core/jog.js';
 import { jogLines } from '../src/core/gcode.js';
 import { defaultsOf, SCHEMAS } from '../src/core/profile.js';
 import { createJog } from '../src/app/calibration/jog.js';
-import { guardState, HOME_HINT } from '../src/app/calibration/guard.js';
+import { guardState, homeHint } from '../src/app/calibration/guard.js';
+import './helpers/ru.js';
 
 const profile = { ...defaultsOf(SCHEMAS.profile), limX0: -4, limX1: 234, limY0: 1, limY1: 231, fTravel: 6000, fZUp: 1200, fZDown: 600 };
 const calibration = { ...defaultsOf(SCHEMAS.calibration), zTouch: 8 };
@@ -91,8 +92,8 @@ test('createJog: position not read (printing) — no move, the reason is shown',
 
 test('createJog: the Home guard blocks until read; Z is checked by the z part, X/Y by xy', async () => {
   const parts = [];
-  const { jog, sent } = jogSetup({ guard: (part) => { parts.push(part); return part === 'z' ? { ok: false, message: HOME_HINT } : { ok: true, message: '' }; } });
-  assert.deepEqual(await jog.move('z', 1, 1), { ok: false, message: HOME_HINT });
+  const { jog, sent } = jogSetup({ guard: (part) => { parts.push(part); return part === 'z' ? { ok: false, message: homeHint() } : { ok: true, message: '' }; } });
+  assert.deepEqual(await jog.move('z', 1, 1), { ok: false, message: homeHint() });
   assert.equal((await jog.move('x', 1, 1)).ok, true);
   assert.deepEqual(parts, ['z', 'xy']);
   assert.equal(sent.length, 1);
@@ -104,9 +105,9 @@ test('guardState: plugin without a guard; feed not connected; Home per part', ()
   assert.equal(off.xy.ok, false);
   assert.match(off.z.message, /не на связи/);
   const none = guardState({ state: 'live', detail: '', homed: { xy: false, z: false } });
-  assert.deepEqual([none.xy, none.z], [{ ok: false, message: HOME_HINT }, { ok: false, message: HOME_HINT }]);
+  assert.deepEqual([none.xy, none.z], [{ ok: false, message: homeHint() }, { ok: false, message: homeHint() }]);
   const xyOnly = guardState({ state: 'live', detail: '', homed: { xy: true, z: false } });
   assert.equal(xyOnly.xy.ok, true);
   assert.equal(xyOnly.z.ok, false);
-  assert.equal(HOME_HINT, 'Home не выполнен — сделайте Home до установки пера');
+  assert.equal(homeHint(), 'Home не выполнен — сделайте Home до установки пера');
 });

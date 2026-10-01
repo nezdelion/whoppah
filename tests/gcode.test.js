@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createDrawing } from '../src/core/drawing.js';
 import { generateGcode, liftLines, cornerLines, touchLines, homeLines, frameLines, overflow } from '../src/core/gcode.js';
 import { defaultsOf, PROFILE_SCHEMA, CALIBRATION_SCHEMA } from '../src/core/profile.js';
+import './helpers/ru.js';
 
 const profile = defaultsOf(PROFILE_SCHEMA), cal = defaultsOf(CALIBRATION_SCHEMA);
 const machine = (layers, meta) => createDrawing({ space: 'machine', layers, meta });
@@ -34,9 +35,9 @@ test('drawing feed in the first working move of each line', () => {
   assert.equal((gcode.match(/G1 X[\d.]+ Y[\d.]+ F2500/g) || []).length, 2);
 });
 
-test('exceeding the right limit: out of X limits by 12.0 mm, outOfLimits', () => {
+test('exceeding the right limit: out of X limits by 12,0 mm, outOfLimits', () => {
   const r = generateGcode(one([[200, 60, 246, 60]]), { profile, calibration: cal });
-  assert.ok(r.warnings.includes('выход за X на 12.0 мм'));
+  assert.ok(r.warnings.includes('выход за X на 12,0 мм'));
   assert.ok(Math.abs(r.outOfLimits.x - 12) < 1e-9);
   assert.equal(r.outOfLimits.y, 0);
   assert.equal(generateGcode(one([[0, 60, 10, 60]]), { profile, calibration: cal }).outOfLimits, null);
@@ -73,7 +74,7 @@ test('statistics: lines, lengths, bounds, scale, time', () => {
 
 test('a drawing in document coordinates is rejected', () => {
   const d = createDrawing({ layers: [{ id: 'a', name: 'a', lines: [[0, 0, 1, 1]] }] });
-  assert.throws(() => generateGcode(d, { profile, calibration: cal }), /нужна раскладка на поле/);
+  assert.throws(() => generateGcode(d, { profile, calibration: cal }), /layout to the field is required/);
 });
 
 test('outline: X 0..170, Y 55..225, no Z below 9.0', () => {

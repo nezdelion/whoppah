@@ -57,10 +57,10 @@ export function convertLegacySettings(old) {
   const job = { ...pick(old, { margin: 'marginMm', halign: 'halign', valign: 'valign', rotate: 'rotate', mergeTol: 'mergeTolMm' }), simplifyTolMm: 0 };
   if (old.fieldW > 0 && old.fieldH > 0) {
     // storage does not know core, so the standard own format is duplicated here
-    const formats = [{ id: 'work', name: 'Рабочее поле', w: 180, h: 180 }];
+    const formats = [{ id: 'work', name: 'Work area', w: 180, h: 180 }];
     let selected = formats.find((f) => f.w === old.fieldW && f.h === old.fieldH);
     if (!selected) {
-      selected = { id: 'migrated', name: 'Из старой версии', w: old.fieldW, h: old.fieldH };
+      selected = { id: 'migrated', name: 'Migrated', w: old.fieldW, h: old.fieldH };
       formats.push(selected);
     }
     job.customFormats = formats;

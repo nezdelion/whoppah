@@ -8,6 +8,7 @@ import { offerLocalImport } from '../src/app/local-import.js';
 import { createState } from '../src/app/state.js';
 import { resolveEnv, loadEnv } from '../src/app/env.js';
 import { fakeFetch } from './helpers/fake-fetch.js';
+import './helpers/ru.js';
 
 const COOKIE = 'csrf_token_P5000';
 const login = async () => ({ ok: true, status: 200, text: async () => '{"name":"u"}' });

@@ -1,65 +1,75 @@
 // Settings schemas: machine profile, calibration, job parameters. A single source for the form, defaults and validation.
 // Schema field: { key, label, type: 'number'|'bool'|'enum'|'paper'|'formats'|'text', unit, min, max, default, group, options?, hidden? }
+// Texts (label, unit, group, warn, options labels) are computed on access via t(): keys schema.<section>.<key>, schema.group.<id>, unit.<id>.
+import { t } from '../i18n/index.js';
 
-const num = (key, label, def, extra = {}) => ({ key, label, type: 'number', default: def, ...extra });
+/** A schema field with lazily translated texts. def.unit / def.group are identifiers, options is a list of identifiers, warn is a flag. */
+function field(ns, def) {
+  const f = { ...def };
+  const text = (name, get) => Object.defineProperty(f, name, { get, enumerable: true, configurable: true });
+  text('label', () => t(`schema.${ns}.${def.key}`));
+  if (def.unit) text('unit', () => t(`unit.${def.unit}`));
+  if (def.group) {
+    text('group', () => t(`schema.group.${def.group}`));
+    Object.defineProperty(f, 'groupId', { value: def.group, enumerable: false });
+  }
+  if (def.warn) text('warn', () => t(`schema.${ns}.${def.key}.warn`));
+  if (def.options) text('options', () => Object.fromEntries(def.options.map((o) => [o, t(`schema.${ns}.${def.key}.${o}`)])));
+  return f;
+}
+
+const num = (ns, key, def, extra = {}) => field(ns, { key, type: 'number', default: def, ...extra });
 
 export const PROFILE_SCHEMA = Object.freeze([
-  num('penWidthMm', 'Ширина пера', 0.5, { unit: 'мм', min: 0.05, max: 5, group: 'Перо' }),
-  num('zDownOffset', 'Рисует', -0.7, { unit: 'мм', min: -10, max: 10, group: 'Перо, Z от касания' }),
-  num('zUpOffset', 'Поднято', 2, { unit: 'мм', min: 0, max: 50, group: 'Перо, Z от касания' }),
-  num('zStartOffset', 'В начале', 7, { unit: 'мм', min: 0, max: 100, group: 'Перо, Z от касания' }),
-  num('zEndOffset', 'В конце', 17, { unit: 'мм', min: 0, max: 100, group: 'Перо, Z от касания' }),
-  num('zClearanceMm', 'Зазор рамки', 1, { unit: 'мм', min: 0, max: 20, group: 'Перо, Z от касания' }),
-  num('fDraw', 'Рисование', 3000, { unit: 'мм/мин', min: 1, group: 'Скорости' }),
-  num('fTravel', 'Переезд', 6000, { unit: 'мм/мин', min: 1, group: 'Скорости' }),
-  num('fZUp', 'Z вверх', 1200, { unit: 'мм/мин', min: 1, group: 'Скорости' }),
-  num('fZDown', 'Z вниз', 600, { unit: 'мм/мин', min: 1, group: 'Скорости' }),
-  num('accelXY', 'Ускорение XY', 500, { unit: 'мм/с²', min: 1, group: 'Скорости' }),
-  num('accelZ', 'Ускорение Z', 100, { unit: 'мм/с²', min: 1, group: 'Скорости' }),
-  num('limX0', 'X мин', -4, { unit: 'мм', group: 'Пределы хода сопла' }),
-  num('limX1', 'X макс', 234, { unit: 'мм', group: 'Пределы хода сопла' }),
-  num('limY0', 'Y мин', 1, { unit: 'мм', group: 'Пределы хода сопла' }),
-  num('limY1', 'Y макс', 231, { unit: 'мм', group: 'Пределы хода сопла' }),
-  { key: 'home', label: 'Home (G28) в начале файла', type: 'bool', default: false, group: 'Файл',
-    warn: 'Home опускает голову к столу, чтобы датчик замерил Z. Перо торчит ниже сопла и упрётся в стол или бумагу — '
-      + 'можно сломать перо или держатель. Включайте, только если перо в этот момент поднято в держателе выше сопла. '
-      + 'Обычно проще сделать Home кнопкой до установки пера, а потом снять калибровку.' },
-  { key: 'motorsOff', label: 'M84 в конце', type: 'bool', default: true, group: 'Файл' },
+  num('profile', 'penWidthMm', 0.5, { unit: 'mm', min: 0.05, max: 5, group: 'pen' }),
+  num('profile', 'zDownOffset', -0.7, { unit: 'mm', min: -10, max: 10, group: 'penZ' }),
+  num('profile', 'zUpOffset', 2, { unit: 'mm', min: 0, max: 50, group: 'penZ' }),
+  num('profile', 'zStartOffset', 7, { unit: 'mm', min: 0, max: 100, group: 'penZ' }),
+  num('profile', 'zEndOffset', 17, { unit: 'mm', min: 0, max: 100, group: 'penZ' }),
+  num('profile', 'zClearanceMm', 1, { unit: 'mm', min: 0, max: 20, group: 'penZ' }),
+  num('profile', 'fDraw', 3000, { unit: 'mmPerMin', min: 1, group: 'speeds' }),
+  num('profile', 'fTravel', 6000, { unit: 'mmPerMin', min: 1, group: 'speeds' }),
+  num('profile', 'fZUp', 1200, { unit: 'mmPerMin', min: 1, group: 'speeds' }),
+  num('profile', 'fZDown', 600, { unit: 'mmPerMin', min: 1, group: 'speeds' }),
+  num('profile', 'accelXY', 500, { unit: 'mmPerS2', min: 1, group: 'speeds' }),
+  num('profile', 'accelZ', 100, { unit: 'mmPerS2', min: 1, group: 'speeds' }),
+  num('profile', 'limX0', -4, { unit: 'mm', group: 'limits' }),
+  num('profile', 'limX1', 234, { unit: 'mm', group: 'limits' }),
+  num('profile', 'limY0', 1, { unit: 'mm', group: 'limits' }),
+  num('profile', 'limY1', 231, { unit: 'mm', group: 'limits' }),
+  field('profile', { key: 'home', type: 'bool', default: false, group: 'file', warn: true }),
+  field('profile', { key: 'motorsOff', type: 'bool', default: true, group: 'file' }),
   // the mesh fade (Z10 on the Neptune 3 Pro) turns off compensation above the pen touch; Z0 — compensation at any height, until the printer reboots
-  { key: 'meshNoFade', label: 'Сетка стола на любой высоте (M420 S1 Z0)', type: 'bool', default: false, group: 'Файл',
-    warn: 'После включения снимите касание заново: с компенсацией Z в углу листа сдвигается на поправку сетки в этой точке. '
-      + 'Настройка действует до перезагрузки принтера; файл и кнопки пера отправляют её сами.' },
+  field('profile', { key: 'meshNoFade', type: 'bool', default: false, group: 'file', warn: true }),
 ]);
 
 export const CALIBRATION_SCHEMA = Object.freeze([
-  num('cornerX', 'X', -5, { unit: 'мм', group: 'Угол бумаги (сопло, когда перо в углу листа)' }),
-  num('cornerY', 'Y', 50, { unit: 'мм', group: 'Угол бумаги (сопло, когда перо в углу листа)' }),
-  num('zTouch', 'Z касания бумаги', 8, { unit: 'мм', min: 0, max: 300, group: 'Высота' }),
-  { key: 'updatedAt', label: 'Дата', type: 'text', default: null, hidden: true },
+  num('calibration', 'cornerX', -5, { unit: 'mm', group: 'corner' }),
+  num('calibration', 'cornerY', 50, { unit: 'mm', group: 'corner' }),
+  num('calibration', 'zTouch', 8, { unit: 'mm', min: 0, max: 300, group: 'height' }),
+  field('calibration', { key: 'updatedAt', type: 'text', default: null, hidden: true }),
   // printer coordinate epochs at which a calibration part was captured, entered or confirmed (written by the plugin server)
-  { key: 'epochXY', label: 'Версия угла', type: 'number', default: null, hidden: true },
-  { key: 'epochZ', label: 'Версия касания', type: 'number', default: null, hidden: true },
+  field('calibration', { key: 'epochXY', type: 'number', default: null, hidden: true }),
+  field('calibration', { key: 'epochZ', type: 'number', default: null, hidden: true }),
 ]);
 
-export const DEFAULT_CUSTOM_FORMATS = Object.freeze([{ id: 'work', name: 'Рабочее поле', w: 180, h: 180 }]);
+// The name of the built-in "work area" is taken from the dictionary (paper.work) for display, the stored name is a fallback.
+export const DEFAULT_CUSTOM_FORMATS = Object.freeze([{ id: 'work', name: 'Work area', w: 180, h: 180 }]);
 
 export const JOB_SCHEMA = Object.freeze([
-  { key: 'paperId', label: 'Формат бумаги', type: 'paper', default: 'work', group: 'Поле' },
-  { key: 'orientation', label: 'Ориентация', type: 'enum', default: 'portrait', group: 'Поле',
-    options: { portrait: 'книжная', landscape: 'альбомная' } },
-  num('marginMm', 'Отступ', 5, { unit: 'мм', min: 0, group: 'Поле' }),
-  { key: 'halign', label: 'По горизонтали', type: 'enum', default: 'center', group: 'Выравнивание',
-    options: { left: 'слева', center: 'центр', right: 'справа' } },
-  { key: 'valign', label: 'По вертикали', type: 'enum', default: 'center', group: 'Выравнивание',
-    options: { top: 'сверху', center: 'центр', bottom: 'снизу' } },
-  { key: 'rotate', label: 'Повернуть на 90°', type: 'bool', default: false, group: 'Выравнивание' },
-  { key: 'asIs', label: 'Как есть в мм (без масштабирования)', type: 'bool', default: false, group: 'Выравнивание' },
-  num('simplifyTolMm', 'Упрощение линий (допуск)', 0.05, { unit: 'мм', min: 0, group: 'Оптимизация' }),
-  num('mergeTolMm', 'Слияние концов (допуск)', 0.05, { unit: 'мм', min: 0, group: 'Оптимизация' }),
+  field('job', { key: 'paperId', type: 'paper', default: 'work', group: 'sheet' }),
+  field('job', { key: 'orientation', type: 'enum', default: 'portrait', group: 'sheet', options: ['portrait', 'landscape'] }),
+  num('job', 'marginMm', 5, { unit: 'mm', min: 0, group: 'sheet' }),
+  field('job', { key: 'halign', type: 'enum', default: 'center', group: 'align', options: ['left', 'center', 'right'] }),
+  field('job', { key: 'valign', type: 'enum', default: 'center', group: 'align', options: ['top', 'center', 'bottom'] }),
+  field('job', { key: 'rotate', type: 'bool', default: false, group: 'align' }),
+  field('job', { key: 'asIs', type: 'bool', default: false, group: 'align' }),
+  num('job', 'simplifyTolMm', 0.05, { unit: 'mm', min: 0, group: 'optimize' }),
+  num('job', 'mergeTolMm', 0.05, { unit: 'mm', min: 0, group: 'optimize' }),
   // hatching: adjacent parallel strokes are joined by a drawn transition — without lifting and lowering the pen (Z is slow)
   // the transition is visible on paper (at the hatching edge it almost merges with the outline); set near the hatching step, 0 — off
-  num('linkTolMm', 'Соединять концы штрихом до', 0, { unit: 'мм', min: 0, group: 'Оптимизация' }),
-  { key: 'customFormats', label: 'Свои форматы', type: 'formats', default: DEFAULT_CUSTOM_FORMATS, hidden: true },
+  num('job', 'linkTolMm', 0, { unit: 'mm', min: 0, group: 'optimize' }),
+  field('job', { key: 'customFormats', type: 'formats', default: DEFAULT_CUSTOM_FORMATS, hidden: true }),
 ]);
 
 export const SCHEMAS = Object.freeze({ profile: PROFILE_SCHEMA, calibration: CALIBRATION_SCHEMA, job: JOB_SCHEMA });
@@ -90,11 +100,10 @@ export function validate(schema, values) {
     if (f.hidden && f.type !== 'formats') continue;
     const v = values[f.key];
     if (validField(f, v)) continue;
-    let message = 'недопустимое значение';
+    let message = t('schema.err.invalid');
     if (f.type === 'number') {
-      const lo = f.min !== undefined ? `от ${f.min} ` : '';
-      const hi = f.max !== undefined ? `до ${f.max}` : '';
-      message = `${f.label}: число ${lo}${hi}`.trim();
+      const range = f.min !== undefined ? (f.max !== undefined ? 'both' : 'min') : (f.max !== undefined ? 'max' : 'any');
+      message = t(`schema.err.number.${range}`, { label: f.label, min: f.min, max: f.max });
     }
     errors.push({ key: f.key, message });
   }

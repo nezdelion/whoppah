@@ -4,6 +4,7 @@ import { createOctoPrintTransport } from '../src/transport/octoprint-http.js';
 import { createSessionAuth, readCookie } from '../src/transport/auth-session.js';
 import { authContract } from './contract/auth.contract.js';
 import { fakeFetch } from './helpers/fake-fetch.js';
+import './helpers/ru.js';
 
 const COOKIE = 'csrf_token_P5000';
 const alive = async () => ({ ok: true, status: 200, text: async () => '{"name":"admin"}' });

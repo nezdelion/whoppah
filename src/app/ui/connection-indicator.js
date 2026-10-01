@@ -1,14 +1,15 @@
 // OctoPrint connection indicator: a colored dot (and, with text: true, a short label). Colors are --conn-* tokens in app.css.
 import { h } from './dom.js';
+import { t, getLocale } from '../../i18n/index.js';
 import { STATUS_LABELS } from '../connection-monitor.js';
 
-const time = (ms) => new Date(ms).toLocaleTimeString('ru-RU');
+const time = (ms) => new Date(ms).toLocaleTimeString(getLocale());
 
 /** Hint text and aria-label: the state label, details, and for failures the time of the last response. */
 export function describeStatus(s) {
   if (s.status === 'ok' || s.status === 'printer-off' || s.status === 'checking' || s.status === 'unconfigured') return s.detail;
   let text = `OctoPrint: ${s.detail}`;
-  if ((s.status === 'error' || s.status === 'auth') && s.lastOk) text += `; последний ответ в ${time(s.lastOk)}`;
+  if ((s.status === 'error' || s.status === 'auth') && s.lastOk) text += '; ' + t('conn.lastReply', { time: time(s.lastOk) });
   return text;
 }
 

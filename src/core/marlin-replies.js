@@ -1,4 +1,5 @@
 // Parsing OctoPrint printer communication log lines (Send:/Recv:) and Marlin replies. Pure functions, no DOM or network.
+import { t } from '../i18n/index.js';
 
 const NUM = '(-?\\d+(?:\\.\\d+)?)';
 
@@ -158,6 +159,6 @@ export function limitsWarnings(profile, firmware) {
 /** The warning text for the limitsWarnings violations, or ''. */
 export function limitsWarningText(warnings) {
   if (!warnings.length) return '';
-  const parts = warnings.map((w) => `${w.axis} ${w.side === 'min' ? 'мин' : 'макс'}: в профиле ${w.profile}, в прошивке ${w.firmware}`);
-  return `Границы профиля выходят за границы прошивки (${parts.join('; ')}). Принтер остановит ход раньше.`;
+  const parts = warnings.map((w) => t('firmware.limitPart', { axis: w.axis, side: t(`firmware.side.${w.side}`), profile: w.profile, firmware: w.firmware }));
+  return t('firmware.limitsWarning', { parts: parts.join('; ') });
 }

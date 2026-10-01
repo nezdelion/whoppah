@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createPrinterFeed, createFeedPositionSource } from '../src/transport/octoprint-feed.js';
 import { TransportError } from '../src/transport/transport.js';
 import * as replies from '../src/core/marlin-replies.js';
+import './helpers/ru.js';
 
 const { FEED_LOG_FILTER } = replies;
 import { clock, FakeWebSocket, current, history, fakeLogin } from './helpers/fake-feed.js';

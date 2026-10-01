@@ -5,6 +5,7 @@ import { createApiKeyAuth } from '../src/transport/auth-api-key.js';
 import { NullTransport, TransportError } from '../src/transport/transport.js';
 import { authContract } from './contract/auth.contract.js';
 import { fakeFetch } from './helpers/fake-fetch.js';
+import './helpers/ru.js';
 
 // A strategy with one retry: after the first error it asks for "retry" and changes the token.
 function retryingAuth() {

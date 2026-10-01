@@ -8,6 +8,7 @@ import { MemoryStore } from '../src/storage/settings-store.js';
 import { setupCalibration } from '../src/app/calibration/setup.js';
 import { clock, FakeWebSocket, current, history, fakeLogin } from './helpers/fake-feed.js';
 import { fakeVisibility } from './helpers/fake-position.js';
+import './helpers/ru.js';
 
 const ridOf = (sent) => /PLT_B (\S+)/.exec(sent[sent.length - 1][0])[1];
 

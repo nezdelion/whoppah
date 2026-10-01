@@ -1,5 +1,6 @@
 // A preview on the field in printer coordinates (Y up): axis limits, sheet, drawing, travel moves.
 import { allLines } from '../../core/drawing.js';
+import { t } from '../../i18n/index.js';
 
 /** @param opts { view?: Viewport (zoom/pan, line thickness constant on screen), machine: Drawing|null, field:{w,h}, corner:{x,y}, limits:{x0,x1,y0,y1}, showTravel, emptyText } */
 export function renderPreview(canvas, { machine, field, corner, limits, showTravel, emptyText, view }) {
@@ -26,7 +27,7 @@ export function renderPreview(canvas, { machine, field, corner, limits, showTrav
   g.strokeRect(...rect(corner.x, corner.y, corner.x + field.w, corner.y + field.h));
   g.fillStyle = col('--muted'); g.font = `${22 / z}px system-ui`;
   const [cx, cy] = P(corner.x, corner.y);
-  g.fillText(`угол X${corner.x} Y${corner.y}`, cx + 4 / z, cy - 6 / z);
+  g.fillText(t('preview.corner', { x: corner.x, y: corner.y }), cx + 4 / z, cy - 6 / z);
 
   const lines = machine ? allLines(machine) : [];
   if (!lines.length) { g.fillText(emptyText, W / 2 - 80 / z, H / 2); return; }

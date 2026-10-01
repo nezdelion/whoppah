@@ -1,12 +1,14 @@
 // plotterfun adapter: parameters (sliders) -> parameter description, plotterfun-host messages -> events of our protocol.
 import { pathToLines } from '../core/svg-import.js';
 import { INIT, RUN, PARAMS, HOST, PROGRESS, RESULT, ERROR, SLIDERS } from './protocol.js';
+import { t } from '../i18n/index.js';
 
 export const VENDOR_BASE = new URL('../../vendor/plotterfun/', import.meta.url).href;
 const CIRCLE_CHORD_PX = 0.5;
 
-export const REASON_UNTRACKED = 'завершение стиля не отслеживается';
-export const REASON_LATE = 'стиль продолжил вывод после завершения';
+// reasons are dictionary keys (reason.*), shown via t()
+export const REASON_UNTRACKED = 'reason.untracked';
+export const REASON_LATE = 'reason.late';
 
 // Common plotterfun parameters (defaultControls from helpers.js). A style without them (linescan) still reads them via pixelProcessor:
 // in plotterfun they carry over into config from a previously chosen style, here they are substituted explicitly.
@@ -74,7 +76,7 @@ export function createPlotterfunSession({ style, model = 'none', base = VENDOR_B
         }
         case HOST.MSG: return [{ type: PROGRESS, text: m.text }];
         case HOST.PATH: {
-          try { lastLines = pathToLines(sanitizePath(m.d), CIRCLE_CHORD_PX); } catch (e) { return [{ type: ERROR, message: `стиль вернул неразборчивый путь: ${e.message}` }]; }
+          try { lastLines = pathToLines(sanitizePath(m.d), CIRCLE_CHORD_PX); } catch (e) { return [{ type: ERROR, message: t('styles.badPath', { reason: e.message }) }]; }
           return [{ type: RESULT, lines: lastLines, final: false, late: !!m.late, reason: m.late ? REASON_LATE : reasonOf() }];
         }
         case HOST.FINAL: return [{ type: RESULT, lines: lastLines, final: true }];

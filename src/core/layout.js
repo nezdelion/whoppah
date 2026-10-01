@@ -1,5 +1,6 @@
 // Layout: drawing in document coordinates -> millimeters on paper -> printer coordinates.
 import { SPACE, DrawingError, assertSpace, bbox, derive } from './drawing.js';
+import { t, fmtNumber } from '../i18n/index.js';
 
 export const PAPER_FORMATS = Object.freeze([
   { id: 'a6', name: 'A6', w: 105, h: 148 },
@@ -18,7 +19,10 @@ export function resolveField({ paperId, orientation = 'portrait', customFormats 
   return orientation === 'landscape' ? { w: hi, h: lo } : { w: lo, h: hi };
 }
 
-const fmtMm = (v) => (Math.round(v * 10) / 10).toFixed(1);
+const fmtMm = (v) => fmtNumber(Math.round(v * 10) / 10, { minFrac: 1 });
+
+/** Paper format label: the built-in "work area" and a transferred format are named from the dictionary, the others by name. */
+export const paperLabel = (p) => (p.id === 'work' || p.id === 'migrated' ? t(`paper.${p.id}`) : p.name);
 
 /** How far the sheet (left near corner at corner) exceeds the axis limits, mm; 0 — does not exceed. */
 export function sheetOverflow(field, corner, limits) {
@@ -31,8 +35,8 @@ export function sheetOverflow(field, corner, limits) {
 export function sheetWarnings(field, corner, limits) {
   const o = sheetOverflow(field, corner, limits);
   const out = [];
-  if (o.x > 1e-6) out.push(`лист выходит за пределы осей по X на ${fmtMm(o.x)} мм`);
-  if (o.y > 1e-6) out.push(`лист выходит за пределы осей по Y на ${fmtMm(o.y)} мм`);
+  if (o.x > 1e-6) out.push(t('warn.sheetOverX', { mm: fmtMm(o.x) }));
+  if (o.y > 1e-6) out.push(t('warn.sheetOverY', { mm: fmtMm(o.y) }));
   return out;
 }
 
@@ -41,12 +45,12 @@ export function sheetWarnings(field, corner, limits) {
  * @returns Drawing in "machine" coordinates (mm, Y up); meta.layout stores the scale and parameters.
  */
 export function layout(drawing, opts) {
-  assertSpace(drawing, SPACE.DOCUMENT, 'раскладка принимает рисунок в координатах документа');
+  assertSpace(drawing, SPACE.DOCUMENT, 'layout expects a drawing in document coordinates');
   const b0 = bbox(drawing);
-  if (!b0) throw new DrawingError('нечего рисовать');
+  if (!b0) throw new DrawingError(t('err.nothingToDraw'));
   const { field, marginMm: margin, corner, halign = 'center', valign = 'center', rotate = false, asIs = false } = opts;
   const aw = field.w - 2 * margin, ah = field.h - 2 * margin;
-  if (!(aw > 0 && ah > 0)) throw new DrawingError('отступ не оставляет места для рисунка');
+  if (!(aw > 0 && ah > 0)) throw new DrawingError(t('err.marginNoRoom'));
 
   // rotation by 90°: (x, y) -> (-y, x)
   const b = rotate ? { x0: -b0.y1, y0: b0.x0, w: b0.h, h: b0.w } : b0;
@@ -54,8 +58,8 @@ export function layout(drawing, opts) {
   let s;
   if (asIs) {
     s = drawing.meta.unitMm;
-    if (!(s > 0)) throw new DrawingError('размер рисунка в мм неизвестен, режим «как есть» недоступен');
-    if (b.w * s > aw + 1e-9 || b.h * s > ah + 1e-9) warnings.push('рисунок больше поля');
+    if (!(s > 0)) throw new DrawingError(t('err.sizeUnknown'));
+    if (b.w * s > aw + 1e-9 || b.h * s > ah + 1e-9) warnings.push(t('warn.drawingTooBig'));
   } else {
     s = Math.min(b.w > 0 ? aw / b.w : Infinity, b.h > 0 ? ah / b.h : Infinity);
   }

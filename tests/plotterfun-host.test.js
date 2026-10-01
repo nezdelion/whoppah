@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { commonDefaults } from '../src/styles/plotterfun-adapter.js';
 import { probeControls, runHosted, runDirect, makeImage, spawnWorker, sleep, VENDOR_DIR } from './helpers/pf-harness.js';
+import './helpers/ru.js';
 
 const manifest = JSON.parse(readFileSync(new URL('../src/styles/plotterfun-completion.json', import.meta.url), 'utf8'));
 const FULL = !!process.env.PLOTTERFUN_FULL;

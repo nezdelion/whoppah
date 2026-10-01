@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { sanitizePath, COMMON_CONTROLS, commonDefaults, controlsToParams, createPlotterfunSession, REASON_LATE, REASON_UNTRACKED } from '../src/styles/plotterfun-adapter.js';
 import { resolveModels, parseUpstream, loadModels } from '../src/styles/plotterfun-models.js';
 import { probeControls, runHosted, makeImage } from './helpers/pf-harness.js';
+import './helpers/ru.js';
 
 const defaultOf = (c) => (c.type === 'checkbox' ? !!(c.checked ?? c.value) : c.type === 'select' ? (c.value ?? c.options[0]) : c.value);
 const near = (a, b, eps) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);

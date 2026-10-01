@@ -5,6 +5,7 @@ import { exportSvg, exportOnPaper } from '../src/core/svg-export.js';
 import { importSvg } from '../src/core/svg-import.js';
 import { layout } from '../src/core/layout.js';
 import { parseXml } from './helpers/xml.js';
+import './helpers/ru.js';
 
 const WORK = { field: { w: 180, h: 180 }, corner: { x: -5, y: 50 }, marginMm: 5 };
 const doc = (layers, meta) => createDrawing({ layers, meta });

@@ -4,12 +4,19 @@
 // Statuses: unconfigured | checking | ok | printer-off | auth | error. The API key does not appear in texts: only
 // TransportError messages are used, and they do not contain it.
 
+import { t, fmtNumber } from '../i18n/index.js';
+
 export const INTERVAL_MS = 3000;
 export const TIMEOUT_MS = 2500;
 export const DEBOUNCE_MS = 400;
 
 export const STATUS_LABELS = {
-  unconfigured: 'не настроено', checking: 'проверка…', ok: 'на связи', 'printer-off': 'принтер выключен', auth: 'ключ не принят', error: 'нет связи',
+  get unconfigured() { return t('conn.status.unconfigured'); },
+  get checking() { return t('conn.status.checking'); },
+  get ok() { return t('conn.status.ok'); },
+  get 'printer-off'() { return t('conn.status.printerOff'); },
+  get auth() { return t('conn.status.auth'); },
+  get error() { return t('conn.status.error'); },
 };
 
 const ACTIVE_PRINTER = /^(operational|printing|paused|pausing|resuming|finishing|cancelling|starting|transferring)/i;
@@ -22,7 +29,7 @@ export function isValidBaseUrl(url) {
 /** The printer is in a working state (Operational, Printing, Paused, …), not Offline/Closed/Error/no data. */
 export const printerIsUp = (printer) => !!printer && ACTIVE_PRINTER.test(printer);
 
-const UNCONFIGURED = 'укажите адрес и API-ключ OctoPrint';
+const UNCONFIGURED = () => t('conn.configure');
 const defaultTimers = {
   setInterval: (f, ms) => globalThis.setInterval(f, ms), clearInterval: (id) => globalThis.clearInterval(id),
   setTimeout: (f, ms) => globalThis.setTimeout(f, ms), clearTimeout: (id) => globalThis.clearTimeout(id),
@@ -38,10 +45,10 @@ const defaultTimers = {
 export function createConnectionMonitor({
   transport, configured = () => transport.configured(), visibility = { visible: () => true, subscribe: () => () => {} },
   timers = defaultTimers, intervalMs = INTERVAL_MS, timeoutMs = TIMEOUT_MS, debounceMs = DEBOUNCE_MS,
-  describeAuth = (status) => `ключ не принят (${status})`,
+  describeAuth = (status) => t('conn.keyRejected', { status }),
 }) {
   const T = { ...defaultTimers, ...timers };
-  let cur = { status: 'unconfigured', detail: UNCONFIGURED, lastOk: null, server: null, printer: null };
+  let cur = { status: 'unconfigured', detail: UNCONFIGURED(), lastOk: null, server: null, printer: null };
   const listeners = new Set(), cycleListeners = new Set();
   let running = null, again = false, epoch = 0, ctrl = null, underlying = null;
   let interval = null, debounce = null, started = false, offVisibility = () => {};
@@ -58,20 +65,20 @@ export function createConnectionMonitor({
     const server = r && r.server ? String(r.server) : '';
     const head = server ? `OctoPrint ${server}` : 'OctoPrint';
     const printer = r && r.printer ? String(r.printer) : null;
-    if (printerIsUp(printer)) return { status: 'ok', detail: `${head}, принтер: ${printer}`, lastOk: T.now(), server, printer };
-    return { status: 'printer-off', detail: `${head}, принтер: ${printer || 'не подключён'}`, lastOk: T.now(), server, printer };
+    if (printerIsUp(printer)) return { status: 'ok', detail: t('conn.printer', { head, printer }), lastOk: T.now(), server, printer };
+    return { status: 'printer-off', detail: t('conn.printer', { head, printer: printer || t('conn.printerNone') }), lastOk: T.now(), server, printer };
   }
 
   function fromError(e) {
     if (e && e.kind === 'auth') return { status: 'auth', detail: describeAuth(e.status), server: null, printer: null };
-    if (e && e.kind === 'network') return { status: 'error', detail: 'нет ответа: проверь адрес и CORS', server: null, printer: null };
-    return { status: 'error', detail: (e && e.message) || 'ошибка связи', server: null, printer: null };
+    if (e && e.kind === 'network') return { status: 'error', detail: t('conn.noResponse'), server: null, printer: null };
+    return { status: 'error', detail: (e && e.message) || t('conn.error'), server: null, printer: null };
   }
 
   async function once() {
-    if (!configured()) { set({ status: 'unconfigured', detail: UNCONFIGURED, server: null, printer: null }); return; }
+    if (!configured()) { set({ status: 'unconfigured', detail: UNCONFIGURED(), server: null, printer: null }); return; }
     if (underlying) return; // the previous request (without signal support) is still pending — do not overlap
-    if (cur.status === 'unconfigured') set({ status: 'checking', detail: 'проверка связи…' });
+    if (cur.status === 'unconfigured') set({ status: 'checking', detail: t('conn.checking') });
     const myEpoch = epoch;
     const c = new AbortController();
     ctrl = c;
@@ -87,7 +94,7 @@ export function createConnectionMonitor({
       result = classify(r);
     } catch (e) {
       if (!timedOut && e && e.kind === 'aborted') result = null;
-      else result = timedOut ? { status: 'error', detail: `нет ответа за ${String(timeoutMs / 1000).replace('.', ',')} с`, server: null, printer: null } : fromError(e);
+      else result = timedOut ? { status: 'error', detail: t('conn.timeout', { s: fmtNumber(timeoutMs / 1000, { maxFrac: 1 }) }), server: null, printer: null } : fromError(e);
     }
     T.clearTimeout(tid);
     if (ctrl === c) ctrl = null;
@@ -122,8 +129,8 @@ export function createConnectionMonitor({
       epoch++;
       if (ctrl) ctrl.abort();
       if (debounce) T.clearTimeout(debounce);
-      if (!configured()) { debounce = null; set({ status: 'unconfigured', detail: UNCONFIGURED, server: null, printer: null }); return; }
-      set({ status: 'checking', detail: 'проверка связи…', server: null, printer: null });
+      if (!configured()) { debounce = null; set({ status: 'unconfigured', detail: UNCONFIGURED(), server: null, printer: null }); return; }
+      set({ status: 'checking', detail: t('conn.checking'), server: null, printer: null });
       debounce = T.setTimeout(() => {
         debounce = null;
         if (!started) return;

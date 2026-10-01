@@ -7,6 +7,7 @@ import { createPrintService } from '../src/app/print/print-service.js';
 import { createDrawing } from '../src/core/drawing.js';
 import { buildPlan } from '../src/core/pipeline.js';
 import { fakeServer, fakeVisibility } from './helpers/fake-position.js';
+import './helpers/ru.js';
 
 test('printing: the calibration is refreshed BEFORE building the plan — G-code and the check see one snapshot', async () => {
   const server = fakeServer({ calibration: { cornerX: 0, cornerY: 0, zTouch: 8, epochXY: 0, epochZ: 0 } });

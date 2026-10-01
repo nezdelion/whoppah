@@ -22,6 +22,7 @@
 // Read errors are TransportError; kind: busy | offline | timeout | stale | unsupported | nocoords | http | conflict | auth | network.
 import { TransportError } from './transport.js';
 import { positionError } from './octoprint-position.js';
+import { t } from '../i18n/index.js';
 
 export const READ_TIMEOUT_MS = 10000;
 export const EXPECT_TTL_MS = 10000;
@@ -30,10 +31,14 @@ export const BACKOFF_MAX_MS = 30000;
 export const DEBOUNCE_MS = 500;
 
 export const FEED_LABELS = {
-  off: 'выключен', connecting: 'подключение…', live: 'на связи', forbidden: 'нет доступа', unavailable: 'недоступно',
+  get off() { return t('feed.state.off'); },
+  get connecting() { return t('feed.state.connecting'); },
+  get live() { return t('feed.state.live'); },
+  get forbidden() { return t('feed.state.forbidden'); },
+  get unavailable() { return t('feed.state.unavailable'); },
 };
 
-const HINT_CORS = 'нет соединения с потоком: включите api.allowCrossOrigin в OctoPrint (или прокси не пропускает WebSocket)';
+const hintCors = () => t('feed.hint.cors');
 const EVENTS = ['Connected', 'Disconnected'];
 
 const defaultTimers = {
@@ -61,7 +66,7 @@ export function createPrinterFeed({
   const PARSERS = { position: parsePosition, limits: parseLimits, settings: parseFirmwareSettings };
   const T = { ...defaultTimers, ...timers };
   const listeners = new Set();
-  let state = 'off', detail = 'укажите адрес и API-ключ OctoPrint';
+  let state = 'off', detail = t('feed.detail.configure');
   let epochXY = 0, epochZ = 0, known = false, busy = false;
   let homedXY = false, homedZ = false; // G28 per axes since (re)connecting; initially — none
   let gen = 0, sessionN = 0, loginAbort = null, ws = null, wasLive = false, attempt = 0, retryTimer = null, connectTimer = null, debounceTimer = null;
@@ -90,7 +95,7 @@ export function createPrinterFeed({
     if (active) finish(active, err);
   }
 
-  const NO_DATA = { limits: 'принтер не прислал границы прошивки (M211)', settings: 'принтер не прислал настройки прошивки (M503)' };
+  const noData = (kind) => t(kind === 'limits' ? 'feed.noLimits' : 'feed.noSettings');
 
   function finish(rec, err, value) {
     if (active !== rec) return;
@@ -99,7 +104,7 @@ export function createPrinterFeed({
     if (err) { rec.reject(err); return; }
     // a read is stale if any of the counters changed (the simplest rule: the read does not know which part the caller needs)
     if (epochXY !== rec.epoch0.xy || epochZ !== rec.epoch0.z) { rec.reject(positionError('stale')); return; }
-    if (!value) { rec.reject(positionError('nocoords', 'position', NO_DATA[rec.kind])); return; }
+    if (!value) { rec.reject(positionError('nocoords', 'position', noData(rec.kind))); return; }
     if (rec.kind === 'position') change(() => { known = true; });
     rec.resolve(rec.kind === 'position' ? { ...value, epochXY: rec.epoch0.xy, epochZ: rec.epoch0.z } : value);
   }
@@ -164,7 +169,7 @@ export function createPrinterFeed({
     let msg;
     try { msg = JSON.parse(typeof data === 'string' ? data : String(data)); } catch (e) { return; }
     if (!msg || typeof msg !== 'object') return;
-    if (msg.reauthRequired) { drop(my, 'сессия OctoPrint устарела, вхожу заново'); return; }
+    if (msg.reauthRequired) { drop(my, t('feed.reauth')); return; }
     if (msg.event) {
       const type = msg.event.type;
       if (type === 'Connected' || type === 'Disconnected') { change(() => bump()); failRead(positionError('stale')); }
@@ -173,7 +178,7 @@ export function createPrinterFeed({
     const isHistory = !!msg.history, payload = msg.history || msg.current;
     if (!payload) return;
     if (!Array.isArray(payload.logs)) { // the log is delivered only with the MONITOR_TERMINAL permission
-      forbid(my, 'у ключа нет права «Терминал» (MONITOR_TERMINAL): поток связи недоступен');
+      forbid(my, t('feed.noTerminal'));
       return;
     }
     const wasBusy = busy;
@@ -181,7 +186,7 @@ export function createPrinterFeed({
     if (state !== 'live') {
       T.clearTimeout(connectTimer); connectTimer = null;
       attempt = 0; wasLive = true; sessionN++;
-      setState('live', 'поток связи с принтером на связи');
+      setState('live', t('feed.detail.live'));
     }
     if (busy !== wasBusy) {
       expected = [];
@@ -230,7 +235,7 @@ export function createPrinterFeed({
     change(() => {
       if (was) bump();
       state = was ? 'connecting' : 'unavailable';
-      detail = was ? `связь с потоком потеряна, переподключаюсь (${text})` : text;
+      detail = was ? t('feed.lost', { reason: text }) : text;
     });
     failRead(positionError('offline'));
     if (started && visibility.visible()) scheduleRetry();
@@ -241,11 +246,11 @@ export function createPrinterFeed({
     T.clearTimeout(retryTimer); retryTimer = null;
     closeSocket();
     if (!started) return;
-    if (!visibility.visible()) { setState('off', 'страница скрыта'); return; }
-    if (!configured()) { setState('off', 'укажите адрес и API-ключ OctoPrint'); return; }
-    setState('connecting', 'подключение к потоку…');
+    if (!visibility.visible()) { setState('off', t('feed.detail.hidden')); return; }
+    if (!configured()) { setState('off', t('feed.detail.configure')); return; }
+    setState('connecting', t('feed.detail.connecting'));
     // one deadline for the whole procedure: login, reading the response, opening the socket, auth/subscription and the first message
-    connectTimer = T.setTimeout(() => drop(my, 'поток не ответил за 10 с'), connectTimeoutMs);
+    connectTimer = T.setTimeout(() => drop(my, t('feed.timeout')), connectTimeoutMs);
     const ac = new AbortController();
     loginAbort = ac;
     let login;
@@ -254,16 +259,16 @@ export function createPrinterFeed({
         signal: ac.signal, method: 'POST', headers: { 'X-Api-Key': getKey(), 'Content-Type': 'application/json' }, body: JSON.stringify({ passive: true }),
       });
       if (my !== gen) return;
-      if (res.status === 400 || res.status === 401 || res.status === 403) { forbid(my, `ключ не принят (${res.status}): поток недоступен`); return; }
-      if (!res.ok) { drop(my, `OctoPrint ответил ${res.status} на вход`); return; }
+      if (res.status === 400 || res.status === 401 || res.status === 403) { forbid(my, t('feed.keyRejected', { status: res.status })); return; }
+      if (!res.ok) { drop(my, t('feed.loginStatus', { status: res.status })); return; }
       login = await res.json();
     } catch (e) {
-      drop(my, HINT_CORS); // on cancel my is already stale — drop does nothing
+      drop(my, hintCors()); // on cancel my is already stale — drop does nothing
       return;
     }
     if (my !== gen) return;
     if (loginAbort === ac) loginAbort = null;
-    if (!login || typeof login.name !== 'string' || typeof login.session !== 'string') { drop(my, 'OctoPrint не выдал сессию для потока'); return; }
+    if (!login || typeof login.name !== 'string' || typeof login.session !== 'string') { drop(my, t('feed.noSession')); return; }
     const auth = `${login.name}:${login.session}`; // in memory only, to the socket only
     login = null;
     let socket;
@@ -278,7 +283,7 @@ export function createPrinterFeed({
     };
     socket.onmessage = (e) => onMessage(my, e.data);
     socket.onerror = () => {};
-    socket.onclose = () => drop(my, wasLive || state === 'live' ? 'сокет закрыт' : HINT_CORS);
+    socket.onclose = () => drop(my, wasLive || state === 'live' ? t('feed.socketClosed') : hintCors());
   }
 
   function restart(reconnect) {
@@ -296,13 +301,13 @@ export function createPrinterFeed({
   const onVisibility = () => {
     if (!started) return;
     if (visibility.visible()) { if (state === 'off' || state === 'unavailable' || state === 'connecting') connect(); }
-    else { restart(false); setState('off', 'страница скрыта'); }
+    else { restart(false); setState('off', t('feed.detail.hidden')); }
   };
 
   // --- reading by markers ---
 
   function read(kind, query) {
-    if (state !== 'live') return Promise.reject(positionError('offline', 'position', 'поток связи с принтером не на связи'));
+    if (state !== 'live') return Promise.reject(positionError('offline', 'position', t('feed.notLive')));
     if (busy || active) return Promise.reject(positionError('busy'));
     const rid = `${(T.now()).toString(36)}${(++ridCounter).toString(36)}`;
     return new Promise((resolve, reject) => {
@@ -356,13 +361,13 @@ export function createPrinterFeed({
       offVisibility();
       T.clearTimeout(debounceTimer); debounceTimer = null;
       restart(false);
-      setState('off', 'выключен');
+      setState('off', t('feed.state.off'));
     },
     /** The address or key changed: again, after a pause (fields are typed character by character); forbidden is cleared. */
     configChanged() {
       if (!started) return;
       restart(false);
-      setState(configured() ? 'connecting' : 'off', configured() ? 'подключение к потоку…' : 'укажите адрес и API-ключ OctoPrint');
+      setState(configured() ? 'connecting' : 'off', configured() ? t('feed.detail.connecting') : t('feed.detail.configure'));
       T.clearTimeout(debounceTimer);
       debounceTimer = T.setTimeout(() => { debounceTimer = null; connect(); }, debounceMs);
     },
@@ -377,7 +382,7 @@ export function createPrinterFeed({
  * Additionally for the UI: link() — feed state and homing, onChange(fn).
  */
 export function createFeedPositionSource(feed, { calibration = null } = {}) {
-  const need = () => { if (!calibration) throw new Error('хранилище калибровки не подключено'); return calibration; };
+  const need = () => { if (!calibration) throw new Error('calibration store is not attached'); return calibration; };
   const fresh = (part, epoch) => { if (epoch !== feed.epoch()[part]) throw positionError('stale'); };
   return {
     id: 'octoprint-feed',
@@ -400,7 +405,7 @@ export function createFeedPositionSource(feed, { calibration = null } = {}) {
     },
     async confirm(part) {
       const c = need();
-      if (part !== 'xy' && part !== 'z') throw new Error(`неизвестная часть калибровки: ${part}`);
+      if (part !== 'xy' && part !== 'z') throw new Error(`unknown calibration part: ${part}`);
       // confirmation does not change the values: the calibration date stays the same
       await c.patch({ [part === 'xy' ? 'epochXY' : 'epochZ']: feed.epoch()[part], updatedAt: c.get().updatedAt });
       return c.get();

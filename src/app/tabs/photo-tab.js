@@ -5,10 +5,11 @@ import { createViewport } from '../ui/viewport.js';
 import { exportSvg } from '../../core/svg-export.js';
 import { stats } from '../../core/drawing.js';
 import { downloadText, baseName } from '../download.js';
-import { STYLES, getStyle, groupedStyles, originLabel, defaultsOfParams, sessionFactory } from '../../styles/registry.js';
+import { STYLES, getStyle, groupedStyles, groupLabel, originLabel, defaultsOfParams, sessionFactory } from '../../styles/registry.js';
 import { createRunner } from '../../styles/runner.js';
 import { loadModels } from '../../styles/plotterfun-models.js';
-import { createLayerStack, normalizeParams, clampSize, SIZE_RANGE } from '../photo/layer-stack.js';
+import { createLayerStack, normalizeParams, clampSize, SIZE_RANGE, reasonText } from '../photo/layer-stack.js';
+import { t, hasKey } from '../../i18n/index.js';
 import { decodeImage, rasterize, ImageLoadError, ACCEPT } from '../photo/image-loader.js';
 import { buildParamForm } from '../photo/param-form.js';
 import { estimateSpacing, densityText } from '../photo/density.js';
@@ -16,7 +17,9 @@ import { estimateSpacing, densityText } from '../photo/density.js';
 const PARAM_DEBOUNCE_MS = 180;
 const SAVE_DEBOUNCE_MS = 400;
 const DEFAULT_STYLE = 'own:crosshatch';
-const STATUS_TEXT = { running: 'считается', partial: 'промежуточный', done: 'готово', error: 'ошибка', idle: '' };
+const statusLabel = (s) => (s === 'idle' ? '' : t(`photo.status.${s}`));
+// progress from the worker: its own text is a dictionary key (styles.progress.*), plotterfun texts as is
+const progressText = (p) => (hasKey(p, 'en') ? t(p) : p);
 
 const fetchText = async (url) => {
   const r = await fetch(url);
@@ -29,7 +32,7 @@ export function createPhotoSource() {
 
   return {
     id: 'photo',
-    title: 'Фото',
+    get title() { return t('tab.photo'); },
 
     mount(el, ctx) {
       const stack = createLayerStack({ getStyle });
@@ -43,31 +46,31 @@ export function createPhotoSource() {
       const $ = {};
       const input = h('input', { type: 'file', accept: ACCEPT, hidden: true });
       const presetInput = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
-      $.drop = h('div', { class: 'drop', tabindex: 0, role: 'button' }, 'Перетащи фото сюда или нажми, чтобы выбрать', input);
+      $.drop = h('div', { class: 'drop', tabindex: 0, role: 'button' }, t('photo.drop'), input);
       $.info = h('div', { class: 'note' });
       $.warn = h('div', { class: 'warn', role: 'alert' });
       $.size = h('input', { type: 'number', min: SIZE_RANGE.min, max: SIZE_RANGE.max, step: 50, value: workingSize, inputMode: 'numeric' });
       $.layers = h('div', { class: 'layers' });
-      $.addStyle = h('select', { 'aria-label': 'Стиль нового слоя' }, groupedStyles().map((g) =>
-        h('optgroup', { label: g.group }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === DEFAULT_STYLE }, `${s.name} · ${originLabel(s)}`)))));
-      $.add = h('button', { type: 'button', onclick: () => addLayer($.addStyle.value) }, 'Добавить слой');
-      $.canvas = h('canvas', { class: 'preview photo-preview', width: 900, height: 300, 'aria-label': 'Превью: колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — вписать' });
+      $.addStyle = h('select', { 'aria-label': t('photo.newLayerStyle') }, groupedStyles().map((g) =>
+        h('optgroup', { label: groupLabel(g.group) }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === DEFAULT_STYLE }, `${s.name} · ${originLabel(s)}`)))));
+      $.add = h('button', { type: 'button', onclick: () => addLayer($.addStyle.value) }, t('photo.addLayer'));
+      $.canvas = h('canvas', { class: 'preview photo-preview', width: 900, height: 300, 'aria-label': t('photo.previewAria') });
       const view = createViewport();
-      $.fit = h('button', { type: 'button', title: 'Вписать в область (двойной щелчок или 0)', onclick: () => { view.reset(); $.canvas.style.touchAction = 'pan-y'; requestDraw(); } }, 'Вписать');
+      $.fit = h('button', { type: 'button', title: t('photo.fitTitle'), onclick: () => { view.reset(); $.canvas.style.touchAction = 'pan-y'; requestDraw(); } }, t('photo.fit'));
       $.showPhoto = h('input', { type: 'checkbox', checked: true, onchange: requestDraw });
       $.stats = h('div', { class: 'stats' });
       $.sendWarn = h('div', { class: 'warn' });
-      $.toPrint = h('button', { type: 'button', class: 'primary', onclick: sendToPrint }, 'В печать');
-      $.exportSvg = h('button', { type: 'button', onclick: exportSvgFile }, 'Экспорт SVG');
-      $.exportPreset = h('button', { type: 'button', onclick: exportPreset }, 'Экспорт пресета');
-      $.importPreset = h('button', { type: 'button', onclick: () => presetInput.click() }, 'Импорт пресета');
+      $.toPrint = h('button', { type: 'button', class: 'primary', onclick: sendToPrint }, t('photo.toPrint'));
+      $.exportSvg = h('button', { type: 'button', onclick: exportSvgFile }, t('photo.exportSvg'));
+      $.exportPreset = h('button', { type: 'button', onclick: exportPreset }, t('photo.exportPreset'));
+      $.importPreset = h('button', { type: 'button', onclick: () => presetInput.click() }, t('photo.importPreset'));
 
       const imageCard = h('div', { class: 'card' }, $.drop, $.info, $.warn,
-        h('label', { class: 'size' }, 'Рабочее разрешение (длинная сторона, px)', $.size));
-      const layersCard = h('div', { class: 'card' }, h('h2', {}, 'Слои'), $.layers,
+        h('label', { class: 'size' }, t('photo.workingSize'), $.size));
+      const layersCard = h('div', { class: 'card' }, h('h2', {}, t('photo.layers')), $.layers,
         h('div', { class: 'row' }, $.addStyle, $.add));
       const previewCard = h('div', { class: 'card' }, $.canvas,
-        h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.showPhoto, 'фото под рисунком'), $.fit),
+        h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.showPhoto, t('photo.showPhoto')), $.fit),
         $.stats, $.sendWarn,
         h('div', { class: 'row' }, $.toPrint, $.exportSvg, $.exportPreset, $.importPreset, presetInput));
       el.append(h('div', { class: 'columns' }, h('div', {}, imageCard, layersCard), h('div', { class: 'work-col sticky' }, previewCard)));
@@ -123,7 +126,7 @@ export function createPhotoSource() {
           const descs = await descsOf(getStyle(styleId));
           const layer = stack.add(styleId, { params: defaultsOfParams(descs) });
           schedule(layer, 0);
-        } catch (e) { $.warn.textContent = `Не удалось добавить слой: ${e.message}`; }
+        } catch (e) { $.warn.textContent = t('photo.addLayerFailed', { message: e.message }); }
       }
 
       // --- image
@@ -131,7 +134,7 @@ export function createPhotoSource() {
         if (!file) return;
         let next;
         try { next = await decodeImage(file); } catch (e) {
-          $.warn.textContent = e instanceof ImageLoadError ? 'Не удалось открыть изображение' : `Ошибка: ${e.message}`;
+          $.warn.textContent = e instanceof ImageLoadError ? t('photo.err.openImage') : t('common.errorWith', { message: e.message });
           return; // the previous image and layers stay
         }
         if (decoded) decoded.bitmap.close();
@@ -146,19 +149,19 @@ export function createPhotoSource() {
       function applyWorkingSize() {
         if (!decoded) return;
         imageData = rasterize(decoded, workingSize);
-        $.info.textContent = `${imageName}: ${decoded.width}×${decoded.height}, рабочее ${imageData.width}×${imageData.height}`;
+        $.info.textContent = t('photo.imageInfo', { name: imageName, w: decoded.width, h: decoded.height, ww: imageData.width, wh: imageData.height });
         renderLayers();
         requestDraw();
       }
 
       // --- layers: DOM
       function statusText(l) {
-        if (!l.visible) return 'скрыт';
-        if (l.status === 'idle') return imageData ? 'ожидание' : 'нет изображения';
-        const base = STATUS_TEXT[l.status];
+        if (!l.visible) return t('photo.status.hidden');
+        if (l.status === 'idle') return imageData ? t('photo.status.waiting') : t('photo.status.noImage');
+        const base = statusLabel(l.status);
         if (l.status === 'error') return `${base}: ${l.message}`;
         if (l.status === 'done') return base;
-        return [base, l.progress, l.reason && (l.status === 'running' ? `промежуточный: ${l.reason}` : l.reason)].filter(Boolean).join(' · ');
+        return [base, progressText(l.progress), l.reason && (l.status === 'running' ? t('photo.status.partialReason', { reason: reasonText(l.reason) }) : reasonText(l.reason))].filter(Boolean).join(' · ');
       }
 
       function densityOf(l) {
@@ -185,7 +188,7 @@ export function createPhotoSource() {
       function renderLayers() {
         elements.clear();
         const layers = stack.layers;
-        $.layers.replaceChildren(...(layers.length ? layers.map((l, i) => layerView(l, i, layers.length)) : [h('div', { class: 'note' }, 'Слоёв нет: добавь стиль.')]));
+        $.layers.replaceChildren(...(layers.length ? layers.map((l, i) => layerView(l, i, layers.length)) : [h('div', { class: 'note' }, t('photo.noLayers'))]));
         layers.forEach((l) => refreshLayerInfo(l.uid));
         updateActions();
       }
@@ -194,24 +197,24 @@ export function createPhotoSource() {
         const style = getStyle(l.styleId);
         const e = { status: h('div', { class: 'layer-status', role: 'status' }), density: h('div', { class: 'note' }) };
         elements.set(l.uid, e);
-        const styleSelect = h('select', { 'aria-label': 'Стиль слоя', onchange: () => changeStyle(l.uid, styleSelect.value) },
-          groupedStyles().map((g) => h('optgroup', { label: g.group }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === l.styleId }, `${s.name} · ${originLabel(s)}`)))));
+        const styleSelect = h('select', { 'aria-label': t('photo.layerStyle'), onchange: () => changeStyle(l.uid, styleSelect.value) },
+          groupedStyles().map((g) => h('optgroup', { label: groupLabel(g.group) }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === l.styleId }, `${s.name} · ${originLabel(s)}`)))));
         const inner = h('div');
-        const body = h('details', { class: 'layer-body', open: i === total - 1 }, h('summary', {}, 'Параметры'), inner);
+        const body = h('details', { class: 'layer-body', open: i === total - 1 }, h('summary', {}, t('photo.params')), inner);
         descsOf(style).then((descs) => {
           if (disposed || stack.find(l.uid) !== l) return;
           l.params = normalizeParams(descs, l.params);
           inner.replaceChildren(buildParamForm(descs, l.params, (key, value) => changeParam(l, descs, key, value)));
           refreshLayerInfo(l.uid);
-        }).catch((err) => { inner.textContent = `Параметры недоступны: ${err.message}`; });
+        }).catch((err) => { inner.textContent = t('photo.paramsFailed', { message: err.message }); });
         return h('div', { class: 'layer', style: `--layer-color: var(--layer-${i % 4})` },
           h('div', { class: 'layer-head' },
-            h('label', { class: 'check', title: 'показывать слой' }, h('input', { type: 'checkbox', checked: l.visible, 'aria-label': 'Показывать слой', onchange: (ev) => setVisible(l, ev.target.checked) })),
-            h('input', { class: 'layer-name', value: l.name, 'aria-label': 'Название слоя', onchange: (ev) => { stack.rename(l.uid, ev.target.value); ev.target.value = l.name; } }),
-            h('button', { type: 'button', title: 'выше', 'aria-label': 'Слой выше', disabled: i === 0, onclick: () => stack.move(l.uid, -1) }, '↑'),
-            h('button', { type: 'button', title: 'ниже', 'aria-label': 'Слой ниже', disabled: i === total - 1, onclick: () => stack.move(l.uid, 1) }, '↓'),
-            h('button', { type: 'button', class: 'danger', title: 'удалить', 'aria-label': 'Удалить слой', onclick: () => removeLayer(l.uid) }, '×')),
-          h('label', {}, 'Стиль', styleSelect),
+            h('label', { class: 'check', title: t('photo.showLayer') }, h('input', { type: 'checkbox', checked: l.visible, 'aria-label': t('photo.showLayerAria'), onchange: (ev) => setVisible(l, ev.target.checked) })),
+            h('input', { class: 'layer-name', value: l.name, 'aria-label': t('photo.layerName'), onchange: (ev) => { stack.rename(l.uid, ev.target.value); ev.target.value = l.name; } }),
+            h('button', { type: 'button', title: t('photo.up'), 'aria-label': t('photo.upAria'), disabled: i === 0, onclick: () => stack.move(l.uid, -1) }, '↑'),
+            h('button', { type: 'button', title: t('photo.down'), 'aria-label': t('photo.downAria'), disabled: i === total - 1, onclick: () => stack.move(l.uid, 1) }, '↓'),
+            h('button', { type: 'button', class: 'danger', title: t('photo.remove'), 'aria-label': t('photo.removeAria'), onclick: () => removeLayer(l.uid) }, '×')),
+          h('label', {}, t('photo.style'), styleSelect),
           e.status, e.density, body);
       }
 
@@ -254,7 +257,7 @@ export function createPhotoSource() {
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.clearRect(0, 0, W, H);
         g.fillStyle = col('--paper'); g.fillRect(0, 0, W, H);
-        if (!imageData) { g.fillStyle = col('--muted'); g.font = `${16 * dpr}px system-ui`; g.fillText('Фото не загружено', 16 * dpr, 30 * dpr); return; }
+        if (!imageData) { g.fillStyle = col('--muted'); g.font = `${16 * dpr}px system-ui`; g.fillText(t('photo.noPhoto'), 16 * dpr, 30 * dpr); return; }
         view.apply(g);
         if ($.showPhoto.checked && decoded) { g.globalAlpha = 0.3; g.drawImage(decoded.bitmap, 0, 0, W, H); g.globalAlpha = 1; }
         const k = W / imageData.width;
@@ -281,7 +284,7 @@ export function createPhotoSource() {
         let lines = 0, points = 0;
         for (const l of stack.layers) if (l.visible) for (const line of l.lines) { lines++; points += line.length >> 1; }
         const pending = stack.pending();
-        $.stats.textContent = lines ? `${lines} линий, ${points} точек` + (pending.length ? ', есть незавершённые слои' : '') : 'Пока нет линий';
+        $.stats.textContent = lines ? t('photo.stats', { lines: t('svgtab.lines', { count: lines }), points: t('svgtab.points', { count: points }) }) + (pending.length ? t('photo.statsPending') : '') : t('photo.noLines');
         $.toPrint.disabled = !lines;
         $.exportSvg.disabled = !lines;
       }
@@ -294,12 +297,12 @@ export function createPhotoSource() {
         if (!drawing) return;
         const pending = stack.pending();
         if (pending.length) {
-          const list = pending.map((p) => `слой «${p.name}» не завершён${p.reason ? ` (${p.reason})` : ''}`).join('\n');
-          if (!window.confirm(`${list}\n\nРезультат промежуточный. Передать во вкладку «Печать» всё равно?`)) return;
-          $.sendWarn.textContent = `Передан промежуточный рисунок:\n${list}`;
+          const list = pending.map((p) => t('photo.layer.notFinished', { name: p.name }) + (p.reason ? ` (${p.reason})` : '')).join('\n');
+          if (!window.confirm(t('photo.sendConfirm', { list }))) return;
+          $.sendWarn.textContent = t('photo.sentPartial', { list });
         } else $.sendWarn.textContent = '';
         const s = stats(drawing);
-        $.info.textContent = `${imageName}: передано ${s.lines} линий, ${s.points} точек`;
+        $.info.textContent = t('photo.sent', { name: imageName, lines: t('svgtab.lines', { count: s.lines }), points: t('svgtab.points', { count: s.points }) });
         ctx.emit(drawing);
       }
 
@@ -317,14 +320,14 @@ export function createPhotoSource() {
         for (const l of stack.layers) cancel(l.uid);
         const { workingSize: size, skipped } = stack.loadPreset(preset);
         workingSize = size; $.size.value = size;
-        if (skipped.length) $.warn.textContent = `Неизвестные стили в пресете пропущены: ${skipped.join(', ')}`;
+        if (skipped.length) $.warn.textContent = t('photo.unknownStyles', { list: skipped.join(', ') });
         if (decoded) applyWorkingSize(); else renderLayers();
         rerunAll();
       }
 
       async function importPresetFile(file) {
         if (!file) return;
-        try { await applyPreset(JSON.parse(await file.text())); } catch (e) { $.warn.textContent = `Не удалось прочитать пресет: ${e.message}`; }
+        try { await applyPreset(JSON.parse(await file.text())); } catch (e) { $.warn.textContent = t('photo.presetFailed', { message: e.message }); }
       }
 
       function persist() {

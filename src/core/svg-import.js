@@ -1,4 +1,5 @@
 // SVG tree {tag, attrs, children} -> Drawing (document coordinates).
+import { t } from '../i18n/index.js';
 import { SPACE, createDrawing, cleanLine } from './drawing.js';
 import { IDENTITY, multiply, applyMatrix, parseNumbers, parseTransform, arcToCubics, flattenSubpath } from './geometry.js';
 
@@ -8,6 +9,8 @@ export class SvgImportError extends Error {
     this.name = 'SvgImportError';
   }
 }
+
+const svgError = (key, params) => new SvgImportError(`${t('svg.err.read')}: ${t(key, params)}`);
 
 const SKIP = new Set(['defs', 'clipPath', 'mask', 'symbol', 'marker', 'pattern', 'style',
   'script', 'title', 'desc', 'metadata', 'text', 'image', 'linearGradient', 'radialGradient',
@@ -28,14 +31,14 @@ function parsePath(d) {
   const num = () => {
     ws(); NUM.lastIndex = i;
     const m = NUM.exec(s);
-    if (!m) throw new SvgImportError('не удалось прочитать SVG: ошибка в данных path');
+    if (!m) throw svgError('svg.err.pathData');
     i = NUM.lastIndex;
     return +m[0];
   };
   const flag = () => {
     ws();
     const c = s[i++];
-    if (c !== '0' && c !== '1') throw new SvgImportError('не удалось прочитать SVG: ошибка флага дуги');
+    if (c !== '0' && c !== '1') throw svgError('svg.err.arcFlag');
     return c === '1';
   };
   let cur = null, cx = 0, cy = 0, sx = 0, sy = 0, lcx = 0, lcy = 0, lastCmd = '';
@@ -46,9 +49,9 @@ function parsePath(d) {
     const start = i; // loop protection: each iteration must advance the position
     let cmd = s[i];
     if (/[a-zA-Z]/.test(cmd)) i++;
-    else if (lastCmd && 'Zz'.includes(lastCmd)) throw new SvgImportError('не удалось прочитать SVG: после Z данные без команды');
+    else if (lastCmd && 'Zz'.includes(lastCmd)) throw svgError('svg.err.afterZ');
     else if (lastCmd) cmd = lastCmd === 'M' ? 'L' : lastCmd === 'm' ? 'l' : lastCmd;
-    else throw new SvgImportError('не удалось прочитать SVG: path начинается не с команды');
+    else throw svgError('svg.err.noCommand');
     const rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase();
     const ox = rel ? cx : 0, oy = rel ? cy : 0;
     let smooth = false;
@@ -89,10 +92,10 @@ function parsePath(d) {
         if (cur) cur.segs.push(['L', sx, sy]);
         cx = sx; cy = sy; cur = null;
         break;
-      default: throw new SvgImportError('не удалось прочитать SVG: неизвестная команда path ' + cmd);
+      default: throw svgError('svg.err.unknownCommand', { cmd });
     }
     if (!smooth) { lcx = cx; lcy = cy; }
-    if (i <= start) throw new SvgImportError('не удалось прочитать SVG: ошибка в данных path');
+    if (i <= start) throw svgError('svg.err.pathData');
     lastCmd = cmd;
   }
   return subs;
@@ -267,7 +270,7 @@ function estimateChordStep(subs, fit, chordMm) {
  *   fit is needed so that the curve chord length is about chordMm on paper; without it a document unit = unitMm or 1 mm.
  */
 export function importSvg(tree, opts = {}) {
-  if (!tree || tree.tag !== 'svg') throw new SvgImportError('не удалось прочитать SVG');
+  if (!tree || tree.tag !== 'svg') throw new SvgImportError(t('svg.err.read'));
   const chordMm = opts.chordMm || DEFAULT_CHORD_MM;
   const { layers, counts } = collect(tree);
   const info = physicalInfo(tree.attrs || {});
@@ -278,14 +281,14 @@ export function importSvg(tree, opts = {}) {
     : chordMm / (info.unitMm || 1);
 
   const warnings = [];
-  if (counts.text) warnings.push(`пропущено текстовых элементов: ${counts.text}, переведите текст в кривые`);
-  if (counts.image) warnings.push(`пропущено растровых изображений: ${counts.image}`);
+  if (counts.text) warnings.push(t('svg.warn.text', { count: counts.text }));
+  if (counts.image) warnings.push(t('svg.warn.image', { count: counts.image }));
 
   const drawingLayers = layers.map((layer, i) => {
     const attrs = layer.node ? layer.node.attrs : {};
     return {
       id: (layer.node && attrs.id) || `layer-${i + 1}`,
-      name: (layer.node && (attrs['inkscape:label'] || attrs.id)) || `Слой ${i + 1}`,
+      name: (layer.node && (attrs['inkscape:label'] || attrs.id)) || t('svg.layerName', { n: i + 1 }),
       lines: layer.subs.map((sp) => flattenSubpath(sp, step)),
     };
   });
@@ -293,7 +296,7 @@ export function importSvg(tree, opts = {}) {
     // without Inkscape layers — one layer for the whole document
     const merged = drawingLayers.flatMap((l) => l.lines);
     drawingLayers.length = 0;
-    if (merged.length) drawingLayers.push({ id: 'layer-1', name: 'Рисунок', lines: merged });
+    if (merged.length) drawingLayers.push({ id: 'layer-1', name: t('svg.defaultLayer'), lines: merged });
   }
 
   return createDrawing({

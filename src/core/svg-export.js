@@ -1,5 +1,6 @@
 // Drawing -> SVG string. Printer coordinates do not go into the file: Y axis down, origin at the top left of the bounds.
 import { SPACE, DrawingError, assertSpace, bbox } from './drawing.js';
+import { t } from '../i18n/index.js';
 
 const NS = 'xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"';
 
@@ -26,7 +27,7 @@ function svgDocument({ width, height, w, h, layers, ox, oy, sy }) {
 /** SVG by drawing bounds; width/height in mm if the physical size is known. */
 export function exportSvg(drawing) {
   const b = bbox(drawing);
-  if (!b) throw new DrawingError('нечего экспортировать');
+  if (!b) throw new DrawingError(t('err.nothingToExport'));
   const machine = drawing.space === SPACE.MACHINE;
   const unitMm = machine ? 1 : drawing.meta.unitMm;
   const known = machine || unitMm > 0;
@@ -42,7 +43,7 @@ export function exportSvg(drawing) {
 
 /** "As on paper" SVG: sheet size in mm, the drawing in its place; drawing — in machine coordinates. */
 export function exportOnPaper(drawing, { field, corner }) {
-  assertSpace(drawing, SPACE.MACHINE, 'для SVG «как на бумаге» нужна раскладка на поле');
+  assertSpace(drawing, SPACE.MACHINE, 'SVG "as on paper" needs a layout to the field');
   return svgDocument({
     width: `${num(field.w)}mm`, height: `${num(field.h)}mm`, w: field.w, h: field.h,
     layers: drawing.layers, ox: -corner.x, oy: field.h + corner.y, sy: -1,

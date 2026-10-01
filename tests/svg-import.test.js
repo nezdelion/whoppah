@@ -4,6 +4,7 @@ import { importSvg, SvgImportError } from '../src/core/svg-import.js';
 import { bbox, allLines } from '../src/core/drawing.js';
 import { parseXml } from './helpers/xml.js';
 import { loadTree, closeTo } from './helpers/fixtures.js';
+import './helpers/ru.js';
 
 const svg = (body, attrs = '') => parseXml(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ${attrs}>${body}</svg>`);
 

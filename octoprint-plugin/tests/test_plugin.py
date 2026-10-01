@@ -136,6 +136,55 @@ def test_env_json(env):
     assert data["csrfCookie"].startswith("csrf_token")
 
 
+def test_env_json_passes_the_octoprint_language_of_the_user(env):
+    env.plugin._user_language = lambda user: {"alice": "ru"}.get(user)
+    env.plugin._default_language = lambda: "de"
+    assert env.client.get("/plugin/plotter/env.json").get_json()["language"] == "ru"
+    env.who.user = "bob"  # no own language: the instance default applies
+    assert env.client.get("/plugin/plotter/env.json").get_json()["language"] == "de"
+
+
+def test_env_json_language_is_null_when_nothing_is_chosen(env):
+    env.plugin._user_language = lambda user: None
+    env.plugin._default_language = lambda: None
+    assert env.client.get("/plugin/plotter/env.json").get_json()["language"] is None
+
+
+@pytest.mark.parametrize("value, expected", [("ru", "ru"), ("en", "en"), ("pt_BR", "pt_BR"), ("_default", None), ("", None), ("  ", None), (None, None), (5, None)])
+def test_real_language_ignores_default_and_garbage(value, expected):
+    assert plotter.PlotterPlugin._real_language(value) == expected
+
+
+def test_language_lookup_uses_user_setting_then_instance_default(env, monkeypatch):
+    import octoprint.server
+
+    class Users:
+        def __init__(self):
+            self.settings = {"alice": "ru", "bob": "_default"}
+
+        def get_user_setting(self, user, key):
+            assert key == ("interface", "language")
+            if user not in self.settings:
+                raise KeyError(user)
+            return self.settings[user]
+
+    monkeypatch.setattr(octoprint.server, "userManager", Users(), raising=False)
+    plugin = env.plugin
+    plugin._default_language = lambda: "en"
+    assert plugin.ui_language("alice") == "ru"
+    assert plugin.ui_language("bob") == "en"
+    assert plugin.ui_language("nobody") == "en"
+    assert plugin.ui_language("_anonymous") == "en"
+
+
+def test_language_lookup_survives_missing_octoprint_state(env, monkeypatch):
+    import octoprint.server
+
+    monkeypatch.setattr(octoprint.server, "userManager", None, raising=False)
+    assert env.plugin._user_language("alice") is None
+    assert env.plugin._default_language() is None  # settings are not initialized in unit tests: no config files are touched
+
+
 @pytest.mark.parametrize("environ, expected", [
     ({"SERVER_PORT": "5000"}, "csrf_token_P5000"),
     ({"SERVER_PORT": "5001"}, "csrf_token_P5001"),

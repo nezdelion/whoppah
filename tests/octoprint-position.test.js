@@ -5,6 +5,7 @@ import { createSessionAuth } from '../src/transport/auth-session.js';
 import { createApiKeyAuth } from '../src/transport/auth-api-key.js';
 import { TransportError } from '../src/transport/transport.js';
 import { fakeFetch } from './helpers/fake-fetch.js';
+import './helpers/ru.js';
 
 const make = (fetch, auth = createApiKeyAuth({ getKey: () => 'K' })) => createOctoPrintPosition({ apiUrl: 'http://op/plugin/plotter/api/', auth, fetch });
 
@@ -65,7 +66,7 @@ test('save and confirm: routes and bodies', async () => {
     ['/calibration/xy', '/calibration/z', '/calibration/xy/confirm', '/calibration/z/confirm']);
   assert.deepEqual(JSON.parse(fetch.calls[0].body), { x: 1, y: 2, epoch: 4 });
   assert.deepEqual(JSON.parse(fetch.calls[1].body), { zTouch: 8.2, epoch: 4 });
-  await assert.rejects(p.confirm('q'), /неизвестная часть/);
+  await assert.rejects(p.confirm('q'), /unknown calibration part/);
 });
 
 test('stale on save', async () => {

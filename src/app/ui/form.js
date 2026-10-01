@@ -1,6 +1,7 @@
 // A form from the field schema (core/profile.js): a grid of cards by group, range checks, paper format choice.
 import { h } from './dom.js';
-import { PAPER_FORMATS } from '../../core/layout.js';
+import { PAPER_FORMATS, paperLabel } from '../../core/layout.js';
+import { t } from '../../i18n/index.js';
 
 const labelText = (f) => (f.unit ? `${f.label}, ${f.unit}` : f.label);
 
@@ -12,7 +13,7 @@ function numberField(f, values, onChange) {
     const v = parseFloat(input.value);
     const valid = Number.isFinite(v) && (f.min === undefined || v >= f.min) && (f.max === undefined || v <= f.max);
     input.classList.toggle('invalid', !valid);
-    input.title = valid ? '' : `${f.label}: допустимо ${f.min ?? '−∞'} … ${f.max ?? '∞'}`;
+    input.title = valid ? '' : t('form.range', { label: f.label, min: f.min ?? '−∞', max: f.max ?? '∞' });
     if (valid) onChange({ [f.key]: v });
   });
   return {
@@ -29,7 +30,7 @@ function boolField(f, values, onChange) {
     text = h('span', { class: 'warn-text', hidden: true, onclick: (e) => e.preventDefault() }, f.warn);
     const toggle = () => { text.hidden = !text.hidden; warn.setAttribute('aria-expanded', String(!text.hidden)); };
     warn = h('span', {
-      class: 'warn-icon', title: f.warn, tabindex: 0, role: 'button', 'aria-label': 'Подробнее', 'aria-expanded': 'false',
+      class: 'warn-icon', title: f.warn, tabindex: 0, role: 'button', 'aria-label': t('form.more'), 'aria-expanded': 'false',
       onclick: (e) => { e.preventDefault(); toggle(); },
       onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } },
     }, '⚠');
@@ -40,7 +41,7 @@ function boolField(f, values, onChange) {
 
 function enumField(f, values, onChange) {
   const select = h('select', { onchange: () => onChange({ [f.key]: select.value }) },
-    Object.entries(f.options).map(([v, t]) => h('option', { value: v }, t)));
+    Object.entries(f.options).map(([v, text]) => h('option', { value: v }, text)));
   select.value = values[f.key];
   return { element: h('label', {}, f.label, select), set(v) { select.value = v[f.key]; } };
 }
@@ -56,19 +57,19 @@ function textField(f, values, onChange) {
 function paperField(f, values, onChange) {
   let current = values;
   const select = h('select', { onchange: () => onChange({ paperId: select.value }) });
-  const removeBtn = h('button', { type: 'button', onclick: () => remove() }, 'Удалить формат');
-  const nameIn = h('input', { placeholder: 'Название' });
-  const wIn = h('input', { type: 'number', step: 'any', min: 1, placeholder: 'Ширина, мм' });
-  const hIn = h('input', { type: 'number', step: 'any', min: 1, placeholder: 'Высота, мм' });
+  const removeBtn = h('button', { type: 'button', onclick: () => remove() }, t('form.paper.remove'));
+  const nameIn = h('input', { placeholder: t('form.paper.name') });
+  const wIn = h('input', { type: 'number', step: 'any', min: 1, placeholder: t('form.paper.width') });
+  const hIn = h('input', { type: 'number', step: 'any', min: 1, placeholder: t('form.paper.height') });
   const errorEl = h('div', { class: 'warn' });
   const editor = h('div', { class: 'paper-editor', hidden: true },
-    h('div', { class: 'grid' }, h('label', { class: 'wide' }, 'Название', nameIn), h('label', {}, 'Ширина, мм', wIn), h('label', {}, 'Высота, мм', hIn)),
+    h('div', { class: 'grid' }, h('label', { class: 'wide' }, t('form.paper.name'), nameIn), h('label', {}, t('form.paper.width'), wIn), h('label', {}, t('form.paper.height'), hIn)),
     errorEl,
-    h('div', { class: 'row' }, h('button', { type: 'button', class: 'primary', onclick: () => add() }, 'Добавить'), h('button', { type: 'button', onclick: () => { editor.hidden = true; } }, 'Отмена')));
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'primary', onclick: () => add() }, t('form.paper.add')), h('button', { type: 'button', onclick: () => { editor.hidden = true; } }, t('common.cancel'))));
 
   function add() {
     const w = parseFloat(wIn.value), hh = parseFloat(hIn.value), name = nameIn.value.trim();
-    if (!name || !(w > 0) || !(hh > 0)) { errorEl.textContent = 'Укажите название и размеры в мм'; return; }
+    if (!name || !(w > 0) || !(hh > 0)) { errorEl.textContent = t('form.paper.invalid'); return; }
     const id = 'c' + Date.now().toString(36);
     editor.hidden = true;
     nameIn.value = wIn.value = hIn.value = '';
@@ -84,8 +85,8 @@ function paperField(f, values, onChange) {
   function set(v) {
     current = v;
     select.replaceChildren(
-      h('optgroup', { label: 'Стандартные' }, PAPER_FORMATS.map((p) => h('option', { value: p.id }, `${p.name} (${p.w}×${p.h})`))),
-      v.customFormats.length ? h('optgroup', { label: 'Свои' }, v.customFormats.map((p) => h('option', { value: p.id }, `${p.name} (${p.w}×${p.h})`))) : null);
+      h('optgroup', { label: t('form.paper.standard') }, PAPER_FORMATS.map((p) => h('option', { value: p.id }, `${paperLabel(p)} (${p.w}×${p.h})`))),
+      v.customFormats.length ? h('optgroup', { label: t('form.paper.custom') }, v.customFormats.map((p) => h('option', { value: p.id }, `${paperLabel(p)} (${p.w}×${p.h})`))) : null);
     select.value = v.paperId;
     removeBtn.hidden = !v.customFormats.some((x) => x.id === v.paperId);
   }
@@ -93,7 +94,7 @@ function paperField(f, values, onChange) {
 
   const element = h('div', { class: 'wide paper' },
     h('label', {}, f.label, select),
-    h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => { editor.hidden = !editor.hidden; } }, 'Свой формат…'), removeBtn),
+    h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => { editor.hidden = !editor.hidden; } }, t('form.paper.new')), removeBtn),
     editor);
   return { element, set };
 }

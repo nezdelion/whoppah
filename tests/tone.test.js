@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { toGray, toDarkness, boxBlur } from '../src/styles/tone.js';
+import './helpers/ru.js';
 
 const near = (a, b, eps = 1e-5) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 

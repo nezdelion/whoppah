@@ -4,6 +4,7 @@ import { parseFirmwareSettings, FEED_LOG_FILTER, classifySent } from '../src/cor
 import { firmwareAccelSuggestion, firmwareWarnings, firmwareEstimateOptions } from '../src/core/firmware-settings.js';
 import { moveSeconds, estimateTime } from '../src/core/time-estimate.js';
 import { createFirmwareMemo } from '../src/app/ui/feed-firmware.js';
+import './helpers/ru.js';
 
 // a real M503 reply of the Neptune 3 Pro (excerpt)
 const M503 = [

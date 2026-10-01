@@ -1,13 +1,13 @@
 // OctoPrint REST over fetch. The auth method is set by the auth strategy (init/prepare/recover/describe).
 import { TransportError } from './transport.js';
+import { t } from '../i18n/index.js';
 
-const NETWORK_HINT = 'нет ответа от OctoPrint: проверьте адрес и включён ли CORS в настройках API OctoPrint';
 
 function errorFromStatus(status, body, operation) {
   const text = String(body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
-  if (status === 401 || status === 403) return new TransportError(`OctoPrint отклонил запрос (${status})`, { kind: 'auth', operation, status });
-  if (status === 409) return new TransportError(`OctoPrint не может выполнить операцию (409): принтер не подключён или занят${text ? ' — ' + text : ''}`, { kind: 'conflict', operation, status });
-  return new TransportError(`OctoPrint ответил ${status}${text ? ': ' + text : ''}`, { kind: 'http', operation, status });
+  if (status === 401 || status === 403) return new TransportError(t('net.rejected', { status }), { kind: 'auth', operation, status });
+  if (status === 409) return new TransportError(t('net.conflict') + (text ? ' — ' + text : ''), { kind: 'conflict', operation, status });
+  return new TransportError(t('net.status', { status }) + (text ? ': ' + text : ''), { kind: 'http', operation, status });
 }
 
 // sameOrigin: the address is intentionally empty (plugin, OctoPrint at the site root) — relative /api/... are correct and "configured" does not depend on the address.
@@ -40,8 +40,8 @@ export function createOctoPrintTransport({ getBaseUrl, auth, sameOrigin = false,
         ...(signal ? { signal } : {}),
       });
     } catch (e) {
-      if (signal && signal.aborted) throw new TransportError('запрос прерван', { kind: 'aborted', operation });
-      throw new TransportError(NETWORK_HINT, { kind: 'network', operation });
+      if (signal && signal.aborted) throw new TransportError(t('net.aborted'), { kind: 'aborted', operation });
+      throw new TransportError(t('net.noResponseHint'), { kind: 'network', operation });
     }
     const text = await res.text();
     if (!res.ok) throw errorFromStatus(res.status, text, operation);
@@ -49,7 +49,7 @@ export function createOctoPrintTransport({ getBaseUrl, auth, sameOrigin = false,
     try {
       return JSON.parse(text);
     } catch (e) {
-      throw new TransportError('OctoPrint вернул не JSON', { kind: 'http', operation, status: res.status });
+      throw new TransportError(t('net.notJson'), { kind: 'http', operation, status: res.status });
     }
   }
 

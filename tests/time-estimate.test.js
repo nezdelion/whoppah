@@ -4,6 +4,7 @@ import { moveSeconds, chainLengths, estimateTime, MERGE_ANGLE_DEG } from '../src
 import { createDrawing } from '../src/core/drawing.js';
 import { generateGcode } from '../src/core/gcode.js';
 import { defaultsOf, normalizeProfile, PROFILE_SCHEMA, CALIBRATION_SCHEMA } from '../src/core/profile.js';
+import './helpers/ru.js';
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 const F = 3000; // v = 50 mm/s, a = 500 -> v²/a = 5 mm

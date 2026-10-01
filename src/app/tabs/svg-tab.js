@@ -4,6 +4,7 @@ import { importSvg, SvgImportError } from '../../core/svg-import.js';
 import { stats } from '../../core/drawing.js';
 import { svgTextToTree } from '../dom-svg.js';
 import { baseName } from '../download.js';
+import { t, fmtNumber } from '../../i18n/index.js';
 
 export function createSvgSource() {
   let unsubscribe = () => {};
@@ -16,7 +17,7 @@ export function createSvgSource() {
       let loaded = null; // { tree, name }
       let lastFit = '';
       const input = h('input', { type: 'file', accept: '.svg,image/svg+xml', hidden: true });
-      const drop = h('div', { class: 'drop', tabindex: 0, role: 'button' }, 'Перетащи SVG сюда или нажми, чтобы выбрать', input);
+      const drop = h('div', { class: 'drop', tabindex: 0, role: 'button' }, t('svgtab.drop'), input);
       const info = h('div', { class: 'note' });
       const warn = h('div', { class: 'warn' });
       el.append(h('div', { class: 'card' }, drop, info, warn));
@@ -28,13 +29,13 @@ export function createSvgSource() {
         try {
           const drawing = importSvg(loaded.tree, { name: loaded.name, fit });
           const s = stats(drawing);
-          const size = drawing.meta.physicalSize ? `, размер ${drawing.meta.physicalSize.w.toFixed(1)}×${drawing.meta.physicalSize.h.toFixed(1)} мм` : '';
-          info.textContent = `${loaded.name}: ${s.lines} линий, ${s.points} точек${size}` +
-            (drawing.meta.dropped ? `, отброшено вырожденных: ${drawing.meta.dropped}` : '');
+          const size = drawing.meta.physicalSize ? t('svgtab.size', { w: fmtNumber(drawing.meta.physicalSize.w, { minFrac: 1 }), h: fmtNumber(drawing.meta.physicalSize.h, { minFrac: 1 }) }) : '';
+          info.textContent = t('svgtab.info', { name: loaded.name, lines: t('svgtab.lines', { count: s.lines }), points: t('svgtab.points', { count: s.points }), size }) +
+            (drawing.meta.dropped ? t('svgtab.dropped', { count: drawing.meta.dropped }) : '');
           warn.textContent = drawing.meta.warnings.join('\n');
           ctx.emit(drawing);
         } catch (e) {
-          warn.textContent = e instanceof SvgImportError ? e.message[0].toUpperCase() + e.message.slice(1) : `Ошибка: ${e.message}`;
+          warn.textContent = e instanceof SvgImportError ? e.message[0].toUpperCase() + e.message.slice(1) : t('common.errorWith', { message: e.message });
         }
       }
 
@@ -44,7 +45,7 @@ export function createSvgSource() {
           loaded = { tree: svgTextToTree(await file.text()), name: baseName(file.name) };
         } catch (e) {
           // the previous drawing stays in place
-          warn.textContent = 'Не удалось прочитать SVG';
+          warn.textContent = t('svgtab.readFailed');
           return;
         }
         runImport();

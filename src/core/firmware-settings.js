@@ -1,5 +1,6 @@
 // Firmware settings (M503, see parseFirmwareSettings in marlin-replies.js) and the profile: acceleration proposal,
 // warnings and parameters for the time estimate. Pure functions, no DOM or network.
+import { t } from '../i18n/index.js';
 
 const min = (...v) => { const a = v.filter(Number.isFinite); return a.length ? Math.min(...a) : null; };
 const round3 = (v) => Math.round(v * 1000) / 1000;
@@ -32,19 +33,19 @@ export function firmwareWarnings(profile, calibration, fw) {
   const capXY = min(fw.maxFeed && fw.maxFeed.x, fw.maxFeed && fw.maxFeed.y), capZ = fw.maxFeed ? fw.maxFeed.z : null;
   const over = [];
   if (capXY !== null) {
-    for (const [key, name] of [['fDraw', 'рисования'], ['fTravel', 'переезда']]) {
-      if (profile[key] > capXY * 60 + 1e-6) over.push(`подача ${name} ${profile[key]} мм/мин выше предела прошивки по XY (M203: ${capXY} мм/с = ${round3(capXY * 60)} мм/мин)`);
+    for (const key of ['fDraw', 'fTravel']) {
+      if (profile[key] > capXY * 60 + 1e-6) over.push(t('firmware.overFeed', { name: t(`firmware.feed.${key}`), value: profile[key], axes: 'XY', cap: capXY, capMin: round3(capXY * 60) }));
     }
   }
   if (Number.isFinite(capZ)) {
-    for (const [key, name] of [['fZUp', 'Z вверх'], ['fZDown', 'Z вниз']]) {
-      if (profile[key] > capZ * 60 + 1e-6) over.push(`подача ${name} ${profile[key]} мм/мин выше предела прошивки по Z (M203: ${capZ} мм/с = ${round3(capZ * 60)} мм/мин)`);
+    for (const key of ['fZUp', 'fZDown']) {
+      if (profile[key] > capZ * 60 + 1e-6) over.push(t('firmware.overFeed', { name: t(`firmware.feed.${key}`), value: profile[key], axes: 'Z', cap: capZ, capMin: round3(capZ * 60) }));
     }
   }
-  if (over.length) out.push({ kind: 'feed', text: `${over.join('; ')}. Прошивка срежет подачу; оценка времени считает по предельной.` });
+  if (over.length) out.push({ kind: 'feed', text: t('firmware.feedWarning', { list: over.join('; ') }) });
   const fade = fw.meshFade, touch = calibration ? calibration.zTouch : null;
   if (Number.isFinite(fade) && fade > 0 && !profile.meshNoFade && Number.isFinite(touch) && touch > fade) {
-    out.push({ kind: 'mesh', text: `В прошивке задана высота затухания сетки ${fade} мм (M420 Z), а касание бумаги на Z ${touch} мм: на высоте пера компенсация сетки выключена. Чтобы компенсировать на любой высоте, включите «Сетка стола на любой высоте» в профиле.` });
+    out.push({ kind: 'mesh', text: t('firmware.meshWarning', { fade, touch }) });
   }
   return out;
 }

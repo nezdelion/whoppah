@@ -5,6 +5,7 @@ import { limitsCheck, partialCheck } from '../src/app/print/checks.js';
 import { createDrawing } from '../src/core/drawing.js';
 import { defaultsOf, PROFILE_SCHEMA, CALIBRATION_SCHEMA, JOB_SCHEMA } from '../src/core/profile.js';
 import { TransportError } from '../src/transport/transport.js';
+import './helpers/ru.js';
 
 const settings = () => ({ profile: defaultsOf(PROFILE_SCHEMA), calibration: defaultsOf(CALIBRATION_SCHEMA), job: defaultsOf(JOB_SCHEMA) });
 const doc = (meta, lines = [[0, 0, 100, 100]]) => createDrawing({ layers: [{ id: 'l', name: 'l', lines }], meta });

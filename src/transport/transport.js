@@ -11,6 +11,7 @@
 //   command(lines: string[]):        Promise<void>,
 // }
 // Errors are TransportError.
+import { t } from '../i18n/index.js';
 
 export class TransportError extends Error {
   /** kind: 'network' | 'aborted' | 'auth' | 'conflict' | 'http' | 'not-configured' */
@@ -26,12 +27,12 @@ export class TransportError extends Error {
 /** The "nothing configured" transport: print functions are unavailable, everything else works. */
 export class NullTransport {
   id = 'null';
-  label = 'Нет принтера';
+  get label() { return t('transport.none'); }
 
   configured() { return false; }
 
   #fail(operation) {
-    return Promise.reject(new TransportError('принтер не настроен', { kind: 'not-configured', operation }));
+    return Promise.reject(new TransportError(t('transport.notConfigured'), { kind: 'not-configured', operation }));
   }
 
   test() { return this.#fail('test'); }

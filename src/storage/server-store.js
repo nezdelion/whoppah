@@ -1,6 +1,7 @@
 // SettingsStore on the OctoPrint side (plugin mode): GET/PUT {settingsUrl}/<section>.
 // The storage layer knows nothing about transport and core: the auth method comes as an object (init/prepare/recover/describe).
 import { SECTIONS } from './settings-store.js';
+import { t } from '../i18n/index.js';
 
 export class StoreError extends Error {
   constructor(message, { section = '', status = null } = {}) {
@@ -13,7 +14,7 @@ export class StoreError extends Error {
 
 // Reason for a per-section denial: the missing permission.
 export const SECTION_NEEDS = Object.freeze({
-  profile: 'изменение профиля машины', calibration: 'управление принтером',
+  profile: 'perm.profile', calibration: 'perm.control',
 });
 
 export class ServerStore {
@@ -53,12 +54,12 @@ export class ServerStore {
         });
         text = await res.text();
       } catch (e) {
-        throw new StoreError('нет ответа от OctoPrint', { section });
+        throw new StoreError(t('net.noResponse'), { section });
       }
       if (res.ok) {
-        try { return text ? JSON.parse(text) : null; } catch (e) { throw new StoreError('OctoPrint вернул не JSON', { section, status: res.status }); }
+        try { return text ? JSON.parse(text) : null; } catch (e) { throw new StoreError(t('net.notJson'), { section, status: res.status }); }
       }
-      const err = new StoreError(`OctoPrint ответил ${res.status}`, { section, status: res.status });
+      const err = new StoreError(t('net.status', { status: res.status }), { section, status: res.status });
       err.operation = 'settings';
       let detail = '';
       try { detail = JSON.parse(text).error || ''; } catch (e) { detail = String(text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200); }
@@ -70,7 +71,7 @@ export class ServerStore {
       } else if (res.status === 403) {
         // per-section denial: "permission required: …" if the session is alive; otherwise the expired session message
         const d = this.auth.describe(err);
-        err.message = d && /истекла/.test(d) ? d : `нет права: ${SECTION_NEEDS[section]}`;
+        err.message = d && d === t('auth.expired') ? d : t('auth.noPermission', { what: t(SECTION_NEEDS[section]) });
       }
       throw err;
     }

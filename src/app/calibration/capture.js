@@ -1,6 +1,7 @@
 // Calibration capture scenarios from the head position: corner, touch, confirming a part.
 // Each result is { ok, message }; the calibration changes only after a successful write on the server.
 import { cornerFromPosition, touchFromPosition } from '../../core/calibration.js';
+import { t } from '../../i18n/index.js';
 
 /** guard — (part) => {ok, message}: the "Not homed" guard (standalone); by default forbids nothing. */
 export function createCalibrationCapture({ state, positionSource, monitor, guard = () => ({ ok: true, message: '' }) }) {
@@ -29,7 +30,7 @@ export function createCalibrationCapture({ state, positionSource, monitor, guard
         const pos = await positionSource.read();
         const { cornerX, cornerY } = cornerFromPosition(pos, offset);
         const doc = await positionSource.saveCorner({ x: cornerX, y: cornerY, epoch: pos.epochXY });
-        return await apply(doc, `Угол листа: X${cornerX} Y${cornerY}`);
+        return await apply(doc, t('calibration.captured.corner', { x: cornerX, y: cornerY }));
       } catch (e) { return fail(e); }
     },
 
@@ -37,10 +38,10 @@ export function createCalibrationCapture({ state, positionSource, monitor, guard
       try {
         const b = blocked('z'); if (b) return b;
         const pos = await positionSource.read();
-        const t = touchFromPosition(pos);
-        if (t.error) return { ok: false, message: t.error };
-        const doc = await positionSource.saveTouch({ zTouch: t.zTouch, epoch: pos.epochZ });
-        return await apply(doc, `Касание: Z${t.zTouch}`);
+        const touch = touchFromPosition(pos);
+        if (touch.error) return { ok: false, message: touch.error };
+        const doc = await positionSource.saveTouch({ zTouch: touch.zTouch, epoch: pos.epochZ });
+        return await apply(doc, t('calibration.captured.touch', { z: touch.zTouch }));
       } catch (e) { return fail(e); }
     },
 
@@ -48,7 +49,7 @@ export function createCalibrationCapture({ state, positionSource, monitor, guard
       try {
         const b = blocked(part); if (b) return b;
         const doc = await positionSource.confirm(part);
-        return await apply(doc, part === 'xy' ? 'Угол листа подтверждён' : 'Касание подтверждено');
+        return await apply(doc, t(part === 'xy' ? 'calibration.confirmed.xy' : 'calibration.confirmed.z'));
       } catch (e) { return fail(e); }
     },
   };

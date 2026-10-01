@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createState, createSourceContext } from '../src/app/state.js';
 import { MemoryStore } from '../src/storage/settings-store.js';
 import { createDrawing } from '../src/core/drawing.js';
+import './helpers/ru.js';
 
 async function fresh(initial) {
   const store = new MemoryStore(initial);

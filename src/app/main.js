@@ -20,12 +20,14 @@ import { createPrintTab } from './tabs/print-tab.js';
 import { h } from './ui/dom.js';
 import { createConnectionMonitor, isValidBaseUrl } from './connection-monitor.js';
 import { createConnectionIndicator } from './ui/connection-indicator.js';
+import { t } from '../i18n/index.js';
+import { applyLanguage, saveLanguageChoice } from './lang.js';
 
 const notice = (() => {
   const el = h('div', { class: 'notice', hidden: true, role: 'status' });
   return {
     el,
-    show(...content) { el.replaceChildren(...content, ' ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); el.hidden = true; } }, 'скрыть')); el.hidden = false; },
+    show(...content) { el.replaceChildren(...content, ' ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); el.hidden = true; } }, t('notice.hide'))); el.hidden = false; },
   };
 })();
 
@@ -38,15 +40,15 @@ const pageVisibility = () => ({
 function setupPlugin(env) {
   const auth = createSessionAuth({
     baseUrl: env.baseUrl, csrfCookie: env.csrfCookie, refreshUrl: `${env.baseUrl}/plugin/plotter/env.json`,
-    onExpired: () => notice.show('Сессия OctoPrint истекла. ',
-      h('a', { href: `${env.loginUrl.replace(/\/+$/, '')}/?redirect=${encodeURIComponent(location.pathname + location.search)}`, target: '_blank', rel: 'noopener' }, 'Войти'),
-      ' — рисунок и настройки на странице сохранятся.'),
+    onExpired: () => notice.show(t('notice.expired') + ' ',
+      h('a', { href: `${env.loginUrl.replace(/\/+$/, '')}/?redirect=${encodeURIComponent(location.pathname + location.search)}`, target: '_blank', rel: 'noopener' }, t('notice.signIn')),
+      ' ' + t('notice.expiredTail')),
   });
   const store = new ServerStore({ baseUrl: env.baseUrl, settingsUrl: env.settingsUrl, auth });
   const transport = createOctoPrintTransport({ getBaseUrl: () => env.baseUrl, auth, sameOrigin: true });
   const needs = (section) => {
-    if (section === 'profile' && !env.canEditProfile) return 'нужно право «изменение профиля машины»';
-    if (section === 'calibration' && !env.canEditCalibration) return 'нужно право «управление принтером»';
+    if (section === 'profile' && !env.canEditProfile) return t('needs.right', { what: t('perm.profile') });
+    if (section === 'calibration' && !env.canEditCalibration) return t('needs.right', { what: t('perm.control') });
     return null;
   };
   document.querySelector('header').append(h('a', { class: 'back-link', href: env.octoprintUrl }, '← OctoPrint'));
@@ -56,6 +58,9 @@ function setupPlugin(env) {
 
 async function start() {
   const env = await loadEnv();
+  // the language is chosen before any UI is built: user choice → OctoPrint language (plugin) → browser language → en
+  const { choice } = applyLanguage({ env });
+  const language = { get: () => choice, set: (v) => { saveLanguageChoice(v); location.reload(); } };
   document.body.prepend(notice.el);
   let store, transport, plugin = null;
   if (env.mode === 'plugin') {
@@ -80,7 +85,7 @@ async function start() {
   // (the app does not know what was done with the printer while the page was closed) — both parts are outdated until a capture/confirmation.
   if (!plugin) state.adoptCalibration({ ...state.get('calibration'), epochXY: null, epochZ: null });
   state.subscribe((e) => {
-    if (e.type === 'save-error') notice.show(`Не удалось сохранить настройки: ${e.message}`);
+    if (e.type === 'save-error') notice.show(t('notice.saveFailed', { message: e.message }));
   });
 
   if (!transport) {
@@ -94,7 +99,7 @@ async function start() {
       serverStore: store, localStore: new LocalStorageStore(localStorage), flags: localStorage,
       flagKey: `neptune-plotter.plugin-import-offered.${env.user || ''}`,
       confirm: (m) => window.confirm(m), needs: plugin.needs,
-    }).catch((e) => `Перенос настроек: ${e.message}`);
+    }).catch((e) => t('notice.importFailed', { message: e.message }));
     if (message) { await state.load(); notice.show(message); }
   }
   // Connection monitor: in standalone "configured" = a valid address and a non-empty key; in the plugin — a session, no key.
@@ -102,7 +107,7 @@ async function start() {
     transport,
     visibility: pageVisibility(),
     configured: plugin ? () => transport.configured() : () => { const c = state.get('connection'); return isValidBaseUrl(c.url) && !!c.key; },
-    describeAuth: plugin ? (status) => `сессия OctoPrint не принята (${status}): войдите заново` : undefined,
+    describeAuth: plugin ? (status) => t('conn.sessionRejected', { status }) : undefined,
   });
   if (!plugin) {
     state.subscribe((e) => { if (e.type === 'settings' && (e.section === 'connection' || e.section === '*')) connection.configChanged(); });
@@ -137,7 +142,7 @@ async function start() {
   const firmware = feed ? createFirmwareMemo(feed) : null;
   const tabs = [
     ...[createSvgSource(), createPhotoSource()].map((source) => ({ id: source.id, title: source.title, source })),
-    { id: 'print', title: 'Печать', tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : { feed, firmware } }) },
+    { id: 'print', title: t('tab.print'), tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: { ...(plugin ? plugin.ui : { feed, firmware }), language } }) },
   ];
 
   const nav = document.getElementById('tabs');
@@ -151,15 +156,15 @@ async function start() {
     }
   };
 
-  for (const t of tabs) {
+  for (const tab of tabs) {
     const view = h('div', { class: 'tab-panel', role: 'tabpanel', hidden: true });
-    const btn = h('button', { type: 'button', role: 'tab', onclick: () => show(t.id) }, t.title);
+    const btn = h('button', { type: 'button', role: 'tab', onclick: () => show(tab.id) }, tab.title);
     nav.append(btn);
     panels.append(view);
-    buttons.set(t.id, btn);
-    views.set(t.id, view);
-    if (t.source) t.source.mount(view, createSourceContext({ state, store, sourceId: t.source.id }));
-    else t.tab.mount(view);
+    buttons.set(tab.id, btn);
+    views.set(tab.id, view);
+    if (tab.source) tab.source.mount(view, createSourceContext({ state, store, sourceId: tab.source.id }));
+    else tab.tab.mount(view);
   }
   show(tabs[0].id);
   connection.start();
@@ -170,6 +175,6 @@ async function start() {
 }
 
 start().catch((e) => {
-  document.getElementById('panels').textContent = `Не удалось запустить приложение: ${e.message}`;
+  document.getElementById('panels').textContent = t('app.startFailed', { message: e.message });
   console.error(e);
 });

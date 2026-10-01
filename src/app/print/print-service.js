@@ -4,6 +4,7 @@ import { buildPlan } from '../../core/pipeline.js';
 import { liftLines, cornerLines, touchLines, homeLines, motorsOffLines, frameLines } from '../../core/gcode.js';
 import { absoluteZ } from '../../core/profile.js';
 import { TransportError } from '../../transport/transport.js';
+import { t } from '../../i18n/index.js';
 
 const CANCEL_TIMEOUT_MS = 30000;
 const CANCEL_POLL_MS = 1000;
@@ -18,11 +19,11 @@ export function classifyState(state) {
 }
 
 function stopMessage(kind, state) {
-  if (kind === 'other-job') return 'началось другое задание — перо не поднято';
+  if (kind === 'other-job') return t('print.stop.otherJob');
   const s = String(state || '');
-  const what = /^(Error|Closed with error|Offline after error)/.test(s) ? 'ошибка'
-    : /^(Offline|Closed)/.test(s) ? 'отключён' : `состояние «${s || 'неизвестно'}»`;
-  return `принтер: ${what} — перо не поднято`;
+  const what = /^(Error|Closed with error|Offline after error)/.test(s) ? t('print.stop.error')
+    : /^(Offline|Closed)/.test(s) ? t('print.stop.offline') : t('print.stop.state', { state: s || t('print.stop.unknown') });
+  return t('print.stop.printer', { what });
 }
 
 export function createPrintService({
@@ -57,15 +58,15 @@ export function createPrintService({
     if (print) {
       const { profile, calibration } = settings;
       notes.push(profile.home
-        ? 'В файле есть G28 — ручка должна быть поднята.'
-        : 'G28 в файле нет — принтер должен держать координаты (голова не двигается рукой).');
-      notes.push(`Бумага в углу X${calibration.cornerX} Y${calibration.cornerY}, перо на метке. Рисовать?`);
-    } else if (notes.length) notes.push('Всё равно загрузить?');
-    if (notes.length && !(await confirm(notes.join('\n')))) return fail('отменено');
+        ? t('print.confirm.homeIn')
+        : t('print.confirm.homeNot'));
+      notes.push(t('print.confirm.paper', { x: calibration.cornerX, y: calibration.cornerY }));
+    } else if (notes.length) notes.push(t('print.confirm.uploadAnyway'));
+    if (notes.length && !(await confirm(notes.join('\n')))) return fail(t('print.cancelled'));
 
     return guarded(async () => {
       await transport.upload(name, plan.gcode, { select: true, print });
-      return done(print ? `Рисование ${name}` : `Загружено ${name}`);
+      return done(t(print ? 'print.drawing' : 'print.uploaded', { name }));
     });
   }
 
@@ -78,7 +79,7 @@ export function createPrintService({
         const kind = classifyState(state);
         if (kind === 'ready') break;
         if (kind !== 'wait') return fail(stopMessage(kind, state));
-        if (now() >= deadline) return fail('отмена не завершилась — перо не поднято');
+        if (now() >= deadline) return fail(t('print.cancelTimeout'));
         await sleep(CANCEL_POLL_MS);
       }
       // the state may have changed between the poll and the command
@@ -87,37 +88,37 @@ export function createPrintService({
       if (kind !== 'ready') return fail(stopMessage(kind, state));
       const { profile, calibration } = getSettings();
       await transport.command(liftLines(profile, calibration));
-      return done(`Задание отменено, перо поднято на Z${absoluteZ(profile, calibration).start}`);
+      return done(t('print.cancelled.lifted', { z: absoluteZ(profile, calibration).start }));
     });
   }
 
-  const pause = (on) => guarded(async () => { await transport.pause(on); return done(on ? 'Пауза' : 'Продолжено'); });
+  const pause = (on) => guarded(async () => { await transport.pause(on); return done(t(on ? 'print.paused' : 'print.resumed')); });
 
   const MANUAL = {
-    up: { label: 'Перо вверх', lines: liftLines },
-    corner: { label: 'К углу бумаги', lines: cornerLines },
+    up: { lines: liftLines },
+    corner: { lines: cornerLines },
     touch: {
-      label: 'Перо на касание', lines: touchLines,
-      ask: (s) => `Опустить перо до касания бумаги, Z${absoluteZ(s.profile, s.calibration).touch}?`,
+      lines: touchLines,
+      ask: (s) => t('print.ask.touch', { z: absoluteZ(s.profile, s.calibration).touch }),
     },
     motorsOff: {
-      label: 'Моторы выкл', lines: motorsOffLines,
-      ask: () => 'Отключить моторы? Координаты сбросятся, перед рисованием нужен Home.',
+      lines: motorsOffLines,
+      ask: () => t('print.ask.motorsOff'),
     },
     home: {
-      label: 'Home (G28)', lines: homeLines,
-      ask: () => 'Ручка поднята выше сопла? При G28 голова опускается до стола: перо ниже сопла на 8 мм.',
+      lines: homeLines,
+      ask: () => t('print.ask.home'),
     },
   };
 
   async function manual(action) {
     const entry = MANUAL[action];
-    if (!entry) return fail(`неизвестная команда: ${action}`);
+    if (!entry) return fail(`unknown command: ${action}`);
     const settings = getSettings();
-    if (entry.ask && !(await confirm(entry.ask(settings)))) return fail('отменено');
+    if (entry.ask && !(await confirm(entry.ask(settings)))) return fail(t('print.cancelled'));
     return guarded(async () => {
       await transport.command(entry.lines(settings.profile, settings.calibration));
-      return done(entry.label);
+      return done(t(`print.manual.${action}`));
     });
   }
 
@@ -128,7 +129,7 @@ export function createPrintService({
     try { plan = buildPlan(drawing, settings); } catch (e) { return fail(e.message); }
     return guarded(async () => {
       await transport.command(frameLines(plan.stats.bbox, settings.profile, settings.calibration));
-      return done('Обводка рамки отправлена');
+      return done(t('print.frameSent'));
     });
   }
 

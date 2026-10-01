@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRunner, STATUS } from '../src/styles/runner.js';
 import { createNativeSession } from '../src/styles/native-adapter.js';
+import './helpers/ru.js';
 
 class FakeWorker {
   constructor() { this.sent = []; this.terminated = false; FakeWorker.all.push(this); }

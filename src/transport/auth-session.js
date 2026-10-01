@@ -1,10 +1,12 @@
 // Authorization by the OctoPrint session (plugin mode): session cookie + X-CSRF-Token header.
 // Auth contract: init(http), prepare(request), recover(error, attempt), describe(error).
 // No OctoPrint JS client, jQuery or lodash: fetch only.
+import { t } from '../i18n/index.js';
 
+// operation → permission name key (perm.*)
 const PERMISSION_BY_OPERATION = {
-  upload: 'печать', pause: 'печать', cancel: 'печать',
-  command: 'управление принтером', position: 'управление принтером', job: 'просмотр состояния', test: 'просмотр состояния',
+  upload: 'perm.print', pause: 'perm.print', cancel: 'perm.print',
+  command: 'perm.control', position: 'perm.control', job: 'perm.status', test: 'perm.status',
 };
 
 export function readCookie(cookieString, name) {
@@ -82,13 +84,13 @@ export function createSessionAuth({ baseUrl = '', csrfCookie, getCookie = () => 
     },
 
     describe(error) {
-      if (error.status === 400 && /CSRF/i.test(error.message)) return 'OctoPrint не принял CSRF-токен сессии — обновите страницу';
+      if (error.status === 400 && /CSRF/i.test(error.message)) return t('auth.csrf');
       if (error.status !== 401 && error.status !== 403) return null;
       if (error.status === 401 || alive === false) {
         onExpired();
-        return 'сессия OctoPrint истекла — войти';
+        return t('auth.expired');
       }
-      return `нет права: ${PERMISSION_BY_OPERATION[error.operation] || error.operation || 'операция'}`;
+      return t('auth.noPermission', { what: PERMISSION_BY_OPERATION[error.operation] ? t(PERMISSION_BY_OPERATION[error.operation]) : error.operation || t('perm.operation') });
     },
   };
 }

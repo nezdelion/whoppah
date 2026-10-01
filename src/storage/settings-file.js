@@ -1,5 +1,6 @@
 // Settings file {format, version, sections}: transfer between devices and modes.
 import { SECTIONS } from './settings-store.js';
+import { t } from '../i18n/index.js';
 
 export const FILE_FORMAT = 'neptune-plotter-settings';
 export const FILE_VERSION = 1;
@@ -12,7 +13,7 @@ export class SettingsFileError extends Error {
 }
 
 export const SECTION_LABELS = Object.freeze({
-  profile: 'Профиль машины', calibration: 'Калибровка', job: 'Параметры задания', presets: 'Пресеты источников',
+  profile: 'file.section.profile', calibration: 'file.section.calibration', job: 'file.section.job', presets: 'file.section.presets',
 });
 
 /** @param sections { profile, calibration, job, presets? } */
@@ -25,19 +26,19 @@ export function serializeSettings(sections) {
 /** Parsing and structure validation; returns { sections } with known sections only. */
 export function parseSettings(text) {
   let data;
-  try { data = JSON.parse(text); } catch (e) { throw new SettingsFileError('файл настроек повреждён: это не JSON'); }
-  if (!data || data.format !== FILE_FORMAT) throw new SettingsFileError('это не файл настроек Neptune Plotter');
-  if (!Number.isInteger(data.version) || data.version < 1) throw new SettingsFileError('в файле нет версии формата');
-  if (data.version > FILE_VERSION) throw new SettingsFileError(`версия формата ${data.version} новее поддерживаемой (${FILE_VERSION})`);
-  if (!data.sections || typeof data.sections !== 'object' || Array.isArray(data.sections)) throw new SettingsFileError('в файле нет разделов настроек');
+  try { data = JSON.parse(text); } catch (e) { throw new SettingsFileError(t('file.err.notJson')); }
+  if (!data || data.format !== FILE_FORMAT) throw new SettingsFileError(t('file.err.notOurs'));
+  if (!Number.isInteger(data.version) || data.version < 1) throw new SettingsFileError(t('file.err.noVersion'));
+  if (data.version > FILE_VERSION) throw new SettingsFileError(t('file.err.newer', { version: data.version, supported: FILE_VERSION }));
+  if (!data.sections || typeof data.sections !== 'object' || Array.isArray(data.sections)) throw new SettingsFileError(t('file.err.noSections'));
   const sections = {};
   for (const key of SECTIONS) {
     const v = data.sections[key];
     if (v === undefined) continue;
-    if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new SettingsFileError(`раздел «${SECTION_LABELS[key]}» повреждён`);
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new SettingsFileError(t('file.err.broken', { section: t(SECTION_LABELS[key]) }));
     sections[key] = v;
   }
-  if (!Object.keys(sections).length) throw new SettingsFileError('в файле нет известных разделов');
+  if (!Object.keys(sections).length) throw new SettingsFileError(t('file.err.noKnown'));
   return { sections };
 }
 

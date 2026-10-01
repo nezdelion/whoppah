@@ -1,7 +1,8 @@
 // Photo loading: EXIF-aware decoding, white background under transparency, scaling to the working resolution -> ImageData.
+import { t } from '../../i18n/index.js';
 
 export class ImageLoadError extends Error {
-  constructor(message = 'не удалось открыть изображение') {
+  constructor(message = t('photo.err.openImage')) {
     super(message);
     this.name = 'ImageLoadError';
   }

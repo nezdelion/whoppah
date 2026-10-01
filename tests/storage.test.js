@@ -9,6 +9,7 @@ import { normalizeProfile, normalizeJob } from '../src/core/profile.js';
 import { MemStorage } from './helpers/mem-storage.js';
 import { loadTree } from './helpers/fixtures.js';
 import legacy from './tools/legacy-core.cjs';
+import './helpers/ru.js';
 
 const OLD = { fieldW: 150, fieldH: 100, margin: 7, halign: 'left', valign: 'bottom', rotate: true, cornerX: -3, cornerY: 48,
   zDown: 7.1, zUp: 10.5, zStart: 16, zEnd: 24, fDraw: 2500, fTravel: 7000, fZUp: 1000, fZDown: 500,

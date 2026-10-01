@@ -4,6 +4,7 @@ import { createLayerStack, normalizeParams, clampSize, PRESET_VERSION } from '..
 import { estimateSpacing, densityText, scaleToPaper } from '../src/app/photo/density.js';
 import { fitSize } from '../src/app/photo/image-loader.js';
 import { isPartial, partialReasons } from '../src/core/drawing.js';
+import './helpers/ru.js';
 
 const styles = { a: { name: 'Alpha' }, b: { name: 'Beta' } };
 const make = () => createLayerStack({ getStyle: (id) => styles[id] || null });
@@ -127,7 +128,7 @@ test('density: squiggle 200 lines, image 800×600 over 170 mm of height -> step 
   const est = estimateSpacing(step, image, pp);
   assert.ok(Math.abs(est.stepMm - 0.85) < 1e-9);
   assert.equal(est.tooDense, false);
-  assert.equal(densityText(est, 0.5), 'шаг 0.85 мм');
+  assert.equal(densityText(est, 0.5), 'шаг 0,85 мм');
   const wide = estimateSpacing(step, image, { ...pp, penWidthMm: 1.0 });
   assert.equal(wide.tooDense, true);
   assert.match(densityText(wide, 1), /линии сливаются/);

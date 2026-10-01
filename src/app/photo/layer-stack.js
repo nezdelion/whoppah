@@ -1,6 +1,10 @@
 // Model of the "Photo" tab style-layer stack: no DOM and no workers.
 // Layer: { uid, styleId, name, visible, params, status: idle|running|partial|done|error, progress, reason, message, lines }
 import { createDrawing, SPACE } from '../../core/drawing.js';
+import { t } from '../../i18n/index.js';
+
+/** The "intermediate" reason from a style: a dictionary key reason.* is translated, anything else (plotterfun texts) as is. */
+export const reasonText = (r) => (typeof r === 'string' && r.startsWith('reason.') ? t(r) : r || '');
 
 export const PRESET_VERSION = 1;
 export const SIZE_RANGE = Object.freeze({ min: 200, max: 2000, default: 800 });
@@ -105,7 +109,7 @@ export function createLayerStack({ getStyle, uid = (() => { let n = 0; return ()
     /** Visible layers that are not in the "done" status: [{uid, name, status, reason}] */
     pending() {
       return layers.filter((l) => l.visible && l.status !== 'done')
-        .map((l) => ({ uid: l.uid, name: l.name, status: l.status, reason: l.reason || (l.status === 'idle' ? 'расчёт не завершён' : l.status === 'error' ? l.message : '') }));
+        .map((l) => ({ uid: l.uid, name: l.name, status: l.status, reason: reasonText(l.reason) || (l.status === 'idle' ? t('photo.layer.notFinishedReason') : l.status === 'error' ? l.message : '') }));
     },
 
     /** Visible layers with a result -> Drawing (image coordinates). null if there are no lines. */
@@ -113,7 +117,7 @@ export function createLayerStack({ getStyle, uid = (() => { let n = 0; return ()
       const shown = layers.filter((l) => l.visible && l.lines.length);
       if (!shown.length) return null;
       const reasons = layers.filter((l) => l.visible && l.status !== 'done')
-        .map((l) => `слой «${l.name}» не завершён${l.reason ? ` (${l.reason})` : l.status === 'error' ? ` (ошибка: ${l.message})` : ''}`);
+        .map((l) => t('photo.layer.notFinished', { name: l.name }) + (l.reason ? ` (${reasonText(l.reason)})` : l.status === 'error' ? ` (${t('photo.layer.error', { message: l.message })})` : ''));
       const meta = { source: 'photo', name };
       if (reasons.length) meta.partial = { reasons };
       return createDrawing({
@@ -131,7 +135,7 @@ export function createLayerStack({ getStyle, uid = (() => { let n = 0; return ()
     /** Replacing the stack with the preset layers. Returns {workingSize, skipped:[styleId...]}; an invalid preset throws. */
     loadPreset(preset) {
       if (!preset || typeof preset !== 'object' || preset.version !== PRESET_VERSION || !Array.isArray(preset.layers)) {
-        throw new Error('это не пресет слоёв или его версия не поддерживается');
+        throw new Error(t('photo.err.badPreset'));
       }
       const skipped = [];
       layers = [];

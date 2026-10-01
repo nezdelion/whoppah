@@ -3,6 +3,7 @@
 // Layer statuses: running (computing) | partial (the style kept producing output after completion) | done | error.
 // "done" is set only by a result event with final:true; the runner does not measure quiet time at all.
 import { PROGRESS, RESULT, ERROR, SLIDERS } from './protocol.js';
+import { t } from '../i18n/index.js';
 
 export const STATUS = Object.freeze({ RUNNING: 'running', PARTIAL: 'partial', DONE: 'done', ERROR: 'error' });
 
@@ -57,7 +58,7 @@ export function createRunner({ createSession }) {
       if (data && data.runId && data.runId !== r.runId) return;
       for (const ev of session.decode(data)) handle(r, ev, emit);
     };
-    const onFail = (e) => handle(r, { type: ERROR, message: (e && e.message) || 'сбой воркера' }, emit);
+    const onFail = (e) => handle(r, { type: ERROR, message: (e && e.message) || t('styles.workerFailed') }, emit);
     worker.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); onFail(e); };
     worker.onmessageerror = onFail;
 
@@ -112,7 +113,7 @@ export function createRunner({ createSession }) {
           else if (ev.type === ERROR) done(reject, new Error(ev.message));
         }
       };
-      worker.onerror = (e) => done(reject, new Error((e && e.message) || 'сбой воркера'));
+      worker.onerror = (e) => done(reject, new Error((e && e.message) || t('styles.workerFailed')));
       try { for (const entry of session.initMessages()) post(worker, entry); } catch (e) { done(reject, e); }
     });
   }

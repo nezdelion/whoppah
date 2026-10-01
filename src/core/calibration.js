@@ -1,12 +1,13 @@
 // Calibration from the head position: the sheet corner from the position and pen offset, part freshness by coordinate epoch.
 import { CALIBRATION_SCHEMA, validate } from './profile.js';
+import { t } from '../i18n/index.js';
 
 const round3 = (v) => Math.round(v * 1000) / 1000;
 
 /** Calibration parts, each with its own printer coordinate epoch. */
 export const CALIBRATION_PARTS = Object.freeze({
-  xy: { epochKey: 'epochXY', label: 'угол листа' },
-  z: { epochKey: 'epochZ', label: 'касание' },
+  xy: { epochKey: 'epochXY', get label() { return t('calibration.part.xy'); } },
+  z: { epochKey: 'epochZ', get label() { return t('calibration.part.z'); } },
 });
 
 /**
@@ -21,7 +22,7 @@ export function cornerFromPosition(position, offset = { x: 0, y: 0 }) {
 export function touchFromPosition(position) {
   const zTouch = round3(position.z);
   const errors = validate(CALIBRATION_SCHEMA.filter((f) => f.key === 'zTouch'), { zTouch });
-  return errors.length ? { error: `Z${zTouch} вне допустимого диапазона калибровки` } : { zTouch };
+  return errors.length ? { error: t('calibration.err.touchRange', { z: zTouch }) } : { zTouch };
 }
 
 /**
@@ -41,5 +42,5 @@ export function calibrationFreshness(calibration, currentEpochs) {
 }
 
 export function staleMessage(stale) {
-  return stale.length ? `Калибровка могла устареть: ${stale.join(', ')} (после хоминга или переподключения принтера).` : '';
+  return stale.length ? t('calibration.stale', { parts: stale.join(', ') }) : '';
 }

@@ -3,6 +3,7 @@
 // and M400 in the read waits for previous moves. If not read — we do not move.
 import { planJog } from '../../core/jog.js';
 import { jogLines } from '../../core/gcode.js';
+import { t } from '../../i18n/index.js';
 
 const fmt = (v) => String(Math.round(v * 1000) / 1000);
 
@@ -24,7 +25,7 @@ export function createJog({ state, positionSource, transport, guard = () => ({ o
         if (!plan.ok) return { ok: false, message: plan.message };
         await transport.command(jogLines(profile, axis, plan.delta));
         const A = axis.toUpperCase();
-        return { ok: true, message: `${A}${plan.delta > 0 ? '+' : ''}${fmt(plan.delta)} → ${A}${fmt(plan.target)}${plan.clamped ? ' (до предела)' : ''}` };
+        return { ok: true, message: `${A}${plan.delta > 0 ? '+' : ''}${fmt(plan.delta)} → ${A}${fmt(plan.target)}${plan.clamped ? t('jog.clamped') : ''}` };
       } catch (e) {
         return { ok: false, message: e && e.message ? e.message : String(e) };
       }

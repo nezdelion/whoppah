@@ -133,6 +133,32 @@ class PlotterPlugin(
         perm = getattr(Permissions, permission_key, None)
         return bool(perm is not None and perm.can())
 
+    # OctoPrint's own rule (octoprint.server.Server._get_locale): the user's Settings -> Appearance language, otherwise the
+    # instance default language; "_default" means "not chosen". The browser language (Accept-Language) is left to the app.
+    @staticmethod
+    def _real_language(value):
+        return value if isinstance(value, str) and value.strip() and value != "_default" else None
+
+    def _user_language(self, user):
+        try:
+            import octoprint.server
+
+            return self._real_language(octoprint.server.userManager.get_user_setting(user, ("interface", "language")))
+        except Exception:  # no user manager yet, unknown or anonymous user
+            return None
+
+    def _default_language(self):
+        try:
+            from octoprint.settings import settings
+
+            return self._real_language(settings().get(["appearance", "defaultLanguage"]))
+        except Exception:  # settings not initialized
+            return None
+
+    def ui_language(self, user):
+        """Interface language code of the current user as OctoPrint knows it (e.g. "ru", "de"), or None."""
+        return self._user_language(user) or self._default_language()
+
     def can_edit_profile(self):
         return self._can(NEEDS_PROFILE)
 
@@ -188,6 +214,7 @@ class PlotterPlugin(
             "user": user,
             "canEditProfile": self.can_edit_profile(),
             "canEditCalibration": self.can_edit_calibration(),
+            "language": self.ui_language(user),  # the app picks its own language from it (en/ru), else from the browser
         }
         return _add_csrf_cookie(self._no_cache(self._json(payload)))
 

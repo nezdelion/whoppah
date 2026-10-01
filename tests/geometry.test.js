@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseTransform, applyMatrix, arcToCubics, flattenSubpath, pointSegmentDistance, multiply } from '../src/core/geometry.js';
 import { closeTo } from './helpers/fixtures.js';
+import './helpers/ru.js';
 
 test('translate/scale/rotate/skew/matrix', () => {
   const at = (s, x, y) => applyMatrix(parseTransform(s), x, y);

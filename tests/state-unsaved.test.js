@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createState } from '../src/app/state.js';
 import { MemoryStore } from '../src/storage/settings-store.js';
+import './helpers/ru.js';
 
 const calDoc = (x, over = {}) => ({ cornerX: x, cornerY: 0, zTouch: 8, epochXY: 1, epochZ: 1, ...over });
 

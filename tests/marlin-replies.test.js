@@ -4,6 +4,7 @@ import {
   FEED_LOG_FILTER, parseLogLine, normalizeSent, classifySent, epochParts, parsePosition, parseLimits, parseMarker, parseUnknownCommand,
   limitsWarnings, limitsWarningText,
 } from '../src/core/marlin-replies.js';
+import './helpers/ru.js';
 
 test('parseLogLine: direction and text', () => {
   assert.deepEqual(parseLogLine('Send: N12 G0 X10*85'), { dir: 'send', text: 'N12 G0 X10*85' });
