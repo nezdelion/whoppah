@@ -41,20 +41,34 @@ The language is chosen at startup, before the UI is built. Switching it in the h
 
 ## Settings
 
-Two areas with different change frequency (the visual layout will be redesigned separately):
+All coordinates in the app are the **head position** (the nozzle), as shown in OctoPrint; the pen is offset from it, and the app accounts for the offset through the pen area and the sheet corner.
 
-- **Print** (every time):
-  - **Job**: paper format (custom formats are saved), orientation, margin, alignment, rotation, "as is in mm", "Limit to print area", simplification (RDP) and merge tolerances.
-  - **Calibration**: the sheet corner (nozzle X/Y when the pen is at the left near corner of the sheet, a "Point" control) and the paper touch Z. Changes with every sheet or pen; stored with a date.
-- **Printer** (rarely): **machine profiles** and the active profile's fields: the bed, pen heights as offsets from the touch, feeds, nozzle travel limits, pen width, `G28`/`M84`.
+**First setup (wizard).** The "Ready to print" card at the top of the Print tab lists what must be set: connection (standalone only), pen area, sheet corner, touch — each ready / not set / check, with "Set up" per item and "Run setup" for the whole wizard. The wizard is a modal dialog with steps, every change is saved at once, it can be closed on any step:
+
+1. **Connection** (standalone): OctoPrint address and API key, the indicator, "Test connection".
+2. **Pen area**: the machine profile (printer + pen holder) and where the pen tip can draw, one of two ways (below).
+3. **Sheet**: format and orientation; put the sheet on the bed, then either "Bring the pen to the area corner" (the pen hovers over the near left corner of the pen area — slide the sheet corner under the pen tip) or jog the pen to the sheet corner; then "Sheet corner here". "Pen does not reach the sheet corner" holds the pen offset from the corner for that case.
+4. **Touch**: lower Z step by step until the pen touches the paper, "Touch here"; pen width.
+5. **Check**: the readiness list, "Pen up", "Trace frame" (when a drawing is loaded).
+
+Steps that move the head have the jog pad (step 0.1/1/10 mm, X±/Y±/Z±) and the "Not homed" guard with "Already homed". Without a position source (no plugin feed) the steps show the number fields only.
+
+**Pen area** (the active profile). Two ways, chosen by a switch; both fill the same bed rectangle of the profile:
+- **Pen offset from the nozzle** `dx, dy` (to the right / away from you — positive; the pen closer to you than the nozzle is a negative `dy`): the bed in head coordinates is the nominal bed (default 235×235 mm) shifted by −offset, the far corner "by nominal". Enter the numbers, or bring the pen tip to any bed corner it reaches, choose that corner and press "Pen here": the offset is corner − head position. Example: pen 35 mm right of the nozzle, limits X-4…234 — the pen reaches 204 mm along X.
+- **Extreme pen positions**: the near left and far right positions of the pen tip over the bed — "Use current position" or numbers; stored as measured corners.
+The editor shows "Pen reaches: W × H mm", a map (bed, axis limits, pen area, sheet) and "Go to" the area corners to check by eye. **Print area** = axis limits ∩ bed; the area not set — the axis limits, and the pen-on-bed checks are skipped with a note. The bed has no coordinate epoch (homing does not make it stale).
+
+Settings panel layout:
+
+- **Ready to print** card, then **Job** (every time): paper format (custom formats are saved), orientation, margin, alignment, rotation, "as is in mm", "Limit to print area"; folded **Optimization** (simplification and merge tolerances) and **Calibration values** (sheet corner and touch as numbers, with the date).
+- **Printer** (folded, rarely): **machine profiles**, the pen area editor, pen heights as offsets from the touch, feeds, axis limits, pen width, `G28`/`M84`, connection (standalone), settings export/import. The fold states are remembered in the browser.
+- The calibration card on the right: the "may be outdated" warning with "Corner is correct" / "Touch is correct", the jog pad and "Set up…".
 
 **Machine profiles.** A profile is "printer + pen holder": up to 20 named profiles, one active; New (defaults), Duplicate, Rename, Delete (not the last one; deleting the active one makes the neighbour active). Layout, G-code, checks, the jog panel and the time estimate use the active profile; the job settings, the sheet corner and the touch are not part of a profile and do not change on a switch. The corner and the touch depend on the holder, so after a profile switch both are reported as "may be outdated (the machine profile changed)" and printing asks for confirmation, until a new capture, input or "Corner is correct" / "Touch is correct" (back to the previous profile — fresh again). The single profile of earlier versions becomes the profile "Neptune 3 Pro" on the first start (standalone: in the browser, plugin: on the server); the old data is kept.
 
-**Bed and print area.** The bed rectangle is stored in nozzle coordinates: the lower left / upper right corner is the nozzle position when the pen is at that bed corner, so the pen offset is inside it. Set it with two "Point" controls ("Use current position" reads the head as the sheet corner capture does; or enter X/Y). Until the upper right corner is measured it is "lower left + nominal size" (default 235×235 mm, marked "by nominal"); check it with "Go to" and capture it. A measured size more than 5 mm off the nominal gives a hint. The bed has no coordinate epoch (homing does not make it stale). **Print area** = nozzle travel limits ∩ bed; the bed not measured — the axis limits, and the pen-on-bed checks are skipped with a note.
-
 **"Limit to print area"** (job, on by default, marked ⚠): the drawing is fitted (scale and alignment) into (sheet field − margins) ∩ (print area moved to sheet coordinates via the corner); the sheet itself may extend beyond the area (a warning per side). Off: the drawing is fitted into the sheet as before. If the field minus margins is inside the print area, the G-code is the same with the option on or off. Before sending, the drawing is checked against the print area regardless of the option: beyond an axis limit or beyond the bed edge (per side, in mm) — confirmation.
 
-**Point and "Go to".** Every point in nozzle coordinates (sheet corner, bed corners) is the same control: X/Y, "Use current position", "Go to". "Go to" reads the position, lifts the pen to the start height if it is lower (or unknown), moves X/Y and, with a fresh touch, lowers to touch + clearance; a point outside the axis limits is refused. Same guards and permissions as the jog panel.
+**Point and "Go to".** Every point in head coordinates (sheet corner, pen positions) is the same control: X/Y, "Use current position", "Go to". "Go to" reads the position, lifts the pen to the start height if it is lower (or unknown), moves X/Y and, with a fresh touch, lowers to touch + clearance; a point outside the axis limits is refused. Same guards and permissions as the jog panel.
 
 Settings export/import via a file is at the bottom of the settings panel: format version 2 (all profiles with the active one, calibration, job, presets); a version 1 file (a single profile) is rejected with "the old settings file format is not supported". Settings of the old page (`neptune-plotter.settings`) are migrated once on first launch.
 

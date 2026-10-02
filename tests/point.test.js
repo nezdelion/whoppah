@@ -144,3 +144,44 @@ test('bed: without the machine profile permission — refused with the permissio
   assert.equal(a.server.reads, 0);
   assert.equal(a.profile().bedX0, null);
 });
+
+// --- "pen offset" mode: the pen tip at a bed corner
+
+test('offset: the pen at the far right bed corner, head X200 Y235 — the bed is the nominal one shifted by −offset', async () => {
+  const a = await bedApp();
+  a.server.head = { x: 200, y: 235, z: 20 };
+  const r = await a.capture.captureBedFromOffsetCorner('ur');
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.value, { x: 35, y: 0 });
+  const p = a.profile();
+  assert.deepEqual([p.bedX0, p.bedY0, p.bedX1, p.bedY1, p.bedUrNominal], [-35, 0, 200, 235, true]);
+});
+
+test('offset: the near right corner at head X200 Y-3; without the profile permission — refused, nothing read', async () => {
+  const a = await bedApp();
+  a.server.head = { x: 200, y: -3, z: 20 };
+  assert.deepEqual((await a.capture.captureBedFromOffsetCorner('lr')).value, { x: 35, y: 3 });
+  assert.deepEqual([a.profile().bedX0, a.profile().bedY0], [-35, -3]);
+  const b = await bedApp({ profileNeed: () => 'нужно право «изменение профиля машины»' });
+  const r = await b.capture.captureBedFromOffsetCorner('ur');
+  assert.equal(r.ok, false);
+  assert.equal(b.server.reads, 0);
+  a.server.failNext('busy', 'нельзя во время печати');
+  assert.deepEqual(await a.capture.captureBedFromOffsetCorner('ur'), { ok: false, message: 'нельзя во время печати' });
+  assert.deepEqual([a.profile().bedX0, a.profile().bedY0], [-35, -3], 'the profile is unchanged while printing');
+});
+
+test('offset: a refused profile write (409 conflict) is reported as a failure, not as "X35"', async () => {
+  const store = {
+    load: async () => null,
+    save: async (section, doc) => { if (section === 'profiles') { const e = new Error('conflict'); e.status = 409; throw e; } return doc; },
+  };
+  const server = fakeServer({ head: { x: 200, y: 235, z: 20 } });
+  const state = createState({ store });
+  await state.load();
+  const capture = createCalibrationCapture({ state, positionSource: server.source, monitor: { refresh: async () => {} } });
+  const r = await capture.captureBedFromOffsetCorner('ur');
+  assert.equal(r.ok, false);
+  assert.match(r.message, /друго/);
+  assert.equal(state.get('profile').bedX0, null, 'the collection was reread after the conflict');
+});

@@ -81,3 +81,42 @@ test('manual input of both points: measured, no nominal mark, the print area is 
   assert.equal(bedPoints(p).ur.nominal, false);
   assert.equal(bedRect({ ...p, ...clearedBed() }), null);
 });
+
+// --- pen area: offset mode and extreme positions mode
+import { penOffsetOf, bedFromPenOffset, BED_CORNERS, penOffsetFromCorner, areaStatus } from '../src/core/bed.js';
+
+const nominal = { w: 235, h: 235 };
+
+test('pen offset X35 Y0: the bed is the nominal one shifted left, upper right by nominal; the offset reads back', () => {
+  const r = bedFromPenOffset({ x: 35, y: 0 }, nominal);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.changes, { bedX0: -35, bedY0: 0, bedX1: 200, bedY1: 235, bedUrNominal: true });
+  const p = { ...defaultsOf(PROFILE_SCHEMA), ...r.changes };
+  assert.deepEqual(penOffsetOf(p), { x: 35, y: 0 });
+  assert.equal(penOffsetOf(defaultsOf(PROFILE_SCHEMA)), null);
+});
+
+test('pen at a bed corner: the offset is corner − head, for each of the four corners', () => {
+  assert.deepEqual(BED_CORNERS, ['ll', 'lr', 'ul', 'ur']);
+  assert.deepEqual(penOffsetFromCorner('ur', { x: 200, y: 235 }, nominal), { x: 35, y: 0 });
+  assert.deepEqual(penOffsetFromCorner('lr', { x: 200, y: -3 }, nominal), { x: 35, y: 3 });
+  assert.deepEqual(penOffsetFromCorner('ll', { x: -35, y: -3 }, nominal), { x: 35, y: 3 });
+  assert.deepEqual(penOffsetFromCorner('ul', { x: -35, y: 232 }, nominal), { x: 35, y: 3 });
+  assert.throws(() => penOffsetFromCorner('xx', { x: 0, y: 0 }, nominal), /unknown bed corner/);
+});
+
+test('areaStatus: none / offset / measured, size and emptiness', () => {
+  const base = { ...defaultsOf(PROFILE_SCHEMA), limX0: -4, limX1: 234, limY0: 1, limY1: 231 };
+  assert.equal(areaStatus(base).mode, 'none');
+  const off = { ...base, ...bedFromPenOffset({ x: 35, y: 0 }, nominal).changes };
+  const s = areaStatus(off);
+  assert.equal(s.mode, 'offset');
+  assert.deepEqual([s.w, s.h], [204, 230]);
+  assert.deepEqual([s.area.x0, s.area.x1, s.area.y0, s.area.y1], [-4, 200, 1, 231]);
+  assert.equal(s.empty, false);
+  const m = { ...base, bedX0: -4, bedY0: 1, bedX1: 200, bedY1: 231, bedUrNominal: false };
+  assert.equal(areaStatus(m).mode, 'measured');
+  const far = { ...base, ...bedFromPenOffset({ x: 300, y: 0 }, nominal).changes };
+  assert.equal(areaStatus(far).empty, true);
+  assert.equal(areaStatus(far).w, 0);
+});

@@ -6,7 +6,7 @@ import { t, fmtNumber } from '../i18n/index.js';
 /** How far a measured size may differ from the nominal one without a hint, mm. */
 export const BED_HINT_MM = 5;
 
-const round3 = (v) => Math.round(v * 1000) / 1000;
+const round3 = (v) => Math.round(v * 1000) / 1000 || 0; // no −0
 const fmtMm = (v) => fmtNumber(Math.round(v * 10) / 10, { minFrac: 1 });
 
 export const bedNominal = (p) => ({ w: p.bedW, h: p.bedH });
@@ -103,4 +103,52 @@ export function bedHint(bed, nominal, tol = BED_HINT_MM, { urNominal = false } =
   if (dw > tol + 1e-9) out.push(t('bed.hint.width', { mm: fmtMm(dw) }));
   if (dh > tol + 1e-9) out.push(t('bed.hint.height', { mm: fmtMm(dh) }));
   return out;
+}
+
+// --- pen area: two ways to fill the bed rectangle (see openspec pen-area)
+
+/** The pen offset from the nozzle shown as −(lower left bed corner), or null when the bed is not set. */
+export function penOffsetOf(p) {
+  const b = bedRect(p);
+  return b ? { x: round3(-b.x0), y: round3(-b.y0) } : null;
+}
+
+/** Profile changes for the "pen offset from the nozzle" mode: the bed is the nominal one shifted by −offset, upper right by nominal. */
+export function bedFromPenOffset(offset, nominal) {
+  const r = bedFromPoints({ x: round3(-offset.x), y: round3(-offset.y) }, null, nominal);
+  if (!r.ok) return r;
+  return { ok: true, changes: { bedX0: r.bed.x0, bedY0: r.bed.y0, bedX1: r.bed.x1, bedY1: r.bed.y1, bedUrNominal: true } };
+}
+
+/** Bed corners the pen can be brought to: near left, near right, far left, far right. */
+export const BED_CORNERS = Object.freeze(['ll', 'lr', 'ul', 'ur']);
+
+/** The bed coordinates of a corner (the bed itself: 0…W, 0…H). */
+export function bedCornerPoint(which, nominal) {
+  switch (which) {
+    case 'll': return { x: 0, y: 0 };
+    case 'lr': return { x: nominal.w, y: 0 };
+    case 'ul': return { x: 0, y: nominal.h };
+    case 'ur': return { x: nominal.w, y: nominal.h };
+    default: throw new Error(`unknown bed corner: ${which}`);
+  }
+}
+
+/** The pen offset when the pen tip stands at bed corner `which` and the head is at `head`: corner − head. */
+export function penOffsetFromCorner(which, head, nominal) {
+  const c = bedCornerPoint(which, nominal);
+  return { x: round3(c.x - head.x), y: round3(c.y - head.y) };
+}
+
+/**
+ * How the pen area of the profile is defined and what it is:
+ * mode 'none' (bed not set), 'offset' (upper right by nominal: from the pen offset) or 'measured' (two extreme positions);
+ * area — the print area, w/h its size (0 when empty), empty — the limits and the bed do not overlap.
+ */
+export function areaStatus(p) {
+  const b = bedRect(p);
+  const mode = !b ? 'none' : p.bedUrNominal ? 'offset' : 'measured';
+  const area = printArea(p);
+  const w = Math.max(0, round3(area.x1 - area.x0)), h = Math.max(0, round3(area.y1 - area.y0));
+  return { mode, area, w, h, empty: !(area.x1 > area.x0 && area.y1 > area.y0), offset: penOffsetOf(p) };
 }

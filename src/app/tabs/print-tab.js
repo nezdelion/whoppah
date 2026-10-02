@@ -9,7 +9,8 @@ import { exportSvg, exportOnPaper } from '../../core/svg-export.js';
 import { isPartial, partialReasons } from '../../core/drawing.js';
 import { axisLimits } from '../../core/profile.js';
 import { downloadText, baseName } from '../download.js';
-import { JOG_STEPS } from '../../core/jog.js';
+import { createJogPad } from '../ui/jog-pad.js';
+import { createSetupWizard, readCornerOffset } from '../ui/setup-wizard.js';
 import { reasonText } from '../photo/layer-stack.js';
 import { t, fmtNumber } from '../../i18n/index.js';
 
@@ -21,12 +22,6 @@ const minutesText = (time) => {
 
 const MANUAL_BUTTONS = ['up', 'corner', 'touch', 'motorsOff', 'home'];
 
-const OFFSET_KEY = 'neptune-plotter.capture-offset';
-const readOffset = () => {
-  try { const o = JSON.parse(localStorage.getItem(OFFSET_KEY)); if (Number.isFinite(o.x) && Number.isFinite(o.y)) return o; } catch (e) { /* nothing saved */ }
-  return { x: 0, y: 0 };
-};
-
 /**
  * calibrator — { capture, monitor, jog, link, subscribeLink } in plugin mode and in standalone with a feed, otherwise null: no capture buttons.
  * connection — the connection monitor (connection-monitor.js): it alone holds the 3 s polling timer;
@@ -35,12 +30,12 @@ const readOffset = () => {
 export function createPrintTab({ state, store, service, transport, connection, ui = {}, calibrator = null }) {
   let timer = 0, offCycle = () => {}, unsubscribe = () => {}, plan = null, planError = '';
   let lastJobState = '', darkQuery = null, redraw = null, stopMonitor = () => {}, stopLink = () => {}, stopFirmware = () => {};
-  let settingsPanel = null, detachView = () => {};
+  let settingsPanel = null, wizard = null, jogPad = null, detachView = () => {};
   // The current view's elements. Functions of an earlier view (an async action finishing after a remount) reach the new one.
   let $ = {};
   // View state that outlives a remount (live language switch): the log, the file name, "travel", the jog step, the preview zoom.
   const view = createViewport();
-  let logText = '', nameState = { value: '', touched: '' }, showTravel = true, jogStep = 1, capBusy = false;
+  let logText = '', nameState = { value: '', touched: '' }, showTravel = true, jogStep_ = 1, capBusy = false;
 
   return {
     id: 'print',
@@ -49,11 +44,15 @@ export function createPrintTab({ state, store, service, transport, connection, u
     mount(el) {
       $ = {};
 
-      // --- left column: settings
+      // --- the setup wizard (a dialog in this tab) and the left column: settings
+      const jogStep = { get: () => jogStep_, set: (v) => { jogStep_ = v; } };
+      wizard = createSetupWizard({
+        host: el, state, notify: (m) => log(m), ui: { ...ui, connectionMonitor: connection }, calibrator, transport, service, jogStep,
+      });
       const settingsHost = h('div', { class: 'settings' });
       settingsPanel = mountSettingsPanel(settingsHost, {
         state, store, notify: (m) => log(m),
-        ui: { ...ui, connectionMonitor: connection, calibrator, cornerOffset: readOffset, configured: () => transport.configured() },
+        ui: { ...ui, connectionMonitor: connection, calibrator, cornerOffset: readCornerOffset, configured: () => transport.configured(), openWizard: (step) => wizard.open(step) },
       });
 
       // --- right column
@@ -81,7 +80,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
           $.dlSvg = button({ label: t('print.dl.svg'), hint: 'print.dl.svg.hint', onclick: () => download('svg') }),
           $.dlPaper = button({ label: t('print.dl.paper'), hint: 'print.dl.paper.hint', onclick: () => download('paper') })));
 
-      const calibrationCard = calibrator ? mountCaptureCard() : null;
+      const calibrationCard = calibrator ? mountCalibrationCard() : null;
 
       const sendCard = h('div', { class: 'card' },
         h('h2', {}, t('print.send.title')),
@@ -119,76 +118,40 @@ export function createPrintTab({ state, store, service, transport, connection, u
 
       function manual(id) { run(t(`print.manual.${id}`), () => service.manual(id)); }
 
-      function mountCaptureCard() {
+      function mountCalibrationCard() {
         const need = ui.needs ? ui.needs('calibration') : null;
-        const initial = readOffset();
-        $.offX = h('input', { type: 'number', step: '0.1', value: initial.x, 'aria-label': t('print.offX') });
-        $.offY = h('input', { type: 'number', step: '0.1', value: initial.y, 'aria-label': t('print.offY') });
         $.fresh = h('div', { class: 'warn', role: 'status' });
-        const offset = () => {
-          const n = (el) => (Number.isFinite(parseFloat(el.value)) ? parseFloat(el.value) : 0);
-          return { x: n($.offX), y: n($.offY) };
-        };
-        const saveOffset = () => { try { localStorage.setItem(OFFSET_KEY, JSON.stringify(offset())); } catch (e) { /* without saving */ } };
-        $.offX.addEventListener('change', saveOffset);
-        $.offY.addEventListener('change', saveOffset);
         const cap = calibrator.capture;
         const act = (text, fn) => async () => {
           capBusy = true; syncCapture();
           try { const r = await fn(); log(`${text}: ${r.message}`); } finally { capBusy = false; syncCapture(); }
         };
-        $.homeHint = h('div', { class: 'warn', role: 'status' });
-        // Home may have been done before the page was opened (G28 is dangerous once the pen is installed): the user's word instead of G28
-        $.homeDone = button({
-          label: t('print.homeDone'), hint: 'print.homeDone.hint', hidden: true,
-          onclick: () => {
-            if (confirm(t('print.homeConfirm'))) {
-              calibrator.markHomed(); log(t('print.homeAccepted')); syncCapture();
-            }
-          },
-        });
-        $.step = h('select', { 'aria-label': t('print.stepLabel'), onchange: () => { jogStep = Number($.step.value); } },
-          JOG_STEPS.map((v) => h('option', { value: v, selected: v === jogStep }, t('print.stepOption', { v }))));
-        const jogBtn = (axis, dir) => {
-          const text = `${axis.toUpperCase()}${dir > 0 ? '+' : '−'}`;
-          return ($[`jog${axis}${dir}`] = button({ label: text, hint: 'print.jog.hint', onclick: act(text, () => calibrator.jog.move(axis, dir, Number($.step.value))) }));
-        };
-        const jogCard = calibrator.jog ? [
-          h('div', { class: 'note' }, t('print.jogNote')),
-          h('div', { class: 'row' }, h('label', {}, t('print.step'), $.step),
-            ['x', 'y', 'z'].flatMap((a) => [jogBtn(a, -1), jogBtn(a, 1)])),
-        ] : [];
+        jogPad = calibrator.jog ? createJogPad({
+          calibrator, step: jogStep, log: (m) => log(m), // log is defined below (the card is built first)
+          allowed: () => transport.configured() && !(ui.needs && ui.needs('calibration')),
+          onBusy: (b) => { capBusy = b; syncCapture(); },
+        }) : null;
         return h('div', { class: 'card' },
-          h('h2', {}, t('print.capture.title')),
-          h('div', { class: 'note' }, t('print.capture.note')),
+          h('h2', {}, t('print.calibration.title')),
           need ? h('div', { class: 'note' }, t('print.capture.unavailable', { need })) : null,
-          $.homeHint, $.homeDone,
-          h('div', { class: 'row' },
-            h('label', {}, t('print.capture.offset'), $.offX), h('label', {}, 'Y', $.offY)),
-          h('div', { class: 'row' },
-            $.capCorner = button({ label: t('print.capture.corner'), hint: 'print.capture.corner.hint', onclick: act(t('print.capture.corner'), () => cap.captureCorner(offset())) }),
-            $.capTouch = button({ label: t('print.capture.touch'), hint: 'print.capture.touch.hint', onclick: act(t('print.capture.touch'), () => cap.captureTouch()) })),
+          $.fresh,
           h('div', { class: 'row' },
             $.okCorner = button({ label: t('print.capture.cornerOk'), hint: 'print.capture.cornerOk.hint', onclick: act(t('print.capture.cornerOk'), () => cap.confirm('xy')) }),
-            $.okTouch = button({ label: t('print.capture.touchOk'), hint: 'print.capture.touchOk.hint', onclick: act(t('print.capture.touchOk'), () => cap.confirm('z')) })),
-          ...jogCard,
-          $.fresh);
+            $.okTouch = button({ label: t('print.capture.touchOk'), hint: 'print.capture.touchOk.hint', onclick: act(t('print.capture.touchOk'), () => cap.confirm('z')) }),
+            $.setup = button({ label: t('print.calibration.setup'), hint: 'print.calibration.setup.hint', class: 'primary', onclick: () => wizard.open() })),
+          jogPad ? h('div', { class: 'note' }, t('print.jogNote')) : null,
+          jogPad ? jogPad.element : null);
       }
 
-      const JOG_KEYS = calibrator && calibrator.jog ? ['x', 'y', 'z'].flatMap((a) => [`jog${a}-1`, `jog${a}1`]) : [];
-      // capBusy: a capture or a jog step is in progress — all buttons are disabled (kept across a remount)
+      // capBusy: a confirmation or a jog step is in progress — the buttons are disabled (kept across a remount)
       function syncCapture() {
         if (!calibrator) return;
         const base = !transport.configured() || !!(ui.needs && ui.needs('calibration'));
         const link = calibrator.link(); // the "Not homed" guard (standalone): per XY and Z parts
-        const off = (blocked, ok) => capBusy || !!blocked || !ok;
-        $.capCorner.disabled = off(base || calibrator.capture.unsupported, link.xy.ok);
-        $.capTouch.disabled = off(base || calibrator.capture.unsupported, link.z.ok);
-        $.okCorner.disabled = off(base, link.xy.ok);
-        $.okTouch.disabled = off(base, link.z.ok);
-        for (const k of JOG_KEYS) $[k].disabled = off(base, k.startsWith('jogz') ? link.z.ok : link.xy.ok);
-        $.homeHint.textContent = link.hint;
-        $.homeDone.hidden = !(calibrator.markHomed && link.homeMissing);
+        const off = (ok) => capBusy || base || !ok;
+        $.okCorner.disabled = off(link.xy.ok);
+        $.okTouch.disabled = off(link.z.ok);
+        if (jogPad) jogPad.sync();
         $.fresh.textContent = calibrator.monitor.status().message;
       }
 
@@ -309,6 +272,10 @@ export function createPrintTab({ state, store, service, transport, connection, u
     unmount() {
       if (settingsPanel) settingsPanel.destroy();
       settingsPanel = null;
+      if (wizard) wizard.destroy();
+      wizard = null;
+      if (jogPad) jogPad.destroy();
+      jogPad = null;
       detachView();
       detachView = () => {};
       unsubscribe();

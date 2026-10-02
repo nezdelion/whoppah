@@ -1,7 +1,7 @@
 // Calibration capture scenarios from the head position: corner, touch, confirming a part.
 // Each result is { ok, message }; the calibration changes only after a successful write on the server.
 import { cornerFromPosition, touchFromPosition } from '../../core/calibration.js';
-import { bedRect } from '../../core/bed.js';
+import { bedRect, bedFromPenOffset, penOffsetFromCorner, bedNominal } from '../../core/bed.js';
 import { t } from '../../i18n/index.js';
 
 const round3 = (v) => Math.round(v * 1000) / 1000;
@@ -66,6 +66,26 @@ export function createCalibrationCapture({ state, positionSource, monitor, guard
         const r = await state.setBedPoint(which, value);
         if (!r.ok) return r;
         return { ok: true, value, message: t('calibration.captured.bed', value) };
+      } catch (e) { return fail(e); }
+    },
+
+    /**
+     * "Pen offset" mode: the pen tip stands at bed corner `which` ('ll'|'lr'|'ul'|'ur'); the offset is corner − head,
+     * the bed of the active profile becomes the nominal one shifted by −offset (upper right by nominal). Same refusals as the bed corners.
+     */
+    async captureBedFromOffsetCorner(which) {
+      try {
+        const need = profileNeed();
+        if (need) return { ok: false, message: need };
+        const b = blocked('xy'); if (b) return b;
+        const pos = await positionSource.read();
+        const nominal = bedNominal(state.get('profile'));
+        const offset = penOffsetFromCorner(which, pos, nominal);
+        const r = bedFromPenOffset(offset, nominal);
+        if (!r.ok) return r;
+        const w = await state.patch('profile', r.changes);
+        if (w && w.ok === false) return { ok: false, message: w.message };
+        return { ok: true, value: offset, message: t('calibration.captured.offset', offset) };
       } catch (e) { return fail(e); }
     },
 

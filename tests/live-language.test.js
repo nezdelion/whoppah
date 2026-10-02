@@ -292,7 +292,12 @@ test('settings panel: destroy removes the state, calibration and indicator subsc
     monitor: { subscribe: counted, status: () => ({ message: '' }) }, capture: { unsupported: false }, jog: null,
   };
   const panel = mountSettingsPanel(doc.createElement('div'), { state, store, notify: () => {}, ui: { connectionMonitor: monitor, calibrator, configured: () => true } });
-  assert.equal(active.size, 4, 'state, connection indicator, Home guard, calibration monitor');
+  assert.equal(active.size, 7, 'state, connection indicator, Home guard, calibration monitor; the area editor: state, Home guard, monitor');
   panel.destroy();
+  assert.equal(active.size, 0);
+  // with the wizard: the readiness card adds the state, the monitor and the connection
+  const withWizard = mountSettingsPanel(doc.createElement('div'), { state, store, notify: () => {}, ui: { connectionMonitor: monitor, calibrator, configured: () => true, openWizard: () => {} } });
+  assert.equal(active.size, 10);
+  withWizard.destroy();
   assert.equal(active.size, 0);
 });

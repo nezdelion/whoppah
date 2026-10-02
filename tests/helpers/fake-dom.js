@@ -17,6 +17,7 @@ export class FakeElement {
     this.value = '';
     this.checked = false;
     this.dataset = {};
+    this.open = false;
     this.style = { setProperty() {} };
     const classes = new Set();
     this.classList = { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) };
@@ -32,6 +33,10 @@ export class FakeElement {
   /** The number of listeners of all types (a remounted view must not leave the old ones). */
   listenerCount() { let n = 0; for (const fns of this.listeners.values()) n += fns.length; return n; }
   focus() {}
+  /** <dialog>: showModal/close toggle open; <details>: open is a plain property. */
+  showModal() { this.open = true; }
+  close() { this.open = false; this.dispatch('close'); }
+  querySelectorAll(sel) { const m = /^(\w+)?(?::checked)?$/.exec(sel); return m ? this.findAll((e) => (!m[1] || e.tagName === m[1].toUpperCase()) && (!sel.includes(':checked') || e.checked)) : []; }
   /** Canvas: a 2D context that accepts every call. */
   getContext() { return new Proxy({}, { get: (o, k) => (k in o ? o[k] : () => {}), set: (o, k, v) => { o[k] = v; return true; } }); }
 

@@ -45,7 +45,7 @@ label.check.has-warn .check-text { flex: 1; min-width: 0; }
 .warn-text { flex-basis: 100%; padding: 6px 8px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); font-size: 12px; line-height: 1.4; }
 input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; min-width: 0; width: 100%; }
 input.invalid { border-color: var(--danger); }
-input[type=checkbox] { width: auto; }
+input[type=checkbox], input[type=radio] { width: auto; }
 .wide { grid-column: 1 / -1; }
 button { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -133,3 +133,42 @@ fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7;
 .conn-label { font-size: 13px; color: var(--text); }
 .conn-detail { margin-top: 2px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .fw-info { white-space: pre-line; }
+
+/* folded sections, readiness, setup wizard, jog pad (setup-wizard change) */
+.fold { margin: 8px 0; }
+.fold > summary { cursor: pointer; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 0; list-style: none; display: flex; align-items: center; gap: 6px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: '▸'; display: inline-block; transition: transform .15s; }
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold-note { margin-top: 0; margin-bottom: 6px; }
+.settings-section .fold > summary, .wizard .fold > summary { text-transform: none; }
+.readiness { display: grid; gap: 4px; }
+.ready-row { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto auto; gap: 6px; align-items: center; min-height: 32px; }
+.ready-mark { text-align: center; font-weight: 600; color: var(--muted); }
+.ready-row[data-state="ok"] .ready-mark { color: var(--conn-ok); }
+.ready-row[data-state="stale"] .ready-mark { color: var(--conn-off); }
+.ready-row[data-state="todo"] .ready-mark { color: var(--danger); }
+.ready-value { color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ready-row[data-state="todo"] .ready-value, .ready-row[data-state="stale"] .ready-value { color: var(--warn); }
+button.small { padding: 4px 8px; font-size: 12px; }
+.wizard { width: min(600px, calc(100vw - 16px)); max-width: none; max-height: calc(100vh - 16px); padding: 0; display: none; flex-direction: column; }
+.wizard[open] { display: flex; }
+.wizard-head { display: flex; align-items: center; gap: 8px 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.wizard-head h3 { margin: 0; font-size: 15px; }
+.wizard-step-of { color: var(--muted); font-size: 13px; flex: 1; }
+.wizard-tabs { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 6px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.wizard-tab[data-active="1"] { color: var(--accent); font-weight: 600; }
+.wizard-body { padding: 10px 12px; overflow: auto; flex: 1; min-height: 0; }
+.wizard-body p.note { margin: 0 0 8px; }
+.wizard-foot { padding: 10px 12px; border-top: 1px solid var(--line); margin-top: 0; justify-content: flex-end; }
+.wizard-foot .btn-wrap:first-child { margin-right: auto; }
+.area-editor { container-type: inline-size; }
+.area-body { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 10px; align-items: start; margin-top: 8px; }
+/* narrow container (the side panel, a phone): the map goes under the fields */
+@container (max-width: 520px) { .area-body { grid-template-columns: minmax(0, 1fr); } }
+.mini-map { width: 100%; max-width: 240px; aspect-ratio: 1; height: auto; background: var(--bg); border-radius: 6px; justify-self: center; }
+.area-modes { gap: 6px 16px; }
+.area-reach { font-weight: 600; color: var(--text); }
+.jog-pad .row { align-items: flex-end; }
+.jog-pad .jog-btn { min-width: 44px; min-height: 40px; }
+.jog-pad label { width: 6em; }

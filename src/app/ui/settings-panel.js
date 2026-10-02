@@ -1,20 +1,18 @@
-// Settings in two areas: "Print" (every time: job, sheet corner, touch) and "Printer" (rarely: machine profiles, bed,
-// profile fields, connection); export/import via file.
+// Settings in two areas: "Print" (every time: readiness, job; folded optimization and calibration values) and "Printer"
+// (folded, rarely: machine profiles, pen area, profile fields, connection, export/import via file).
 import { h, button } from './dom.js';
 import { renderForm } from './form.js';
 import { createPoint } from './point.js';
+import { fold } from './collapsible.js';
+import { createAreaEditor } from './area-editor.js';
+import { createReadinessCard } from './readiness-card.js';
+import { connectionSchema } from './connection-form.js';
 import { SCHEMAS } from '../../core/profile.js';
-import { bedPoints, bedRect, bedHint, bedNominal } from '../../core/bed.js';
 import { serializeSettings, parseSettings, applySettings, SettingsFileError, SECTION_LABELS } from '../../storage/settings-file.js';
 import { downloadText } from '../download.js';
 import { createConnectionIndicator } from './connection-indicator.js';
 import { createFeedIndicator } from './feed-indicator.js';
 import { t, getLocale } from '../../i18n/index.js';
-
-const connectionSchema = () => [
-  { key: 'url', label: t('settings.connection.url'), type: 'text', group: 'OctoPrint', placeholder: 'http://localhost:5000' },
-  { key: 'key', label: t('settings.connection.key'), type: 'password', group: 'OctoPrint' },
-];
 
 export function importMessage(applied, skipped) {
   const names = (keys) => keys.map((k) => t(SECTION_LABELS[k])).join(', ');
@@ -31,6 +29,8 @@ export function calibrationSummary(cal) {
 
 // the sheet corner is set by the "Point" control, not by the generic form
 const CALIBRATION_FORM = () => SCHEMAS.calibration.filter((f) => f.key !== 'cornerX' && f.key !== 'cornerY');
+const JOB_MAIN = () => SCHEMAS.job.filter((f) => f.groupId !== 'optimize');
+const JOB_OPTIMIZE = () => SCHEMAS.job.filter((f) => f.groupId === 'optimize');
 
 /**
  * ui.hideConnection — hide the address and key (plugin mode);
@@ -39,7 +39,8 @@ const CALIBRATION_FORM = () => SCHEMAS.calibration.filter((f) => f.key !== 'corn
  * ui.needs(section) — the "permission required …" text for a section without write permission, or null (the section is then read-only);
  * ui.calibrator — capture, jog ("Go to"), the Home guard (null — no capture and "Go to" buttons);
  * ui.cornerOffset() — the pen offset from the sheet corner for "Use current position" of the corner;
- * ui.configured() — the printer connection is configured.
+ * ui.configured() — the printer connection is configured;
+ * ui.openWizard(stepId?) — opens the setup wizard (the readiness card is shown only with it).
  * @returns {{ destroy() }} removes the subscriptions (state, calibration, indicators): the panel can be built again (language switch)
  */
 export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
@@ -65,7 +66,7 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
       body, extra.after || null, h('div', { class: 'row' }, reset));
   }
 
-  // --- points: the sheet corner (calibration) and the bed corners (active profile)
+  // --- the sheet corner point (calibration) and the pen area editor (active profile)
   const goTo = cal && cal.jog ? (v) => cal.jog.goTo(v) : null;
   const corner = createPoint({
     label: t('point.corner'), value: { x: state.get('calibration').cornerX, y: state.get('calibration').cornerY }, log: notify,
@@ -73,67 +74,62 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
     onCapture: cal ? () => cal.capture.captureCorner(ui.cornerOffset ? ui.cornerOffset() : { x: 0, y: 0 }) : null,
     onGoTo: goTo,
   });
-  const bedPoint = (which) => createPoint({
-    label: t(which === 'll' ? 'point.bedLl' : 'point.bedUr'), log: notify,
-    onSave: (v) => state.setBedPoint(which, v),
-    onCapture: cal ? () => cal.capture.captureBedCorner(which) : null,
-    onGoTo: goTo,
-  });
-  const ll = bedPoint('ll'), ur = bedPoint('ur');
   const calibrationNote = h('div', { class: 'note' });
-  const bedNote = h('div', { class: 'note', role: 'status' });
-  const bedWarn = h('div', { class: 'warn', role: 'status' });
+  const area = createAreaEditor({ state, calibrator: cal, need: () => needs('profiles'), online: () => (ui.configured ? ui.configured() : true), control: () => !needs('calibration'), log: notify });
+  off.push(area.destroy);
 
   refreshers.push(() => {
-    const c = state.get('calibration'), p = state.get('profile');
+    const c = state.get('calibration');
     corner.set({ x: c.cornerX, y: c.cornerY });
     calibrationNote.textContent = calibrationSummary(c);
-    const bp = bedPoints(p);
-    ll.set(bp.ll, bp.ll.nominal ? t('bed.nominal') : '');
-    ur.set(bp.ur, bp.ur.nominal ? t('bed.nominal') : '');
-    bedNote.textContent = bp.measured ? '' : t('bed.notMeasured');
-    bedWarn.textContent = bedHint(bedRect(p), bedNominal(p), undefined, { urNominal: p.bedUrNominal }).join('\n');
   });
 
   // capture and "Go to" follow the connection, the Home guard and the permissions
   function syncPoints() {
     const link = cal ? cal.link() : null;
     const online = ui.configured ? ui.configured() : true;
-    const canCal = !needs('calibration'), canProfile = !needs('profiles');
+    const canCal = !needs('calibration');
     const move = !!goTo && online && canCal && link.xy.ok && link.z.ok;
     const read = !!cal && online && canCal && link.xy.ok && !cal.capture.unsupported;
     corner.setEnabled({ edit: canCal, capture: read, move });
-    for (const p of [ll, ur]) p.setEnabled({ edit: canProfile, capture: read && canProfile, move });
   }
 
   function indicator(made) { off.push(made.destroy); return made.element; }
 
-  // --- "Print" area
+  // --- "Print" area: readiness, the job, folded optimization and calibration values
+  const ready = ui.openWizard ? createReadinessCard({ state, calibrator: cal, connection: ui.hideConnection ? null : ui.connectionMonitor || null, onSetup: ui.openWizard }) : null;
+  if (ready) off.push(ready.destroy);
+  const optimizeForm = renderForm({ schema: JOB_OPTIMIZE(), values: state.get('job'), onChange: (changes) => state.patch('job', changes) });
+  forms.jobOptimize = { setValues: (v) => optimizeForm.setValues(v) };
   const printArea = h('div', { class: 'settings-area' }, h('h2', {}, t('settings.area.print')),
-    section('job', t('settings.section.job'), SCHEMAS.job),
-    section('calibration', t('settings.section.calibration'), CALIBRATION_FORM(), { before: corner.element, after: calibrationNote }));
+    ready ? ready.element : null,
+    section('job', t('settings.section.job'), JOB_MAIN(), {
+      after: fold({ id: 'optimize', title: t('fold.optimize') }, needs('job') ? h('fieldset', { disabled: true, class: 'readonly' }, optimizeForm.element) : optimizeForm.element),
+    }),
+    fold({ id: 'calibration', title: t('fold.calibration'), note: t('fold.calibration.note') },
+      section('calibration', t('settings.section.calibration'), CALIBRATION_FORM(), { before: corner.element, after: calibrationNote })));
 
-  // --- "Printer" area
+  // --- "Printer" area (folded): profiles, pen area, profile fields, connection, transfer
   const profilesBlock = mountProfiles({ state, notify, need: needs('profiles'), refreshers });
-  const bedBlock = h('div', { class: 'card bed' },
-    h('h2', {}, t('bed.title')), h('div', { class: 'note' }, t('bed.lead')),
-    ll.element, ur.element, bedNote, bedWarn);
-  const printerArea = h('div', { class: 'settings-area' }, h('h2', {}, t('settings.area.printer')),
-    profilesBlock,
-    section('profile', t('settings.section.profile'), SCHEMAS.profile, { before: bedBlock }),
-    ui.hideConnection ? null : section('connection', t('settings.section.connection'), connectionSchema(), {
-      before: h('div', {},
-        ui.connectionMonitor ? indicator(createConnectionIndicator(ui.connectionMonitor, { text: true })) : null,
-        ui.feed ? indicator(createFeedIndicator(ui.feed, {
-          getProfile: () => state.get('profile'), getCalibration: () => state.get('calibration'),
-          firmware: ui.firmware, limits: ui.limits, patchProfile: (changes) => state.patch('profile', changes), confirm: (m) => window.confirm(m),
-          onProfile: (fn) => state.subscribe((e) => { if (e.type === 'settings') fn(); }),
-        })) : null),
-    }));
+  const areaBlock = h('div', { class: 'card bed' }, h('h2', {}, t('area.title')), h('div', { class: 'note' }, t('bed.lead')), area.element);
+  const printerArea = h('div', { class: 'settings-area' },
+    fold({ id: 'printer', title: t('settings.area.printer'), note: t('fold.printer.note') },
+      profilesBlock,
+      section('profile', t('settings.section.profile'), SCHEMAS.profile, { before: areaBlock }),
+      ui.hideConnection ? null : section('connection', t('settings.section.connection'), connectionSchema(), {
+        before: h('div', {},
+          ui.connectionMonitor ? indicator(createConnectionIndicator(ui.connectionMonitor, { text: true })) : null,
+          ui.feed ? indicator(createFeedIndicator(ui.feed, {
+            getProfile: () => state.get('profile'), getCalibration: () => state.get('calibration'),
+            firmware: ui.firmware, limits: ui.limits, patchProfile: (changes) => state.patch('profile', changes), confirm: (m) => window.confirm(m),
+            onProfile: (fn) => state.subscribe((e) => { if (e.type === 'settings') fn(); }),
+          })) : null),
+      }),
+      mountTransfer({ state, store, notify, needs })));
   host.append(printArea, printerArea);
 
   const refresh = () => {
-    for (const id of Object.keys(forms)) forms[id].setValues(state.get(id));
+    for (const id of Object.keys(forms)) forms[id].setValues(state.get(id === 'jobOptimize' ? 'job' : id));
     for (const fn of refreshers) fn();
     syncPoints();
   };
@@ -141,7 +137,6 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
   off.push(state.subscribe((e) => { if (e.type === 'settings') refresh(); }));
   if (cal) off.push(cal.subscribeLink(syncPoints), cal.monitor.subscribe(syncPoints));
 
-  host.append(mountTransfer({ state, store, notify, needs }));
   return { destroy() { for (const fn of off.splice(0)) if (typeof fn === 'function') fn(); } };
 }
 

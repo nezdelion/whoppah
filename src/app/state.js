@@ -193,9 +193,9 @@ export function createState({ store, now = () => new Date().toISOString(), stamp
     get: (section) => settings[section],
     settings: () => ({ profile: settings.profile, calibration: settings.calibration, job: settings.job }),
 
-    /** Merging a change into a section; the calibration gets a modification date; profile — the active machine profile. */
+    /** Merging a change into a section; the calibration gets a modification date; profile — the active machine profile ({ ok, message } for it). */
     async patch(section, changes) {
-      if (section === 'profile') { await patchProfile(changes); return; }
+      if (section === 'profile') return patchProfile(changes);
       const next = { ...settings[section], ...changes };
       if (section === 'calibration') Object.assign(next, profileStamp(changes));
       if (section === 'calibration' && stampEdit) Object.assign(next, stampEdit(changes), pick(changes, ['epochXY', 'epochZ', 'profileXY', 'profileZ']));
