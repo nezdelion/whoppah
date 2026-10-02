@@ -94,9 +94,13 @@ class PlotterPlugin(
     # ~~ SettingsPlugin: storage for the app settings
 
     def get_settings_defaults(self):
-        # positionEpochXY / positionEpochZ have no defaults on purpose: an absent counter starts from the legacy positionEpoch
-        # "profiles" must be declared here, otherwise OctoPrint does not persist it; "profile" is the pre-profiles section (kept for rollback)
-        return {"profile": None, "profiles": None, "calibration": None, "users": {}, "positionEpoch": 0}
+        # Every stored key must be declared here: OctoPrint silently drops set() on undeclared plugin keys.
+        # positionEpochXY / positionEpochZ default to None, so a never-stored counter starts from the legacy positionEpoch;
+        # "profile" is the pre-profiles section (kept for rollback)
+        return {
+            "profile": None, "profiles": None, "calibration": None, "users": {},
+            "positionEpoch": 0, "positionEpochXY": None, "positionEpochZ": None,
+        }
 
     # The app has its own REST API for these values; keep them out of OctoPrint's generic /api/settings.
     def on_settings_load(self):
