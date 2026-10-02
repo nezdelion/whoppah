@@ -3,6 +3,7 @@ import { SPACE, DrawingError, assertSpace, bbox, allLines } from './drawing.js';
 import { absoluteZ, axisLimits } from './profile.js';
 import { estimateTime } from './time-estimate.js';
 import { firmwareEstimateOptions } from './firmware-settings.js';
+import { bedRect, rectOverflow, anyOver, SIDES, sideText, fmtMm } from './bed.js';
 import { t, fmtNumber } from '../i18n/index.js';
 
 const f3 = (v) => (Math.round(v * 1000) / 1000).toFixed(3);
@@ -19,8 +20,29 @@ export function overflow(bounds, limits) {
 }
 
 /**
+ * The drawing against the print area (axis limits ∩ bed): the axis overflow per axis (as before) and the pen beyond the bed edge per side.
+ * @returns { outOfLimits: null | {x, y}, outOfArea: null | {left, right, bottom, top}, outOfBed: null | {left, right, bottom, top}, bedChecked, warnings }
+ */
+export function areaCheck(bounds, p) {
+  const limits = axisLimits(p);
+  const over = overflow(bounds, limits);
+  const outOfLimits = over.x > 1e-6 || over.y > 1e-6 ? over : null;
+  const warnings = [];
+  if (over.x > 1e-6) warnings.push(t('warn.overX', { mm: fmtNumber(over.x, { minFrac: 1 }) }));
+  if (over.y > 1e-6) warnings.push(t('warn.overY', { mm: fmtNumber(over.y, { minFrac: 1 }) }));
+  const bed = bedRect(p);
+  const byLimits = rectOverflow(bounds, limits);
+  const byBed = bed ? rectOverflow(bounds, bed) : null;
+  if (byBed) for (const side of SIDES) if (byBed[side] > 1e-6) warnings.push(t('warn.offBed', { side: sideText(side), mm: fmtMm(byBed[side]) }));
+  const area = Object.fromEntries(SIDES.map((s) => [s, Math.max(byLimits[s], byBed ? byBed[s] : 0)]));
+  return {
+    outOfLimits, outOfArea: anyOver(area) ? area : null, outOfBed: anyOver(byBed) ? byBed : null, bedChecked: !!bed, warnings,
+  };
+}
+
+/**
  * @param ctx { profile, calibration, beforeLayer?: (layer, index) => string[], firmware?: firmware settings (M503) — only for the time estimate }
- * @returns { gcode, stats, warnings, outOfLimits: null | {x, y} }
+ * @returns { gcode, stats, warnings, outOfLimits: null | {x, y}, outOfArea, outOfBed, bedChecked } (see areaCheck)
  */
 export function generateGcode(drawing, { profile: p, calibration: cal, beforeLayer, firmware = null }) {
   assertSpace(drawing, SPACE.MACHINE, 'layout to the field is required');
@@ -60,18 +82,15 @@ export function generateGcode(drawing, { profile: p, calibration: cal, beforeLay
   g.push(`G0 Z${fz(z.up)} F${p.fZUp}`, `G0 Z${fz(z.end)} F${p.fZUp}`);
   if (p.motorsOff) g.push('M84');
 
-  const warnings = [...drawing.meta.warnings];
-  const over = overflow(ob, axisLimits(p));
-  const outOfLimits = over.x > 1e-6 || over.y > 1e-6 ? over : null;
-  if (over.x > 1e-6) warnings.push(t('warn.overX', { mm: fmtNumber(over.x, { minFrac: 1 }) }));
-  if (over.y > 1e-6) warnings.push(t('warn.overY', { mm: fmtNumber(over.y, { minFrac: 1 }) }));
+  const area = areaCheck(ob, p);
+  const warnings = [...drawing.meta.warnings, ...area.warnings];
 
   const time = estimateTime(moves, { accelXY: p.accelXY, accelZ: p.accelZ, ...firmwareEstimateOptions(firmware) });
   const layoutInfo = drawing.meta.layout;
   return {
     gcode: g.join('\n') + '\n',
     warnings,
-    outOfLimits,
+    outOfLimits: area.outOfLimits, outOfArea: area.outOfArea, outOfBed: area.outOfBed, bedChecked: area.bedChecked,
     stats: {
       lines: lines.length, draw, travel, time, bbox: ob,
       scale: layoutInfo ? layoutInfo.scale : null,

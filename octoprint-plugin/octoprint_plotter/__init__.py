@@ -7,6 +7,8 @@ All plotting logic lives in the browser application.
 import json
 import math
 import os
+import re
+import secrets
 import threading
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -32,10 +34,20 @@ APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "ap
 
 NEEDS_PROFILE = "PLUGIN_PLOTTER_MACHINE_PROFILE"
 
+# Machine profiles: a shared collection {version, rev, activeId, items: [{id, name, rev, createdAt, updatedAt, values}]}
+MAX_PROFILES = 20
+MAX_PROFILE_NAME = 64
+DEFAULT_PROFILE_NAME = "Neptune 3 Pro"
+PROFILE_ID = re.compile(r"^p_[0-9a-f]{8}$")
+BED_KEYS = ("bedX0", "bedY0", "bedX1", "bedY1")
+BED_DEFAULTS = {"bedX0": None, "bedY0": None, "bedX1": None, "bedY1": None, "bedUrNominal": False, "bedW": 235, "bedH": 235}
+
 # calibration defaults of the app (the base for a first manual edit or a capture into an empty section)
 CALIBRATION_DEFAULTS = {"cornerX": -5, "cornerY": 50, "zTouch": 8}
 CALIBRATION_PARTS = {"xy": ("cornerX", "cornerY"), "z": ("zTouch",)}
 EPOCH_KEYS = {"xy": "epochXY", "z": "epochZ"}
+# the active machine profile at the last capture, input or confirmation of a part (the pen holder is part of the profile)
+PROFILE_KEYS = {"xy": "profileXY", "z": "profileZ"}
 # Two independent coordinate counters (corner / pen touch). Before the split there was one ``positionEpoch``:
 # a counter that was never stored starts from its value, so calibration stamped with it stays fresh after the upgrade.
 EPOCH_SETTINGS = {"xy": "positionEpochXY", "z": "positionEpochZ"}
@@ -76,13 +88,15 @@ class PlotterPlugin(
         super().__init__()
         self._epoch_lock = threading.Lock()
         self._calibration_lock = threading.Lock()
+        self._profiles_lock = threading.RLock()
         self._reader = PositionReader()
 
     # ~~ SettingsPlugin: storage for the app settings
 
     def get_settings_defaults(self):
         # positionEpochXY / positionEpochZ have no defaults on purpose: an absent counter starts from the legacy positionEpoch
-        return {"profile": None, "calibration": None, "users": {}, "positionEpoch": 0}
+        # "profiles" must be declared here, otherwise OctoPrint does not persist it; "profile" is the pre-profiles section (kept for rollback)
+        return {"profile": None, "profiles": None, "calibration": None, "users": {}, "positionEpoch": 0}
 
     # The app has its own REST API for these values; keep them out of OctoPrint's generic /api/settings.
     def on_settings_load(self):
@@ -207,6 +221,7 @@ class PlotterPlugin(
             "baseUrl": root,
             "apiBase": root + "/api",
             "settingsUrl": root + "/plugin/plotter/api/settings",
+            "profilesUrl": root + "/plugin/plotter/api/profiles",
             "octoprintUrl": root + "/",
             "loginUrl": root + "/login/",
             "version": __version__,
@@ -263,6 +278,8 @@ class PlotterPlugin(
             return self._error(403, "login required")
         if section not in SECTIONS:
             return self._error(400, f"unknown section: {section}")
+        if section == "profile":  # a cached page of an earlier version: the values of the active profile
+            return self._json(self._active_profile(self._ensure_profiles())["values"])
         return self._json(self._read_section(section, user))
 
     @octoprint.plugin.BlueprintPlugin.route("/api/settings/<section>", methods=["PUT"])
@@ -291,12 +308,257 @@ class PlotterPlugin(
             return self._error(413, "section is larger than 1 MB")
 
         if section == "calibration":
+            active = self._ensure_profiles()["activeId"]  # before the calibration lock: the lock order is profiles → calibration
             with self._calibration_lock:
-                value = self._manual_calibration(value)
+                value = self._manual_calibration(value, active)
                 self._write_section(section, user, value)
             return self._json({"ok": True, "calibration": value})
+        if section == "profile":  # a cached page of an earlier version: merged into the values of the active profile
+            with self._profiles_lock:
+                col = self._ensure_profiles()
+                item = self._active_profile(col)
+                values = {**item["values"], **value}
+                problem = self._bed_problem(values)
+                if problem:
+                    return self._error(400, problem)
+                self._store_profile(col, {**item, "values": values})
+                self._save_profiles(col)
+            return self._json({"ok": True})
         self._write_section(section, user, value)
         return self._json({"ok": True})
+
+    # ~~ machine profiles: one shared collection, every write needs the machine profile permission
+
+    @staticmethod
+    def _now():
+        return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+    @staticmethod
+    def _new_profile_id():
+        return "p_" + secrets.token_hex(4)
+
+    @staticmethod
+    def _valid_collection(col):
+        return (
+            isinstance(col, dict)
+            and isinstance(col.get("items"), list)
+            and len(col["items"]) > 0
+            and any(isinstance(p, dict) and p.get("id") == col.get("activeId") for p in col["items"])
+        )
+
+    def _ensure_profiles(self):
+        """The collection; created once from the pre-profiles section (or defaults) on the first read, by any user."""
+        with self._profiles_lock:
+            col = self._settings.get(["profiles"])
+            if self._valid_collection(col):
+                return col
+            legacy = self._settings.get(["profile"])
+            now = self._now()
+            pid = self._new_profile_id()
+            values = {**(legacy if isinstance(legacy, dict) else {}), **BED_DEFAULTS}
+            col = {
+                "version": 1, "rev": 1, "activeId": pid,
+                "items": [{"id": pid, "name": DEFAULT_PROFILE_NAME, "rev": 1, "createdAt": now, "updatedAt": now, "values": values}],
+            }
+            self._settings.set(["profiles"], col)
+            # the stored calibration belongs to the created profile: the upgrade does not report "the profile changed"
+            with self._calibration_lock:
+                cal = self._settings.get(["calibration"])
+                if isinstance(cal, dict):
+                    cal = dict(cal)
+                    for key in PROFILE_KEYS.values():
+                        if cal.get(key) is None:
+                            cal[key] = pid
+                    self._settings.set(["calibration"], cal)
+            self._settings.save()
+            self._logger.debug("plotter: machine profiles created from the single profile")
+            return col
+
+    @staticmethod
+    def _active_profile(col):
+        return next((p for p in col["items"] if p["id"] == col["activeId"]), col["items"][0])
+
+    def _save_profiles(self, col):
+        col["rev"] = int(col.get("rev") or 0) + 1
+        self._settings.set(["profiles"], col)
+        self._settings.save()
+
+    def _store_profile(self, col, item):
+        item = {**item, "rev": int(item.get("rev") or 0) + 1, "updatedAt": self._now()}
+        col["items"] = [item if p["id"] == item["id"] else p for p in col["items"]]
+
+    def _bed_problem(self, values):
+        bed = [values.get(k) for k in BED_KEYS]
+        if all(v is None for v in bed):
+            return None
+        if not all(self._is_number(v) for v in bed):
+            return "the bed must be set entirely or not at all"
+        if not (bed[0] < bed[2] and bed[1] < bed[3]):
+            return "the bed must have x0 < x1 and y0 < y1"
+        return None
+
+    def _name_problem(self, name, items, except_id=None):
+        if not isinstance(name, str) or not name.strip():
+            return "the profile name is empty"
+        if len(name.strip()) > MAX_PROFILE_NAME:
+            return f"the profile name is longer than {MAX_PROFILE_NAME} characters"
+        low = name.strip().lower()
+        if any(p["id"] != except_id and str(p.get("name", "")).strip().lower() == low for p in items):
+            return "the profile name is already taken"
+        return None
+
+    def _collection_problem(self, col):
+        if not isinstance(col, dict) or not isinstance(col.get("items"), list) or not col["items"]:
+            return "profiles: expected a collection with items"
+        items = col["items"]
+        if len(items) > MAX_PROFILES:
+            return f"at most {MAX_PROFILES} profiles"
+        seen = []
+        for p in items:
+            if not isinstance(p, dict) or not isinstance(p.get("id"), str) or not PROFILE_ID.match(p["id"]):
+                return "profiles: invalid profile id"
+            if any(x["id"] == p["id"] for x in seen):
+                return "profiles: repeated profile id"
+            problem = self._name_problem(p.get("name"), seen) or (None if isinstance(p.get("values"), dict) else "profile values must be an object")
+            problem = problem or self._bed_problem(p["values"])
+            if problem:
+                return problem
+            seen.append(p)
+        if not any(p["id"] == col.get("activeId") for p in items):
+            return "the active profile does not exist"
+        return None
+
+    def _profile_body(self):
+        """(value, error response): the JSON object of a write, at most 1 MB."""
+        length = flask.request.content_length
+        if length is not None and length > MAX_SECTION_BYTES * 2:
+            return None, self._error(413, "profiles are larger than 1 MB")
+        try:
+            value = json.loads(flask.request.get_data(cache=True).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return None, self._error(400, "body is not JSON")
+        if not isinstance(value, dict):
+            return None, self._error(400, "body must be a JSON object")
+        if len(json.dumps(value, ensure_ascii=False).encode("utf-8")) > MAX_SECTION_BYTES:
+            return None, self._error(413, "profiles are larger than 1 MB")
+        return value, None
+
+    def _profiles_write_denied(self):
+        if self._session_user() is None:
+            return self._error(403, "login required")
+        if not self.can_edit_profile():
+            return self._error(403, "missing permission: machine profile")
+        return None
+
+    def _fits(self, col):
+        return len(json.dumps(col, ensure_ascii=False).encode("utf-8")) <= MAX_SECTION_BYTES
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/profiles", methods=["GET"])
+    def get_profiles(self):
+        if self._session_user() is None:
+            return self._error(403, "login required")
+        return self._json(self._ensure_profiles())
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/profiles", methods=["PUT"])
+    def put_profiles(self):
+        """The whole collection (settings import)."""
+        denied = self._profiles_write_denied()
+        if denied:
+            return denied
+        value, error = self._profile_body()
+        if error:
+            return error
+        problem = self._collection_problem(value)
+        if problem:
+            return self._error(400, problem)
+        with self._profiles_lock:
+            old = self._ensure_profiles()
+            now = self._now()
+            items = [
+                {"id": p["id"], "name": p["name"].strip(), "rev": int(p.get("rev") or 0) + 1,
+                 "createdAt": p.get("createdAt") or now, "updatedAt": now, "values": p["values"]}
+                for p in value["items"]
+            ]
+            col = {"version": 1, "rev": old.get("rev", 0), "activeId": value["activeId"], "items": items}
+            self._save_profiles(col)
+        return self._json(col)
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/profiles/active", methods=["PUT"])
+    def put_active_profile(self):
+        """The active profile is shared by all users: choosing it is a profile write."""
+        denied = self._profiles_write_denied()
+        if denied:
+            return denied
+        body = flask.request.get_json(silent=True)
+        pid = body.get("id") if isinstance(body, dict) else None
+        if not isinstance(pid, str):
+            return self._error(400, "expected the profile id")
+        with self._profiles_lock:
+            col = self._ensure_profiles()
+            if not any(p["id"] == pid for p in col["items"]):
+                return self._error(404, "unknown profile")
+            col = {**col, "activeId": pid}
+            self._save_profiles(col)
+        return self._json(col)
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/profiles/<profile_id>", methods=["PUT"])
+    def put_profile(self, profile_id):
+        """Create or replace one profile: {name, values, rev?}; rev — the revision the edit is based on (409 if it moved)."""
+        denied = self._profiles_write_denied()
+        if denied:
+            return denied
+        if not PROFILE_ID.match(profile_id):
+            return self._error(400, "invalid profile id")
+        body, error = self._profile_body()
+        if error:
+            return error
+        values = body.get("values")
+        if not isinstance(values, dict):
+            return self._error(400, "profile values must be an object")
+        problem = self._bed_problem(values)
+        if problem:
+            return self._error(400, problem)
+        with self._profiles_lock:
+            col = {**self._ensure_profiles()}
+            current = next((p for p in col["items"] if p["id"] == profile_id), None)
+            name = body.get("name", current["name"] if current else None)
+            problem = self._name_problem(name, col["items"], profile_id)
+            if problem:
+                return self._error(400, problem)
+            if current is None:
+                if len(col["items"]) >= MAX_PROFILES:
+                    return self._error(400, f"at most {MAX_PROFILES} profiles")
+                now = self._now()
+                col["items"] = [*col["items"], {"id": profile_id, "name": name.strip(), "rev": 1, "createdAt": now, "updatedAt": now, "values": values}]
+            else:
+                rev = body.get("rev")
+                if rev is not None and rev != current.get("rev"):
+                    payload = {"error": "the profile was changed on another device", "code": "conflict", "profile": current}
+                    return self._json(payload, 409)
+                self._store_profile(col, {**current, "name": name.strip(), "values": values})
+            if not self._fits(col):
+                return self._error(413, "profiles are larger than 1 MB")
+            self._save_profiles(col)
+        return self._json(col)
+
+    @octoprint.plugin.BlueprintPlugin.route("/api/profiles/<profile_id>", methods=["DELETE"])
+    def delete_profile(self, profile_id):
+        denied = self._profiles_write_denied()
+        if denied:
+            return denied
+        with self._profiles_lock:
+            col = {**self._ensure_profiles()}
+            items = col["items"]
+            index = next((i for i, p in enumerate(items) if p["id"] == profile_id), None)
+            if index is None:
+                return self._error(404, "unknown profile")
+            if len(items) <= 1:
+                return self._error(409, "the last profile cannot be deleted", code="last")
+            if col["activeId"] == profile_id:  # the neighbour: the previous one, else the next one
+                col["activeId"] = items[index - 1 if index > 0 else index + 1]["id"]
+            col["items"] = [p for p in items if p["id"] != profile_id]
+            self._save_profiles(col)
+        return self._json(col)
 
     # ~~ calibration: coordinate epoch, capture and confirmation
 
@@ -329,15 +591,21 @@ class PlotterPlugin(
     def _part_values(doc, part):
         return tuple(doc.get(k, CALIBRATION_DEFAULTS[k]) for k in CALIBRATION_PARTS[part])
 
-    def _manual_calibration(self, body):
-        """Manual input: only the parts whose values changed get the current epoch of that part; the others keep theirs."""
+    def _manual_calibration(self, body, active):
+        """Manual input: only the parts whose values changed get the current epoch of that part and the active profile;
+        the others keep theirs."""
         old = self._stored_calibration()
-        new = {k: v for k, v in body.items() if k not in EPOCH_KEYS.values()}
+        stamps = set(EPOCH_KEYS.values()) | set(PROFILE_KEYS.values())
+        new = {k: v for k, v in body.items() if k not in stamps}
         for part, key in EPOCH_KEYS.items():
+            pkey = PROFILE_KEYS[part]
             if self._part_values(new, part) != self._part_values(old, part):
                 new[key] = self.current_epoch(part)
-            elif key in old:
-                new[key] = old[key]
+                new[pkey] = active
+            else:
+                for k in (key, pkey):
+                    if k in old:
+                        new[k] = old[k]
         return new
 
     @staticmethod
@@ -358,6 +626,7 @@ class PlotterPlugin(
                 return self._error(400, "expected numbers: " + ", ".join(keys))
             if not isinstance(body.get("epoch"), int) or isinstance(body.get("epoch"), bool):
                 return self._error(400, "epoch must be an integer")
+        active = self._ensure_profiles()["activeId"]
         with self._calibration_lock:
             current = self.current_epoch(part)  # the counter of the captured part only
             if not confirm and body["epoch"] != current:
@@ -370,6 +639,7 @@ class PlotterPlugin(
                     doc["zTouch"] = body["zTouch"]
                 doc["updatedAt"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
             doc[EPOCH_KEYS[part]] = current
+            doc[PROFILE_KEYS[part]] = active
             self._write_section("calibration", user, doc)
         return self._json({"ok": True, "calibration": doc})
 
@@ -456,7 +726,7 @@ class PlotterPlugin(
 
     def body_size_limits(self, current_max_body_sizes, *args, **kwargs):
         # OctoPrint's default request body limit is 100 KB; sections may be up to 1 MB (routes are relative to /plugin/plotter/)
-        return [("PUT", r"api/settings/[a-z]+", MAX_SECTION_BYTES * 2 + 4096)]
+        return [("PUT", r"api/(settings/[a-z]+|profiles(/[a-z0-9_]+)?)", MAX_SECTION_BYTES * 2 + 4096)]
 
     # ~~ permissions
 
@@ -465,7 +735,7 @@ class PlotterPlugin(
             {
                 "key": "MACHINE_PROFILE",
                 "name": "Machine profile",
-                "description": "Allows to change the shared plotter machine profile (pen heights, speeds, limits).",
+                "description": "Allows to change the shared plotter machine profiles (pen heights, speeds, limits, bed) and to choose the active one.",
                 "roles": ["machine_profile"],
                 "default_groups": [ADMIN_GROUP],
             }

@@ -1,9 +1,10 @@
 // "Print" tab: settings, preview, statistics, download, sending, manual commands, job status.
-import { h } from '../ui/dom.js';
+import { h, button } from '../ui/dom.js';
 import { mountSettingsPanel, calibrationSummary } from '../ui/settings-panel.js';
 import { createViewport } from '../ui/viewport.js';
 import { renderPreview } from '../ui/preview.js';
-import { buildPlan, fieldOf, cornerOf, sheetCheck } from '../../core/pipeline.js';
+import { buildPlan, fieldOf, cornerOf, sheetCheck, fitRectMachine } from '../../core/pipeline.js';
+import { bedRect, printArea } from '../../core/bed.js';
 import { exportSvg, exportOnPaper } from '../../core/svg-export.js';
 import { isPartial, partialReasons } from '../../core/drawing.js';
 import { axisLimits } from '../../core/profile.js';
@@ -41,17 +42,20 @@ export function createPrintTab({ state, store, service, transport, connection, u
 
     mount(el) {
       const $ = {};
-      const button = (key, text, onclick, cls = '') => ($[key] = h('button', { type: 'button', class: cls, onclick }, text));
 
       // --- left column: settings
       const settingsHost = h('div', { class: 'settings' });
-      mountSettingsPanel(settingsHost, { state, store, notify: (m) => log(m), ui: { ...ui, connectionMonitor: connection } });
+      mountSettingsPanel(settingsHost, {
+        state, store, notify: (m) => log(m),
+        ui: { ...ui, connectionMonitor: connection, calibrator, cornerOffset: readOffset, configured: () => transport.configured() },
+      });
 
       // --- right column
       $.canvas = h('canvas', { class: 'preview', width: 900, height: 900 });
       $.travel = h('input', { type: 'checkbox', checked: true, onchange: draw });
       $.stats = h('div', { class: 'stats' });
       $.calibration = h('div', { class: 'note' });
+      $.bed = h('div', { class: 'note', role: 'status' });
       $.partial = h('div', { class: 'warn' });
       $.warn = h('div', { class: 'warn' });
       $.name = h('input', { placeholder: 'plot.gcode' });
@@ -64,11 +68,11 @@ export function createPrintTab({ state, store, service, transport, connection, u
       const previewCard = h('div', { class: 'card' },
         $.canvas,
         h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.travel, t('print.travel'))),
-        $.stats, $.calibration, $.partial, $.warn,
+        $.stats, $.calibration, $.bed, $.partial, $.warn,
         h('div', { class: 'row' },
-          button('dlGcode', t('print.dl.gcode'), () => download('gcode')),
-          button('dlSvg', t('print.dl.svg'), () => download('svg')),
-          button('dlPaper', t('print.dl.paper'), () => download('paper'))));
+          $.dlGcode = button({ label: t('print.dl.gcode'), hint: 'print.dl.gcode.hint', onclick: () => download('gcode') }),
+          $.dlSvg = button({ label: t('print.dl.svg'), hint: 'print.dl.svg.hint', onclick: () => download('svg') }),
+          $.dlPaper = button({ label: t('print.dl.paper'), hint: 'print.dl.paper.hint', onclick: () => download('paper') })));
 
       const calibrationCard = calibrator ? mountCaptureCard() : null;
 
@@ -76,18 +80,25 @@ export function createPrintTab({ state, store, service, transport, connection, u
         h('h2', {}, t('print.send.title')),
         h('label', {}, t('print.fileName'), $.name),
         h('div', { class: 'row' },
-          button('frame', t('print.frame'), () => run(t('print.log.frame'), () => service.frame(state.drawing()))),
-          button('upload', t('print.upload'), () => run(t('print.log.upload'), () => service.send(state.drawing(), { print: false, name: fileName() }))),
-          button('print', t('print.print'), () => run(t('print.log.drawing'), () => service.send(state.drawing(), { print: true, name: fileName() })), 'primary')));
+          $.frame = button({ label: t('print.frame'), hint: 'print.frame.hint', onclick: () => run(t('print.log.frame'), () => service.frame(state.drawing())) }),
+          $.upload = button({ label: t('print.upload'), hint: 'print.upload.hint', onclick: () => run(t('print.log.upload'), () => service.send(state.drawing(), { print: false, name: fileName() })) }),
+          $.print = button({ label: t('print.print'), hint: 'print.print.hint', class: 'primary', onclick: () => run(t('print.log.drawing'), () => service.send(state.drawing(), { print: true, name: fileName() })) })));
 
       const printerCard = h('div', { class: 'card' },
         h('h2', {}, t('print.printer.title')),
-        h('div', { class: 'row' }, button('test', t('print.test'), testConnection),
-          MANUAL_BUTTONS.map((id) => button('m-' + id, t(`print.manual.${id}`), () => run(t(`print.manual.${id}`), () => service.manual(id))))),
+        h('div', { class: 'row' }, $.test = button({ label: t('print.test'), hint: 'print.test.hint', onclick: testConnection }),
+          $['m-up'] = button({ label: t('print.manual.up'), hint: 'print.manual.up.hint', onclick: () => manual('up') }),
+          $['m-corner'] = button({ label: t('print.manual.corner'), hint: 'print.manual.corner.hint', onclick: () => manual('corner') }),
+          $['m-touch'] = button({ label: t('print.manual.touch'), hint: 'print.manual.touch.hint', onclick: () => manual('touch') }),
+          $['m-motorsOff'] = button({ label: t('print.manual.motorsOff'), hint: 'print.manual.motorsOff.hint', onclick: () => manual('motorsOff') }),
+          $['m-home'] = button({ label: t('print.manual.home'), hint: 'print.manual.home.hint', onclick: () => manual('home') })),
         $.job, $.progress,
         h('div', { class: 'row' },
-          button('pause', t('print.pauseResume'), () => run(t('print.log.pause'), () => service.pause(!/^Paus/.test(lastJobState)))),
-          button('cancel', t('print.cancel'), () => { if (confirm(t('print.cancelConfirm'))) run(t('print.log.cancel'), () => service.cancel()); }, 'danger')),
+          $.pause = button({ label: t('print.pauseResume'), hint: 'print.pauseResume.hint', onclick: () => run(t('print.log.pause'), () => service.pause(!/^Paus/.test(lastJobState))) }),
+          $.cancel = button({
+            label: t('print.cancel'), hint: 'print.cancel.hint', class: 'danger',
+            onclick: () => { if (confirm(t('print.cancelConfirm'))) run(t('print.log.cancel'), () => service.cancel()); },
+          })),
         $.log);
 
       el.append(h('div', { class: 'columns' }, h('div', {}, settingsHost), h('div', { class: 'work-col' }, previewCard, calibrationCard, sendCard, printerCard)));
@@ -97,6 +108,8 @@ export function createPrintTab({ state, store, service, transport, connection, u
         $.log.textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`;
         $.log.scrollTop = $.log.scrollHeight;
       };
+
+      function manual(id) { run(t(`print.manual.${id}`), () => service.manual(id)); }
 
       function mountCaptureCard() {
         const need = ui.needs ? ui.needs('calibration') : null;
@@ -112,19 +125,25 @@ export function createPrintTab({ state, store, service, transport, connection, u
         $.offX.addEventListener('change', saveOffset);
         $.offY.addEventListener('change', saveOffset);
         const cap = calibrator.capture;
-        const act = (key, text, fn) => button(key, text, async () => {
+        const act = (text, fn) => async () => {
           capBusy = true; syncCapture();
           try { const r = await fn(); log(`${text}: ${r.message}`); } finally { capBusy = false; syncCapture(); }
-        });
+        };
         $.homeHint = h('div', { class: 'warn', role: 'status' });
         // Home may have been done before the page was opened (G28 is dangerous once the pen is installed): the user's word instead of G28
-        $.homeDone = h('button', { type: 'button', hidden: true, onclick: () => {
-          if (confirm(t('print.homeConfirm'))) {
-            calibrator.markHomed(); log(t('print.homeAccepted')); syncCapture();
-          }
-        } }, t('print.homeDone'));
+        $.homeDone = button({
+          label: t('print.homeDone'), hint: 'print.homeDone.hint', hidden: true,
+          onclick: () => {
+            if (confirm(t('print.homeConfirm'))) {
+              calibrator.markHomed(); log(t('print.homeAccepted')); syncCapture();
+            }
+          },
+        });
         $.step = h('select', { 'aria-label': t('print.stepLabel') }, JOG_STEPS.map((v) => h('option', { value: v, selected: v === 1 }, t('print.stepOption', { v }))));
-        const jogBtn = (axis, dir) => act(`jog${axis}${dir}`, `${axis.toUpperCase()}${dir > 0 ? '+' : '−'}`, () => calibrator.jog.move(axis, dir, Number($.step.value)));
+        const jogBtn = (axis, dir) => {
+          const text = `${axis.toUpperCase()}${dir > 0 ? '+' : '−'}`;
+          return ($[`jog${axis}${dir}`] = button({ label: text, hint: 'print.jog.hint', onclick: act(text, () => calibrator.jog.move(axis, dir, Number($.step.value))) }));
+        };
         const jogCard = calibrator.jog ? [
           h('div', { class: 'note' }, t('print.jogNote')),
           h('div', { class: 'row' }, h('label', {}, t('print.step'), $.step),
@@ -138,11 +157,11 @@ export function createPrintTab({ state, store, service, transport, connection, u
           h('div', { class: 'row' },
             h('label', {}, t('print.capture.offset'), $.offX), h('label', {}, 'Y', $.offY)),
           h('div', { class: 'row' },
-            act('capCorner', t('print.capture.corner'), () => cap.captureCorner(offset())),
-            act('capTouch', t('print.capture.touch'), () => cap.captureTouch())),
+            $.capCorner = button({ label: t('print.capture.corner'), hint: 'print.capture.corner.hint', onclick: act(t('print.capture.corner'), () => cap.captureCorner(offset())) }),
+            $.capTouch = button({ label: t('print.capture.touch'), hint: 'print.capture.touch.hint', onclick: act(t('print.capture.touch'), () => cap.captureTouch()) })),
           h('div', { class: 'row' },
-            act('okCorner', t('print.capture.cornerOk'), () => cap.confirm('xy')),
-            act('okTouch', t('print.capture.touchOk'), () => cap.confirm('z'))),
+            $.okCorner = button({ label: t('print.capture.cornerOk'), hint: 'print.capture.cornerOk.hint', onclick: act(t('print.capture.cornerOk'), () => cap.confirm('xy')) }),
+            $.okTouch = button({ label: t('print.capture.touchOk'), hint: 'print.capture.touchOk.hint', onclick: act(t('print.capture.touchOk'), () => cap.confirm('z')) })),
           ...jogCard,
           $.fresh);
       }
@@ -193,8 +212,8 @@ export function createPrintTab({ state, store, service, transport, connection, u
         const s = state.settings();
         renderPreview($.canvas, {
           machine: plan ? plan.machine : null, field: fieldOf(s.job), corner: cornerOf(s.calibration),
-          limits: axisLimits(s.profile), showTravel: $.travel.checked,
-          emptyText: planError || t('print.noDrawing'), view,
+          limits: axisLimits(s.profile), bed: bedRect(s.profile), area: printArea(s.profile), fit: fitRectMachine(s),
+          showTravel: $.travel.checked, emptyText: planError || t('print.noDrawing'), view,
         });
       }
 
@@ -210,6 +229,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
         if (planError) warnings.push(planError);
         $.warn.textContent = warnings.join('\n');
         $.calibration.textContent = calibrationSummary(s.calibration);
+        $.bed.textContent = printArea(s.profile).bedMeasured ? '' : t('bed.notMeasuredCheck');
         $.partial.textContent = drawing && isPartial(drawing)
           ? (partialReasons(drawing).length ? t('print.partialWith', { reasons: partialReasons(drawing).map(reasonText).join('; ') }) : t('print.partial')) : '';
 

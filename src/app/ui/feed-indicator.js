@@ -1,6 +1,6 @@
 // The printer connection feed state next to the connection indicator ("Connection", standalone only):
 // a dot and state label, the reason, a button to read the firmware limits (M211) and a warning about the profile limits.
-import { h } from './dom.js';
+import { h, button } from './dom.js';
 import { FEED_LABELS } from '../../transport/octoprint-feed.js';
 import { createLimitsMemo } from './feed-limits.js';
 import { firmwareAccelSuggestion, firmwareWarnings } from '../../core/firmware-settings.js';
@@ -47,14 +47,14 @@ export function createFeedIndicator(feed, {
   const detail = h('div', { class: 'conn-detail' });
   const info = h('div', { class: 'conn-detail' });
   const warn = h('div', { class: 'warn', role: 'status' });
-  const button = h('button', { type: 'button', onclick: readLimits }, t('feedind.readLimits'));
-  const fwButton = h('button', { type: 'button', onclick: readFirmware }, t('feedind.readFirmware'));
-  const fwApply = h('button', { type: 'button', onclick: applyAccel }, t('feedind.applyAccel'));
+  const limitsBtn = button({ label: t('feedind.readLimits'), hint: 'feedind.readLimits.hint', onclick: readLimits });
+  const fwButton = button({ label: t('feedind.readFirmware'), hint: 'feedind.readFirmware.hint', onclick: readFirmware });
+  const fwApply = button({ label: t('feedind.applyAccel'), hint: 'feedind.applyAccel.hint', onclick: applyAccel });
   const fwInfo = h('div', { class: 'conn-detail fw-info' });
   const fwWarn = h('div', { class: 'warn', role: 'status' });
   const element = h('div', { class: 'conn-block feed-block', role: 'status' },
     h('div', { class: 'conn-detail' }, t('feedind.title')), badge, detail,
-    h('div', { class: 'row' }, button, ...(firmware ? [fwButton, fwApply] : [])), info, warn, ...(firmware ? [fwInfo, fwWarn] : []));
+    h('div', { class: 'row' }, limitsBtn, ...(firmware ? [fwButton, fwApply] : [])), info, warn, ...(firmware ? [fwInfo, fwWarn] : []));
   let fwMessage = '';
 
   async function readFirmware() {
@@ -96,8 +96,8 @@ export function createFeedIndicator(feed, {
     label.textContent = FEED_LABELS[s];
     detail.textContent = feed.detail();
     element.setAttribute('aria-label', t('feedind.aria', { state: FEED_LABELS[s], detail: feed.detail() }));
-    button.disabled = s !== 'live' || busy;
-    button.title = s === 'live' ? '' : needsFeed();
+    limitsBtn.disabled = s !== 'live' || busy;
+    limitsBtn.button.title = s === 'live' ? t('feedind.readLimits.hint') : needsFeed();
     if (!limits) info.textContent = message;
     else info.textContent = t(limits.enabled ? 'feedind.limits' : 'feedind.limitsOff', { x: axisRange(limits, 'x'), y: axisRange(limits, 'y'), z: axisRange(limits, 'z') });
     warn.textContent = limits ? limitsWarningText(limitsWarnings(getProfile(), limits)) : '';
@@ -105,7 +105,7 @@ export function createFeedIndicator(feed, {
     if (firmware) {
       const fw = firmware.get(); // a stale result (drop, reconnect, address change) is reset
       fwButton.disabled = s !== 'live' || busy;
-      fwButton.title = s === 'live' ? '' : needsFeed();
+      fwButton.button.title = s === 'live' ? t('feedind.readFirmware.hint') : needsFeed();
       fwApply.disabled = !fw || !Object.keys(firmwareAccelSuggestion(fw)).length;
       fwInfo.textContent = fw ? firmwareSummary(fw) : fwMessage;
       fwWarn.textContent = fw ? firmwareWarnings(getProfile(), getCalibration(), fw).map((w) => w.text).join('\n') : '';

@@ -1,5 +1,5 @@
 // Environment description: env.json next to the page. Standalone serves a static file, the OctoPrint plugin a dynamic one.
-// Returns { mode: 'standalone' } or { mode: 'plugin', baseUrl, apiBase, settingsUrl, octoprintUrl, loginUrl,
+// Returns { mode: 'standalone' } or { mode: 'plugin', baseUrl, apiBase, settingsUrl, profilesUrl, octoprintUrl, loginUrl,
 // version, csrfCookie, user, canEditProfile, canEditCalibration, language }; the addresses in the result are absolute.
 
 const PLUGIN_FIELDS = ['baseUrl', 'settingsUrl', 'octoprintUrl', 'csrfCookie'];
@@ -17,6 +17,8 @@ export function resolveEnv(raw, origin) {
     baseUrl: trim(abs(raw.baseUrl)),
     apiBase: trim(abs(raw.apiBase ?? raw.baseUrl + '/api')),
     settingsUrl: trim(abs(raw.settingsUrl)),
+    // machine profiles API; an env.json without it (older plugin) — next to the sections
+    profilesUrl: trim(abs(typeof raw.profilesUrl === 'string' ? raw.profilesUrl : raw.settingsUrl.replace(/\/settings\/?$/, '/profiles'))),
     octoprintUrl: abs(raw.octoprintUrl),
     loginUrl: raw.loginUrl ? abs(raw.loginUrl) : abs(raw.octoprintUrl),
     version: String(raw.version ?? ''),

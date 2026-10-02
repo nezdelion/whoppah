@@ -2,6 +2,7 @@
   --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6;
   --accent: #2f5fd0; --accent-text: #fff; --danger: #c43b2f; --warn-bg: #fff4d6; --warn: #7a5a00;
   --paper: #ffffff; --ink: #1d1d1b; --travel: #e0605a; --field: #9bb4ee; --limit: #c9c9c1;
+  --bed: #8a8a82; --area: rgba(44, 138, 75, .08); --area-edge: #2c8a4b; --fit: #2c8a4b;
   --layer-0: #1d1d1b; --layer-1: #c43b2f; --layer-2: #2f5fd0; --layer-3: #2c8a4b;
   --conn-ok: #2c8a4b; --conn-off: #d99a00; --conn-bad: #c43b2f; --conn-idle: #9a9a94;
 }
@@ -10,6 +11,7 @@
     --bg: #171716; --panel: #212120; --text: #ecece8; --muted: #9a9a94; --line: #3a3a37;
     --accent: #6d93f0; --accent-text: #0e0e0d; --danger: #ef7a6f; --warn-bg: #3b3218; --warn: #f0d37a;
     --paper: #2b2b29; --ink: #ecece8; --travel: #ef7a6f; --field: #4a64a8; --limit: #4a4a46;
+    --bed: #77776f; --area: rgba(111, 207, 138, .08); --area-edge: #6fcf8a; --fit: #6fcf8a;
     --layer-0: #ecece8; --layer-1: #ef7a6f; --layer-2: #6d93f0; --layer-3: #6fcf8a;
     --conn-ok: #6fcf8a; --conn-off: #f0b429; --conn-bad: #ef7a6f; --conn-idle: #77776f;
   }
@@ -49,6 +51,20 @@ button { font: inherit; border: 1px solid var(--line); background: var(--bg); co
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 button.danger { color: var(--danger); border-color: var(--danger); }
 button:disabled { opacity: .45; cursor: default; }
+/* every button: the hint is the hover title; without hover a "?" next to it shows the text under the button */
+.btn-wrap { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; max-width: 100%; }
+.btn-wrap[hidden] { display: none; }
+.hint-icon { display: none; color: var(--muted); cursor: help; font-size: 12px; line-height: 1; padding: 2px 4px; border: 1px solid var(--line); border-radius: 50%; }
+@media (hover: none) { .hint-icon { display: inline-block; } }
+.hint-text { flex-basis: 100%; padding: 4px 6px; border-radius: 6px; background: var(--bg); color: var(--muted); font-size: 12px; line-height: 1.4; }
+.hint-text[hidden], .warn-text[hidden] { display: none; }
+.settings-area > h2 { font-size: 15px; margin: 12px 0 4px; }
+.point { margin-top: 8px; }
+.point-head { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
+.point-label { color: var(--text); }
+.point-note { color: var(--warn); }
+.point .row { align-items: flex-end; margin-top: 4px; }
+.point .row label { width: 6.5em; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .row.spread { justify-content: space-between; }
 .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }

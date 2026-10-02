@@ -1,6 +1,8 @@
-// SettingsStore interface: { load(key): Promise<obj|null>, save(key, obj): Promise<void> }.
+// SettingsStore interface: { load(key): Promise<obj|null>, save(key, obj, op?): Promise<void|obj> }.
+// The "profiles" key holds the machine profiles collection; op says what changed in it (a server store sends just that),
+// local stores write the whole document. "profile" is the single profile of earlier versions: read once by the migration, kept.
 
-export const SECTIONS = Object.freeze(['profile', 'calibration', 'job', 'presets']);
+export const SECTIONS = Object.freeze(['profiles', 'calibration', 'job', 'presets']);
 export const LEGACY_KEY = 'neptune-plotter.settings';
 
 export class LocalStorageStore {
@@ -90,5 +92,24 @@ export async function migrateLegacy(storage, store) {
     }
   } catch (e) { /* a corrupted old key is simply removed */ }
   try { storage.removeItem(LEGACY_KEY); } catch (e) { /* ignore */ }
+  return true;
+}
+
+/**
+ * One-time migration of the single machine profile into the profiles collection (standalone; the plugin server does it itself).
+ * build(profileValues | null) → collection (core fromLegacy: one active profile "Neptune 3 Pro", the bed not measured).
+ * Idempotent; the old "profile" key stays (rollback). The stored calibration gets the created profile id on both parts,
+ * so the upgrade does not report "the profile changed".
+ * @returns true if the collection was created
+ */
+export async function migrateProfiles(store, build) {
+  const existing = await store.load('profiles');
+  if (existing && typeof existing === 'object' && Array.isArray(existing.items) && existing.items.length) return false;
+  const col = build(await store.load('profile'));
+  await store.save('profiles', col);
+  const cal = await store.load('calibration');
+  if (cal && typeof cal === 'object' && (cal.profileXY == null || cal.profileZ == null)) {
+    await store.save('calibration', { ...cal, profileXY: cal.profileXY ?? col.activeId, profileZ: cal.profileZ ?? col.activeId });
+  }
   return true;
 }

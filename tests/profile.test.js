@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PROFILE_SCHEMA, CALIBRATION_SCHEMA, JOB_SCHEMA, defaultsOf, validate, normalize, absoluteZ, normalizeJob } from '../src/core/profile.js';
+import { PROFILE_SCHEMA, CALIBRATION_SCHEMA, JOB_SCHEMA, defaultsOf, validate, normalize, absoluteZ, normalizeJob, normalizeProfile, validateProfile, bedErrors } from '../src/core/profile.js';
 import { resolveField } from '../src/core/layout.js';
 import legacy from './tools/legacy-core.cjs';
 import './helpers/ru.js';
@@ -46,4 +46,35 @@ test('defaults do not share mutable state', () => {
   const a = defaultsOf(JOB_SCHEMA);
   a.customFormats.push({ id: 'x', name: 'x', w: 1, h: 1 });
   assert.equal(defaultsOf(JOB_SCHEMA).customFormats.length, 1);
+});
+
+test('bed fields: not measured by default, nominal 235×235, hidden from the form; the job option is on by default', () => {
+  const p = defaultsOf(PROFILE_SCHEMA);
+  assert.deepEqual([p.bedX0, p.bedY0, p.bedX1, p.bedY1, p.bedUrNominal, p.bedW, p.bedH], [null, null, null, null, false, 235, 235]);
+  for (const k of ['bedX0', 'bedY0', 'bedX1', 'bedY1', 'bedUrNominal']) assert.equal(PROFILE_SCHEMA.find((f) => f.key === k).hidden, true, k);
+  assert.equal(defaultsOf(JOB_SCHEMA).fitPrintArea, true);
+  const opt = JOB_SCHEMA.find((f) => f.key === 'fitPrintArea');
+  assert.equal(opt.groupId, 'align');
+  assert.match(opt.warn, /выйти за стол/);
+  assert.deepEqual(validateProfile(p), []);
+  const c = defaultsOf(CALIBRATION_SCHEMA);
+  assert.deepEqual([c.profileXY, c.profileZ], [null, null]);
+});
+
+test('a partial or degenerate bed is rejected by the check and dropped by normalize', () => {
+  const p = defaultsOf(PROFILE_SCHEMA);
+  assert.deepEqual(validateProfile({ ...p, bedX0: -12, bedY0: -3 }).map((e) => e.key), ['bed']);
+  assert.match(bedErrors({ ...p, bedX0: 100, bedY0: 0, bedX1: 50, bedY1: 10 })[0].message, /правее и выше/);
+  assert.deepEqual(validateProfile({ ...p, bedX0: -12, bedY0: -3, bedX1: 221, bedY1: 230 }), []);
+  const n = normalizeProfile({ ...p, bedX0: -12, bedY0: -3, bedUrNominal: true });
+  assert.deepEqual([n.bedX0, n.bedY0, n.bedX1, n.bedY1, n.bedUrNominal], [null, null, null, null, false]);
+  assert.equal(normalizeProfile({ ...p, bedX0: -12, bedY0: -3, bedX1: 221, bedY1: 230 }).bedX1, 221);
+});
+
+test('normalize of an old profile without bed fields: the bed is not measured, the values are kept', () => {
+  const n = normalizeProfile({ fDraw: 2500, limX1: 230 });
+  assert.equal(n.fDraw, 2500);
+  assert.equal(n.limX1, 230);
+  assert.equal(n.bedX0, null);
+  assert.equal(n.bedW, 235);
 });

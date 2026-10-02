@@ -41,13 +41,24 @@ The language is chosen once at startup, before the UI is built; changing it in s
 
 ## Settings
 
-Three sections with different change frequency:
+Two areas with different change frequency (the visual layout will be redesigned separately):
 
-- **Calibration**: the paper corner (nozzle X/Y coordinates when the pen is at the left near corner of the sheet) and the paper touch Z. Changes with every sheet or pen; stored with a date.
-- **Machine profile**: pen heights as offsets from the touch, feeds, axis limits, pen width, `G28`/`M84`.
-- **Job**: paper format (custom formats are saved), orientation, margin, alignment, rotation, "as is in mm", simplification (RDP) and merge tolerances.
+- **Print** (every time):
+  - **Job**: paper format (custom formats are saved), orientation, margin, alignment, rotation, "as is in mm", "Limit to print area", simplification (RDP) and merge tolerances.
+  - **Calibration**: the sheet corner (nozzle X/Y when the pen is at the left near corner of the sheet, a "Point" control) and the paper touch Z. Changes with every sheet or pen; stored with a date.
+- **Printer** (rarely): **machine profiles** and the active profile's fields: the bed, pen heights as offsets from the touch, feeds, nozzle travel limits, pen width, `G28`/`M84`.
 
-Settings export/import via a file is at the bottom of the settings panel. Settings of the old page (`neptune-plotter.settings`) are migrated once on first launch.
+**Machine profiles.** A profile is "printer + pen holder": up to 20 named profiles, one active; New (defaults), Duplicate, Rename, Delete (not the last one; deleting the active one makes the neighbour active). Layout, G-code, checks, the jog panel and the time estimate use the active profile; the job settings, the sheet corner and the touch are not part of a profile and do not change on a switch. The corner and the touch depend on the holder, so after a profile switch both are reported as "may be outdated (the machine profile changed)" and printing asks for confirmation, until a new capture, input or "Corner is correct" / "Touch is correct" (back to the previous profile — fresh again). The single profile of earlier versions becomes the profile "Neptune 3 Pro" on the first start (standalone: in the browser, plugin: on the server); the old data is kept.
+
+**Bed and print area.** The bed rectangle is stored in nozzle coordinates: the lower left / upper right corner is the nozzle position when the pen is at that bed corner, so the pen offset is inside it. Set it with two "Point" controls ("Use current position" reads the head as the sheet corner capture does; or enter X/Y). Until the upper right corner is measured it is "lower left + nominal size" (default 235×235 mm, marked "by nominal"); check it with "Go to" and capture it. A measured size more than 5 mm off the nominal gives a hint. The bed has no coordinate epoch (homing does not make it stale). **Print area** = nozzle travel limits ∩ bed; the bed not measured — the axis limits, and the pen-on-bed checks are skipped with a note.
+
+**"Limit to print area"** (job, on by default, marked ⚠): the drawing is fitted (scale and alignment) into (sheet field − margins) ∩ (print area moved to sheet coordinates via the corner); the sheet itself may extend beyond the area (a warning per side). Off: the drawing is fitted into the sheet as before. If the field minus margins is inside the print area, the G-code is the same with the option on or off. Before sending, the drawing is checked against the print area regardless of the option: beyond an axis limit or beyond the bed edge (per side, in mm) — confirmation.
+
+**Point and "Go to".** Every point in nozzle coordinates (sheet corner, bed corners) is the same control: X/Y, "Use current position", "Go to". "Go to" reads the position, lifts the pen to the start height if it is lower (or unknown), moves X/Y and, with a fresh touch, lowers to touch + clearance; a point outside the axis limits is refused. Same guards and permissions as the jog panel.
+
+Settings export/import via a file is at the bottom of the settings panel: format version 2 (all profiles with the active one, calibration, job, presets); a version 1 file (a single profile) is rejected with "the old settings file format is not supported". Settings of the old page (`neptune-plotter.settings`) are migrated once on first launch.
+
+**Button hints.** Every button has a short hint (dictionary key `<area>.<button>.hint`): the hover title on a desktop, a "?" next to the button on touch screens (shows the text under the button). All buttons are made by `button({ label, hint, onclick })` from `src/app/ui/dom.js`; `tests/buttons.test.js` checks that there is no other `h('button'` and that every hint key exists in `en` and `ru`.
 
 ## OctoPrint plugin
 
@@ -66,18 +77,18 @@ OctoPrint → Settings → Plugin Manager → "Get More…" → "… from an upl
 **Permissions and settings storage.**
 
 - The page and service URLs are available only to logged-in users (without login — redirect to the OctoPrint login and back to the app).
-- The machine profile and calibration are shared by everyone; job parameters and presets are per user.
-- Writing the profile requires the **"Plotter: Machine profile"** permission (`PLUGIN_PLOTTER_MACHINE_PROFILE`): the administrators group has it by default; it is granted in Settings → Access Control (to a user or group). Without the permission the profile is shown read-only.
+- The machine profiles (with the active one) and calibration are shared by everyone; job parameters and presets are per user. Another device's profile switch is picked up with the next poll (5 s).
+- Any profile write — values, bed, create, duplicate, rename, delete **and choosing the active profile** — requires the **"Plotter: Machine profile"** permission (`PLUGIN_PLOTTER_MACHINE_PROFILE`): the administrators group has it by default; it is granted in Settings → Access Control (to a user or group). Without the permission the profiles are shown read-only. API: `GET/PUT /plugin/plotter/api/profiles`, `PUT|DELETE …/profiles/<id>` (with the revision `rev`; a stale one gives 409), `PUT …/profiles/active`; the old `…/api/settings/profile` reads/writes the active profile's values.
 - Writing the calibration requires the standard OctoPrint **Control** permission. Print, upload and pause are checked against OctoPrint permissions (Print, File Upload, Control); on denial "permission required: …" is shown.
 - A section is at most 1 MB; unknown sections are rejected by the server.
 
 **Calibration capture and jog panel.** Bring the pen over with the standard Control tab, then on the "Print" tab press "Corner here" (accounting for the pen offset from the sheet corner) or "Touch here"; the position is read with `M118`/`M400`/`M114` (unavailable while printing). "Corner is correct" / "Touch is correct" confirm a part without changing values. After homing (`G28`) or a printer reconnect the app shows "calibration may be outdated", and printing requires confirmation. Requires the Control permission and firmware that answers `M118`.
 
-The same buttons exist in standalone when the printer feed is connected: the calibration lives in the browser and the coordinate epochs in the feed memory, so after a page reload both parts are considered outdated until a new capture or "Corner is correct" / "Touch is correct". Until the feed has seen `G28` (since connecting to the printer; Home is tracked separately for XY and Z), capture and the jog panel are disabled with the hint "Not homed — home before installing the pen"; the app never sends `G28` itself; if Home was done before the page was opened (`G28` is dangerous with a pen), the "Already homed" button with confirmation removes the guard until the next reconnect, and does not change the coordinate epochs. The jog panel (X±/Y±/Z±, step 0.1/1/10 mm, both modes) reads the position before each step, does not go beyond the profile axis limits, and Z not more than 2 mm below the touch.
+The same buttons exist in standalone when the printer feed is connected: the calibration lives in the browser and the coordinate epochs in the feed memory, so after a page reload both parts are considered outdated until a new capture or "Corner is correct" / "Touch is correct". Until the feed has seen `G28` (since connecting to the printer; Home is tracked separately for XY and Z), capture and the jog panel are disabled with the hint "Not homed — home before installing the pen"; the app never sends `G28` itself; if Home was done before the page was opened (`G28` is dangerous with a pen), the "Already homed" button with confirmation removes the guard until the next reconnect, and does not change the coordinate epochs. The jog panel (X±/Y±/Z±, step 0.1/1/10 mm, both modes) reads the position before each step, does not go beyond the profile axis limits, and Z not more than 2 mm below the touch; with a measured bed, while the pen may be down (Z unknown or below touch + clearance) X/Y stay in the print area, and off the bed Z stays at touch + clearance or higher.
 
 **Firmware settings (standalone, feed connected).** "Read firmware settings" ("Connection" section) sends `M503` and parses `M201`/`M203`/`M204`/`M205`/`M420`: a summary, warnings (profile feeds above `M203`, mesh fade below the touch), "Fill in profile accelerations…" on confirmation. The result is kept only in memory, until the feed drops; while it exists, the time estimate clamps feeds by `M203` and starts from the `M205` jerk (marked "accounting for firmware"). The plugin has no feed — not available there.
 
-**Transferring settings from standalone.** In standalone: "Export to file" at the bottom of the settings panel; in the plugin: "Import from file…". The profile and calibration are skipped with a message if permissions are missing, the rest is imported. If the user has no settings on the server yet, but `localStorage` of the same address (host:port) has standalone settings, the app offers to transfer them itself.
+**Transferring settings from standalone.** In standalone: "Export to file" at the bottom of the settings panel; in the plugin: "Import from file…". The profiles and calibration are skipped with a message if permissions are missing, the rest is imported. If the user has no settings on the server yet, but `localStorage` of the same address (host:port) has standalone settings, the app offers to transfer them itself.
 
 **Development.**
 
@@ -92,7 +103,7 @@ On first launch finish the setup wizard in the browser (first user). The app is 
 
 ```
 index.html                entry point
-src/core/                 pure functions over Drawing: geometry, svg-import, svg-export, optimize, layout, gcode, profile, pipeline
+src/core/                 pure functions over Drawing: geometry, svg-import, svg-export, optimize, layout, gcode, profile, profiles, bed, jog, pipeline
 src/transport/            Transport interface, OctoPrint REST (fetch), auth by key and by session (plugin)
 src/storage/              SettingsStore (localStorage, OctoPrint server), settings file
 src/i18n/                 localization: t(key, params), dictionaries en.js / ru.js, language choice (detect.js); imports nothing

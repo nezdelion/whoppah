@@ -1,16 +1,17 @@
 // Calibration freshness: polling the printer's coordinate epoch while the page is visible, and checking on demand.
 // Part epochs (epochXY/epochZ) live in the calibration (written by the plugin server); here they are only compared with the current ones (the corner and touch have separate counters).
-import { calibrationFreshness, staleMessage } from '../../core/calibration.js';
+import { calibrationFreshness, staleReasons, staleMessage } from '../../core/calibration.js';
 
 export const POLL_MS = 5000;
 
 /**
  * @param loadCalibration () => Promise<doc|null> — a fresh document from the server (epochs could have changed by a capture in another tab)
+ * @param loadProfiles    () => Promise<collection|null> — the machine profiles from the server (another device could switch the active one)
  * @param timers          { setInterval, clearInterval } — replaced in tests
  * @param visibility      { visible(): boolean, subscribe(fn): unsubscribe } — page visibility
  */
 export function createCalibrationMonitor({
-  state, positionSource, loadCalibration,
+  state, positionSource, loadCalibration, loadProfiles = null,
   timers = { setInterval: (f, ms) => globalThis.setInterval(f, ms), clearInterval: (id) => globalThis.clearInterval(id) },
   visibility = { visible: () => true, subscribe: () => () => {} },
 }) {
@@ -20,14 +21,21 @@ export function createCalibrationMonitor({
 
   const status = (calibration = state.get('calibration')) => {
     if (epochs === null) return { known: false, xy: true, z: true, stale: [], message: '' };
-    const f = calibrationFreshness(calibration, epochs);
-    return { known: true, ...f, message: staleMessage(f.stale) };
+    const active = state.activeProfileId ? state.activeProfileId() : null;
+    const f = calibrationFreshness(calibration, epochs, active);
+    const reasons = staleReasons(calibration, epochs, active);
+    return { known: true, ...f, reasons, message: staleMessage(f.stale, reasons) };
   };
   const emit = () => { const s = status(); for (const fn of [...listeners]) fn(s); };
 
   async function doRefresh() {
     try {
-      const [next, doc] = await Promise.all([positionSource.epoch(), loadCalibration ? loadCalibration().catch(() => null) : null]);
+      const [next, doc, profiles] = await Promise.all([
+        positionSource.epoch(),
+        loadCalibration ? loadCalibration().catch(() => null) : null,
+        loadProfiles ? loadProfiles().catch(() => null) : null,
+      ]);
+      if (profiles && state.adoptProfiles) state.adoptProfiles(profiles);
       if (doc) state.adoptCalibration(doc, { merge: true });
       epochs = next;
     } catch (e) {
@@ -62,7 +70,7 @@ export function createCalibrationMonitor({
       // calibration changes (input, capture, confirmation) also change the freshness state
       offState = state.subscribe((e) => {
         if (e.type === 'saved' && e.section === 'calibration') refresh();
-        else if (e.type === 'settings' && (e.section === 'calibration' || e.section === '*')) emit();
+        else if (e.type === 'settings' && (e.section === 'calibration' || e.section === 'profiles' || e.section === '*')) emit();
       });
     },
     stop() {

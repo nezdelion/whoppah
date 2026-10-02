@@ -7,18 +7,24 @@ import { calibrationFreshCheck } from '../print/checks.js';
 
 /**
  * @param standalone true — the app stores the calibration (own storage), a fresh document is not requested from the server
+ * @param profileNeed () => the missing machine profile permission text or null (capture of the bed corners)
  * @param transport  for the jog panel (command); without it there is no jog panel
  * @returns null without a position source; otherwise { calibrator: { monitor, capture, jog, guard, link }, check, beforePlan }
  *   guard(part) — the "Not homed" guard check; link() — { xy, z, hint } for the buttons and hint, subscribeLink(fn) — their updates
  */
-export function setupCalibration({ positionSource, state, store, visibility, timers, standalone = false, transport = null }) {
+export function setupCalibration({ positionSource, state, store, visibility, timers, standalone = false, transport = null, profileNeed = () => null }) {
   if (!positionSource) return null;
   const guard = createGuard(positionSource);
+  // the plugin poll also picks up the machine profiles: another device may switch the active one
   const monitor = createCalibrationMonitor({
-    state, positionSource, loadCalibration: standalone ? null : () => store.load('calibration'), visibility, timers,
+    state, positionSource, visibility, timers,
+    loadCalibration: standalone ? null : () => store.load('calibration'),
+    loadProfiles: standalone ? null : () => store.load('profiles'),
   });
-  const capture = createCalibrationCapture({ state, positionSource, monitor, guard });
-  const jog = transport ? createJog({ state, positionSource, transport, guard }) : null;
+  const capture = createCalibrationCapture({ state, positionSource, monitor, guard, profileNeed });
+  // "Go to" lowers the pen to the clearance only over a fresh touch (by epoch and by profile)
+  const touchFresh = () => { const s = monitor.status(); return s.known && s.z; };
+  const jog = transport ? createJog({ state, positionSource, transport, guard, touchFresh }) : null;
   const link = () => { const g = guardState(positionSource.link ? positionSource.link() : null); return { xy: g.xy, z: g.z, hint: guardHint(g), homeMissing: g.homeMissing }; };
   monitor.start();
   // beforePlan: refresh the calibration before building the plan; check compares the already obtained epoch with the plan snapshot

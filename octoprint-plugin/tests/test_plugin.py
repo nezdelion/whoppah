@@ -260,9 +260,10 @@ def test_profile_needs_permission_but_anyone_reads(env):
     assert put(env, "profile", {"fDraw": 1}).status_code == 200
     env.who.user = "bob"
     env.who.rights = set()
-    assert env.client.get("/plugin/plotter/api/settings/profile").get_json() == {"fDraw": 1}  # shared
+    assert env.client.get("/plugin/plotter/api/settings/profile").get_json()["fDraw"] == 1  # shared: the active profile
     assert put(env, "profile", {"fDraw": 9}).status_code == 403
-    assert env.plugin._settings.data["profile"] == {"fDraw": 1}
+    assert env.client.get("/plugin/plotter/api/settings/profile").get_json()["fDraw"] == 1
+    assert env.plugin._settings.data["profile"] is None  # the pre-profiles section is not written (rollback)
 
 
 def test_calibration_needs_control(env):

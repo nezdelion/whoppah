@@ -1,17 +1,24 @@
 // Pre-send checks (preflight). Check = (ctx) => Promise<{level: 'ok'|'confirm'|'block', message}>.
 // ctx = { drawing, plan, settings }
 import { isPartial, partialReasons } from '../../core/drawing.js';
+import { SIDES, sideText, fmtMm } from '../../core/bed.js';
 import { t, fmtNumber } from '../../i18n/index.js';
 import { reasonText } from '../photo/layer-stack.js';
 
 const ok = { level: 'ok', message: '' };
 
+/**
+ * The drawing beyond the print area: axis limits per axis and the pen beyond the bed edge per side, one confirmation.
+ * Runs with any value of the "Limit to print area" option; the bed not measured — a note that the bed check was skipped.
+ */
 export async function limitsCheck({ plan }) {
-  if (!plan.outOfLimits) return ok;
+  if (!plan.outOfLimits && !plan.outOfBed) return ok;
   const parts = [];
-  if (plan.outOfLimits.x > 1e-6) parts.push(t('warn.overX', { mm: fmtNumber(plan.outOfLimits.x, { minFrac: 1 }) }));
-  if (plan.outOfLimits.y > 1e-6) parts.push(t('warn.overY', { mm: fmtNumber(plan.outOfLimits.y, { minFrac: 1 }) }));
-  return { level: 'confirm', message: t('check.outOfLimits', { parts: parts.join(', ') }) };
+  if (plan.outOfLimits && plan.outOfLimits.x > 1e-6) parts.push(t('warn.overX', { mm: fmtNumber(plan.outOfLimits.x, { minFrac: 1 }) }));
+  if (plan.outOfLimits && plan.outOfLimits.y > 1e-6) parts.push(t('warn.overY', { mm: fmtNumber(plan.outOfLimits.y, { minFrac: 1 }) }));
+  if (plan.outOfBed) for (const side of SIDES) if (plan.outOfBed[side] > 1e-6) parts.push(t('warn.offBed', { side: sideText(side), mm: fmtMm(plan.outOfBed[side]) }));
+  const note = plan.bedChecked === false ? ' ' + t('check.bedSkipped') : '';
+  return { level: 'confirm', message: t('check.outOfArea', { parts: parts.join(', ') }) + note };
 }
 
 export async function partialCheck({ drawing }) {

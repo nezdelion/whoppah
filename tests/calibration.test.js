@@ -321,3 +321,85 @@ test('corner capture takes the xy counter, touch capture takes the z counter', a
   assert.equal((await a.capture.captureTouch()).ok, true);
   assert.deepEqual([cal(a).epochXY, cal(a).epochZ], [1, 2]);
 });
+
+// --- machine profile: the corner and the touch depend on the pen holder
+
+async function twoProfiles() {
+  const a = await app();
+  a.server.activeProfile = () => a.state.activeProfileId();
+  a.monitor.start();
+  const first = a.state.activeProfileId();
+  const r = await a.state.createProfile('Держатель Б');
+  assert.equal(r.ok, true);
+  await a.capture.captureCorner(); await a.capture.captureTouch();
+  await a.timers.tick(0);
+  assert.equal(a.monitor.status().message, '');
+  return { a, first, second: r.id };
+}
+
+test('a profile switch: the corner and the touch are outdated "the profile changed", printing with confirmation', async () => {
+  const { a, second } = await twoProfiles();
+  await a.state.selectProfile(second);
+  const s = a.monitor.status();
+  assert.deepEqual(s.stale, ['угол листа', 'касание']);
+  assert.equal(s.message, 'Калибровка могла устареть: угол листа, касание (сменён профиль машины).');
+  const r = await a.check({});
+  assert.equal(r.level, 'confirm');
+  assert.match(r.message, /сменён профиль/);
+  assert.equal(cal(a).cornerX, -5, 'the values stay');
+});
+
+test('after a profile switch "Corner is correct" leaves the warning only for the touch', async () => {
+  const { a, second } = await twoProfiles();
+  await a.state.selectProfile(second);
+  assert.equal((await a.capture.confirm('xy')).ok, true);
+  assert.deepEqual(a.monitor.status().stale, ['касание']);
+  assert.equal(cal(a).profileXY, second);
+});
+
+test('back to the previous profile: no warning', async () => {
+  const { a, first, second } = await twoProfiles();
+  await a.state.selectProfile(second);
+  assert.ok(a.monitor.status().message);
+  await a.state.selectProfile(first);
+  assert.equal(a.monitor.status().message, '');
+});
+
+test('a calibration saved before profiles (no profile on the parts) is not outdated because of the profile', async () => {
+  const a = await app({ calibration: { cornerX: -5, cornerY: 50, zTouch: 8, epochXY: 0, epochZ: 0 } });
+  a.state.adoptCalibration(a.server.calibration);
+  a.monitor.start();
+  await a.timers.tick(0);
+  assert.equal(a.monitor.status().message, '');
+  assert.deepEqual(calibrationFreshness({ epochXY: 1, epochZ: 1, profileXY: 'p_00000001', profileZ: null }, { xy: 1, z: 1 }, 'p_00000002').stale, ['угол листа']);
+});
+
+test('standalone manual input stamps the active profile on the changed part only', async () => {
+  const a = await app();
+  await a.state.patch('calibration', { zTouch: 9 });
+  assert.equal(cal(a).profileZ, a.state.activeProfileId());
+  assert.equal(cal(a).profileXY, null);
+});
+
+test('a switch on another device reaches this one with the next poll: the active values change without a reload', async () => {
+  const a = await app();
+  const store = { col: null };
+  const monitor = createCalibrationMonitor({
+    state: a.state, positionSource: a.server.source, loadCalibration: async () => null,
+    loadProfiles: async () => store.col, timers: a.timers, visibility: a.visibility,
+  });
+  monitor.start();
+  await a.timers.tick(0);
+  const r = await a.state.createProfile('Держатель Б');
+  await a.state.patch('profile', { fDraw: 2000 });
+  const col = structuredClone(a.state.profiles());
+  col.activeId = r.id;
+  store.col = col;
+  const events = [];
+  a.state.subscribe((e) => events.push(e.section));
+  await a.timers.tick(POLL_MS);
+  assert.equal(a.state.activeProfileId(), r.id);
+  assert.equal(a.state.get('profile').fDraw, 3000);
+  assert.ok(events.includes('profile'), 'the plan is rebuilt');
+  monitor.stop();
+});

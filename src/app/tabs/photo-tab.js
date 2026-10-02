@@ -1,6 +1,6 @@
 // "Photo" source: image -> stack of style layers (workers) -> preview -> ctx.emit(drawing).
 // The tab knows nothing about specific styles: only the registry, the parameter description and the runner.
-import { h } from '../ui/dom.js';
+import { h, button } from '../ui/dom.js';
 import { createViewport } from '../ui/viewport.js';
 import { exportSvg } from '../../core/svg-export.js';
 import { stats } from '../../core/drawing.js';
@@ -53,17 +53,17 @@ export function createPhotoSource() {
       $.layers = h('div', { class: 'layers' });
       $.addStyle = h('select', { 'aria-label': t('photo.newLayerStyle') }, groupedStyles().map((g) =>
         h('optgroup', { label: groupLabel(g.group) }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === DEFAULT_STYLE }, `${s.name} · ${originLabel(s)}`)))));
-      $.add = h('button', { type: 'button', onclick: () => addLayer($.addStyle.value) }, t('photo.addLayer'));
+      $.add = button({ label: t('photo.addLayer'), hint: 'photo.addLayer.hint', onclick: () => addLayer($.addStyle.value) });
       $.canvas = h('canvas', { class: 'preview photo-preview', width: 900, height: 300, 'aria-label': t('photo.previewAria') });
       const view = createViewport();
-      $.fit = h('button', { type: 'button', title: t('photo.fitTitle'), onclick: () => { view.reset(); $.canvas.style.touchAction = 'pan-y'; requestDraw(); } }, t('photo.fit'));
+      $.fit = button({ label: t('photo.fit'), hint: 'photo.fit.hint', onclick: () => { view.reset(); $.canvas.style.touchAction = 'pan-y'; requestDraw(); } });
       $.showPhoto = h('input', { type: 'checkbox', checked: true, onchange: requestDraw });
       $.stats = h('div', { class: 'stats' });
       $.sendWarn = h('div', { class: 'warn' });
-      $.toPrint = h('button', { type: 'button', class: 'primary', onclick: sendToPrint }, t('photo.toPrint'));
-      $.exportSvg = h('button', { type: 'button', onclick: exportSvgFile }, t('photo.exportSvg'));
-      $.exportPreset = h('button', { type: 'button', onclick: exportPreset }, t('photo.exportPreset'));
-      $.importPreset = h('button', { type: 'button', onclick: () => presetInput.click() }, t('photo.importPreset'));
+      $.toPrint = button({ label: t('photo.toPrint'), hint: 'photo.toPrint.hint', class: 'primary', onclick: sendToPrint });
+      $.exportSvg = button({ label: t('photo.exportSvg'), hint: 'photo.exportSvg.hint', onclick: exportSvgFile });
+      $.exportPreset = button({ label: t('photo.exportPreset'), hint: 'photo.exportPreset.hint', onclick: exportPreset });
+      $.importPreset = button({ label: t('photo.importPreset'), hint: 'photo.importPreset.hint', onclick: () => presetInput.click() });
 
       const imageCard = h('div', { class: 'card' }, $.drop, $.info, $.warn,
         h('label', { class: 'size' }, t('photo.workingSize'), $.size));
@@ -211,9 +211,9 @@ export function createPhotoSource() {
           h('div', { class: 'layer-head' },
             h('label', { class: 'check', title: t('photo.showLayer') }, h('input', { type: 'checkbox', checked: l.visible, 'aria-label': t('photo.showLayerAria'), onchange: (ev) => setVisible(l, ev.target.checked) })),
             h('input', { class: 'layer-name', value: l.name, 'aria-label': t('photo.layerName'), onchange: (ev) => { stack.rename(l.uid, ev.target.value); ev.target.value = l.name; } }),
-            h('button', { type: 'button', title: t('photo.up'), 'aria-label': t('photo.upAria'), disabled: i === 0, onclick: () => stack.move(l.uid, -1) }, '↑'),
-            h('button', { type: 'button', title: t('photo.down'), 'aria-label': t('photo.downAria'), disabled: i === total - 1, onclick: () => stack.move(l.uid, 1) }, '↓'),
-            h('button', { type: 'button', class: 'danger', title: t('photo.remove'), 'aria-label': t('photo.removeAria'), onclick: () => removeLayer(l.uid) }, '×')),
+            button({ label: '↑', hint: 'photo.up.hint', 'aria-label': t('photo.upAria'), disabled: i === 0, onclick: () => stack.move(l.uid, -1) }),
+            button({ label: '↓', hint: 'photo.down.hint', 'aria-label': t('photo.downAria'), disabled: i === total - 1, onclick: () => stack.move(l.uid, 1) }),
+            button({ label: '×', hint: 'photo.remove.hint', class: 'danger', 'aria-label': t('photo.removeAria'), onclick: () => removeLayer(l.uid) })),
           h('label', {}, t('photo.style'), styleSelect),
           e.status, e.density, body);
       }

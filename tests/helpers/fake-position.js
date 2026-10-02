@@ -4,12 +4,15 @@ import { TransportError } from '../../src/transport/transport.js';
 export function fakeServer({ head = { x: -5, y: 50, z: 8 }, calibration = null } = {}) {
   const s = {
     head: { ...head }, epochs: { xy: 0, z: 0 }, calibration, fail: null, reads: 0, epochCalls: 0,
+    /** () => the active profile id the server stamps on a captured or confirmed part (as the plugin does); null — none */
+    activeProfile: () => null,
     /** G28: without arguments — both epochs; 'xy' / 'z' — only its own (G28 X Y / G28 Z) */
     g28(part) { if (part !== 'z') s.epochs.xy++; if (part !== 'xy') s.epochs.z++; },
     /** error of the next read(): kind from the source error list */
     failNext(kind, message = kind) { s.fail = new TransportError(message, { kind }); },
   };
   const doc = () => ({ cornerX: -5, cornerY: 50, zTouch: 8, updatedAt: null, ...(s.calibration || {}) });
+  const stamp = (part) => { const id = s.activeProfile(); return id ? { [part === 'xy' ? 'profileXY' : 'profileZ']: id } : {}; };
   const stale = () => new TransportError('положение сбилось — повторите захват', { kind: 'stale' });
   s.source = {
     async read() {
@@ -20,16 +23,16 @@ export function fakeServer({ head = { x: -5, y: 50, z: 8 }, calibration = null }
     async epoch() { s.epochCalls++; return { ...s.epochs }; },
     async saveCorner({ x, y, epoch }) {
       if (epoch !== s.epochs.xy) throw stale();
-      s.calibration = { ...doc(), cornerX: x, cornerY: y, epochXY: epoch, updatedAt: 'T' };
+      s.calibration = { ...doc(), cornerX: x, cornerY: y, epochXY: epoch, ...stamp('xy'), updatedAt: 'T' };
       return structuredClone(s.calibration);
     },
     async saveTouch({ zTouch, epoch }) {
       if (epoch !== s.epochs.z) throw stale();
-      s.calibration = { ...doc(), zTouch, epochZ: epoch, updatedAt: 'T' };
+      s.calibration = { ...doc(), zTouch, epochZ: epoch, ...stamp('z'), updatedAt: 'T' };
       return structuredClone(s.calibration);
     },
     async confirm(part) {
-      s.calibration = { ...doc(), [part === 'xy' ? 'epochXY' : 'epochZ']: s.epochs[part] };
+      s.calibration = { ...doc(), [part === 'xy' ? 'epochXY' : 'epochZ']: s.epochs[part], ...stamp(part) };
       return structuredClone(s.calibration);
     },
   };

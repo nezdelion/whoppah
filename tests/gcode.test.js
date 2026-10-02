@@ -103,3 +103,30 @@ test('meshNoFade: M420 S1 Z0 after G90/G28 in the file and in all pen programs; 
   assert.ok(!generateGcode(one([[0, 60, 10, 60]]), { profile, calibration: cal }).gcode.includes('M420'));
   assert.ok(!touchLines(profile, cal).includes('M420 S1 Z0'));
 });
+
+test('the pen beyond the bed edge on the right by 5.0 mm (limit X234, bed edge X221)', () => {
+  const p = { ...profile, bedX0: -12, bedY0: -3, bedX1: 221, bedY1: 230 };
+  const r = generateGcode(one([[200, 60, 226, 60]]), { profile: p, calibration: cal });
+  assert.ok(r.warnings.includes('перо за краем стола справа на 5,0 мм'));
+  assert.equal(r.outOfLimits, null);
+  assert.deepEqual(r.outOfBed, { left: 0, right: 5, bottom: 0, top: 0 });
+  assert.equal(r.bedChecked, true);
+  assert.ok(Math.abs(r.outOfArea.right - 5) < 1e-9);
+});
+
+test('bed not measured: only the axis limits, bedChecked false', () => {
+  const r = generateGcode(one([[200, 60, 226, 60]]), { profile, calibration: cal });
+  assert.equal(r.bedChecked, false);
+  assert.equal(r.outOfBed, null);
+  assert.equal(r.outOfArea, null);
+  assert.deepEqual(r.warnings, []);
+  const out = generateGcode(one([[200, 60, 246, 60]]), { profile, calibration: cal });
+  assert.ok(Math.abs(out.outOfArea.right - 12) < 1e-9);
+});
+
+test('both reasons on one side: the axis limit and the bed edge', () => {
+  const p = { ...profile, bedX0: -12, bedY0: -3, bedX1: 221, bedY1: 230 };
+  const r = generateGcode(one([[200, 60, 240, 60]]), { profile: p, calibration: cal });
+  assert.ok(r.warnings.includes('выход за X на 6,0 мм'));
+  assert.ok(r.warnings.includes('перо за краем стола справа на 19,0 мм'));
+});

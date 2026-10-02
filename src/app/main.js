@@ -1,5 +1,6 @@
 // Composition root: choosing implementations (storage, transport, auth), assembling the tabs.
-import { LocalStorageStore, migrateLegacy } from '../storage/settings-store.js';
+import { LocalStorageStore, migrateLegacy, migrateProfiles } from '../storage/settings-store.js';
+import { fromLegacy } from '../core/profiles.js';
 import { createOctoPrintTransport } from '../transport/octoprint-http.js';
 import { createApiKeyAuth } from '../transport/auth-api-key.js';
 import { createSessionAuth } from '../transport/auth-session.js';
@@ -17,7 +18,7 @@ import { setupCalibration } from './calibration/setup.js';
 import { createSvgSource } from './tabs/svg-tab.js';
 import { createPhotoSource } from './tabs/photo-tab.js';
 import { createPrintTab } from './tabs/print-tab.js';
-import { h } from './ui/dom.js';
+import { h, button } from './ui/dom.js';
 import { createConnectionMonitor, isValidBaseUrl } from './connection-monitor.js';
 import { createConnectionIndicator } from './ui/connection-indicator.js';
 import { t } from '../i18n/index.js';
@@ -44,10 +45,10 @@ function setupPlugin(env) {
       h('a', { href: `${env.loginUrl.replace(/\/+$/, '')}/?redirect=${encodeURIComponent(location.pathname + location.search)}`, target: '_blank', rel: 'noopener' }, t('notice.signIn')),
       ' ' + t('notice.expiredTail')),
   });
-  const store = new ServerStore({ baseUrl: env.baseUrl, settingsUrl: env.settingsUrl, auth });
+  const store = new ServerStore({ baseUrl: env.baseUrl, settingsUrl: env.settingsUrl, profilesUrl: env.profilesUrl, auth });
   const transport = createOctoPrintTransport({ getBaseUrl: () => env.baseUrl, auth, sameOrigin: true });
   const needs = (section) => {
-    if (section === 'profile' && !env.canEditProfile) return t('needs.right', { what: t('perm.profile') });
+    if ((section === 'profile' || section === 'profiles') && !env.canEditProfile) return t('needs.right', { what: t('perm.profile') });
     if (section === 'calibration' && !env.canEditCalibration) return t('needs.right', { what: t('perm.control') });
     return null;
   };
@@ -69,6 +70,8 @@ async function start() {
   } else {
     store = new LocalStorageStore(localStorage);
     await migrateLegacy(localStorage, store);
+    // the single machine profile of earlier versions becomes the first named profile (the plugin server does it itself)
+    await migrateProfiles(store, (values) => fromLegacy(values));
   }
   // The connection feed (standalone) is created below; manual input of corner/touch sets the part to the feed's current epoch, like the plugin server.
   let feed = null;
@@ -127,7 +130,8 @@ async function start() {
   // Capture and jog panel: plugin — the plugin source (epochs and write on the server); standalone — the feed source, the app stores the calibration.
   const positionSource = plugin ? plugin.positionSource
     : createFeedPositionSource(feed, { calibration: { get: () => state.get('calibration'), patch: (changes) => state.patch('calibration', changes) } });
-  const calibration = setupCalibration({ positionSource, state, store, visibility: pageVisibility(), standalone: !plugin, transport });
+  const profileNeed = () => (plugin ? plugin.needs('profiles') : null);
+  const calibration = setupCalibration({ positionSource, state, store, visibility: pageVisibility(), standalone: !plugin, transport, profileNeed });
   const calibrator = calibration && calibration.calibrator;
   const preflight = [limitsCheck, partialCheck, ...(calibration ? [calibration.check] : [])];
   const service = createPrintService({
@@ -158,10 +162,10 @@ async function start() {
 
   for (const tab of tabs) {
     const view = h('div', { class: 'tab-panel', role: 'tabpanel', hidden: true });
-    const btn = h('button', { type: 'button', role: 'tab', onclick: () => show(tab.id) }, tab.title);
+    const btn = button({ label: tab.title, hint: 'tab.hint', role: 'tab', onclick: () => show(tab.id) });
     nav.append(btn);
     panels.append(view);
-    buttons.set(tab.id, btn);
+    buttons.set(tab.id, btn.button);
     views.set(tab.id, view);
     if (tab.source) tab.source.mount(view, createSourceContext({ state, store, sourceId: tab.source.id }));
     else tab.tab.mount(view);

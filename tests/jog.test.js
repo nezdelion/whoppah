@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planJog, jogRange, JOG_Z_MAX } from '../src/core/jog.js';
+import { planJog, jogRange, planGoTo, JOG_Z_MAX } from '../src/core/jog.js';
 import { jogLines } from '../src/core/gcode.js';
 import { defaultsOf, SCHEMAS } from '../src/core/profile.js';
 import { createJog } from '../src/app/calibration/jog.js';
@@ -57,13 +57,13 @@ test('jogLines: G91/G0/G90, feeds from the profile, the mesh between G91 and G0'
   assert.deepEqual(jogLines({ ...profile, meshNoFade: true }, 'x', 1), ['G91', 'M420 S1 Z0', 'G0 X1 F6000', 'G90']);
 });
 
-function jogSetup({ pos = { x: 100, y: 100, z: 20 }, guard, readError } = {}) {
+function jogSetup({ pos = { x: 100, y: 100, z: 20 }, guard, readError, prof = profile, touchFresh } = {}) {
   const sent = [];
   const jog = createJog({
-    state: { settings: () => ({ profile, calibration }) },
+    state: { settings: () => ({ profile: prof, calibration }) },
     positionSource: { read: async () => { if (readError) throw readError; return pos; } },
     transport: { command: async (lines) => { sent.push(lines); } },
-    guard,
+    guard, touchFresh,
   });
   return { jog, sent };
 }
@@ -110,4 +110,89 @@ test('guardState: plugin without a guard; feed not connected; Home per part', ()
   assert.equal(xyOnly.xy.ok, true);
   assert.equal(xyOnly.z.ok, false);
   assert.equal(homeHint(), 'Home не выполнен — сделайте Home до установки пера');
+});
+
+// --- bed: the right bed edge in nozzle coordinates X221, touch 8, clearance 1
+const bedProfile = { ...profile, zClearanceMm: 1, bedX0: -12, bedY0: -3, bedX1: 221, bedY1: 230 };
+const bedPlan = (axis, dir, step, pos) => planJog({ axis, dir, step, position: { x: 100, y: 100, z: 20, ...pos }, profile: bedProfile, calibration });
+
+test('jog with a measured bed: the pen down at the bed edge — X+6 up to 221', () => {
+  assert.deepEqual(bedPlan('x', 1, 10, { x: 215, z: 8.5 }), { ok: true, delta: 6, target: 221, clamped: true });
+});
+
+test('jog with a measured bed: the pen raised — only the axis limit clamps (X+10 to 225)', () => {
+  assert.deepEqual(bedPlan('x', 1, 10, { x: 215, z: 20 }), { ok: true, delta: 10, target: 225, clamped: false });
+});
+
+test('jog: Z unknown counts as the pen down', () => {
+  assert.deepEqual(planJog({ axis: 'x', dir: 1, step: 10, position: { x: 215, y: 100 }, profile: bedProfile, calibration }),
+    { ok: true, delta: 6, target: 221, clamped: true });
+  assert.deepEqual(jogRange('y', bedProfile, calibration, { x: 1, y: 1 }), [1, 230]);
+});
+
+test('jog: lowering off the bed edge stops at touch + clearance (Z−3 to 9), then "axis limit"', () => {
+  assert.deepEqual(bedPlan('z', -1, 10, { x: 228, z: 12 }), { ok: true, delta: -3, target: 9, clamped: true });
+  assert.equal(bedPlan('z', -1, 1, { x: 228, z: 9 }).ok, false);
+  // over the bed — down to touch − 2 as before
+  assert.deepEqual(bedPlan('z', -1, 10, { x: 200, z: 6.5 }), { ok: true, delta: -0.5, target: 6, clamped: true });
+});
+
+test('jog: the head off the area with the pen down — outward refused, inward allowed', () => {
+  assert.equal(bedPlan('x', 1, 1, { x: 225, z: 8.5 }).ok, false);
+  assert.deepEqual(bedPlan('x', -1, 1, { x: 225, z: 8.5 }), { ok: true, delta: -1, target: 224, clamped: false });
+});
+
+test('jog: bed not measured — as before (limits and touch − 2)', () => {
+  assert.deepEqual(plan('x', 1, 10, { x: 215, z: 8.5 }), { ok: true, delta: 10, target: 225, clamped: false });
+  assert.deepEqual(jogRange('z', profile, calibration, { x: 300, y: 100, z: 9 }), [6, JOG_Z_MAX]);
+});
+
+test('createJog: the read Z reaches the clamp', async () => {
+  const { jog, sent } = jogSetup({ pos: { x: 215, y: 100, z: 8.5 }, prof: bedProfile });
+  const r = await jog.move('x', 1, 10);
+  assert.equal(r.ok, true);
+  assert.deepEqual(sent, [['G91', 'G0 X6 F6000', 'G90']]);
+});
+
+// --- "Go to"
+const goProfile = { ...profile, limX0: -10, zStartOffset: 7, zClearanceMm: 1 }; // the corner X-5 is inside the limits here
+const go = (pos, extra = {}) => planGoTo({ point: { x: -5, y: 50 }, position: pos, profile: goProfile, calibration, touchFresh: true, ...extra });
+
+test('planGoTo: the head low — lift to the start height, move, lower to the clearance', () => {
+  assert.deepEqual(go({ x: 100, y: 100, z: 8.5 }), { ok: true, lines: ['G90', 'G0 Z15 F1200', 'G0 X-5 Y50 F6000', 'G0 Z9 F600'] });
+});
+
+test('planGoTo: the head already high — no lift', () => {
+  assert.deepEqual(go({ x: 100, y: 100, z: 30 }).lines, ['G90', 'G0 X-5 Y50 F6000', 'G0 Z9 F600']);
+});
+
+test('planGoTo: Z unknown — lift; the touch not fresh — no lowering', () => {
+  assert.deepEqual(go({ x: 100, y: 100 }).lines, ['G90', 'G0 Z15 F1200', 'G0 X-5 Y50 F6000', 'G0 Z9 F600']);
+  assert.deepEqual(go({ x: 100, y: 100, z: 8.5 }, { touchFresh: false }).lines, ['G90', 'G0 Z15 F1200', 'G0 X-5 Y50 F6000']);
+});
+
+test('planGoTo: a point outside the axis limits — refusal; meshNoFade adds the mesh command; never below touch + clearance', () => {
+  assert.deepEqual(go({ z: 20 }, { point: { x: 240, y: 50 } }), { ok: false, message: 'точка вне пределов осей' });
+  assert.deepEqual(go({ z: 20 }, { profile: { ...goProfile, meshNoFade: true } }).lines.slice(0, 2), ['G90', 'M420 S1 Z0']);
+  const zs = go({ z: 8.5 }).lines.filter((l) => / Z/.test(l)).map((l) => Number(/Z([\d.-]+)/.exec(l)[1]));
+  assert.ok(zs.every((z) => z >= 9));
+});
+
+test('createJog.goTo: reads the position and sends planGoTo lines', async () => {
+  const { jog, sent } = jogSetup({ pos: { x: 100, y: 100, z: 8.5 }, prof: goProfile, touchFresh: () => true });
+  const r = await jog.goTo({ x: -5, y: 50 });
+  assert.equal(r.ok, true);
+  assert.deepEqual(sent, [['G90', 'G0 Z15 F1200', 'G0 X-5 Y50 F6000', 'G0 Z9 F600']]);
+});
+
+test('createJog.goTo: not without Home, not while printing, not on a read error', async () => {
+  const noHome = jogSetup({ guard: (part) => (part === 'z' ? { ok: false, message: homeHint() } : { ok: true, message: '' }) });
+  assert.deepEqual(await noHome.jog.goTo({ x: -5, y: 50 }), { ok: false, message: homeHint() });
+  assert.deepEqual(noHome.sent, []);
+  const busy = jogSetup({ readError: new Error('нельзя во время печати') });
+  assert.deepEqual(await busy.jog.goTo({ x: -5, y: 50 }), { ok: false, message: 'нельзя во время печати' });
+  assert.deepEqual(busy.sent, []);
+  const out = jogSetup();
+  assert.equal((await out.jog.goTo({ x: 240, y: 50 })).ok, false);
+  assert.deepEqual(out.sent, []);
 });

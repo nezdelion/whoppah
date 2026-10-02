@@ -81,6 +81,7 @@ test('both remarks are shown together: out of limits and intermediate', async ()
   const t = fakeTransport();
   const s = { ...settings() };
   s.calibration = { ...s.calibration, cornerX: 100 };
+  s.job = { ...s.job, fitPrintArea: false }; // with the option on the drawing would be fitted into the print area
   const asked = [];
   const svc = createPrintService({ transport: t, getSettings: () => s, preflight: [limitsCheck, partialCheck], confirm: async (m) => { asked.push(m); return false; }, ...clock() });
   await svc.send(createDrawing({ layers: [{ id: 'l', name: 'l', lines: [[0, 0, 5, 5]] }], meta: { partial: { reasons: ['r1'] } } }), { print: false });
@@ -233,4 +234,29 @@ test('trace the outline: only Z commands no lower than touch + clearance, printi
   const lines = t.calls[0][1];
   const zs = lines.flatMap((l) => [...l.matchAll(/Z([\d.]+)/g)].map((m) => +m[1]));
   assert.ok(Math.min(...zs) >= 9);
+});
+
+test('the pen beyond the bed with the option off: the confirmation names the side and mm; refused — nothing sent', async () => {
+  const t = fakeTransport();
+  const s = settings();
+  s.profile = { ...s.profile, bedX0: -12, bedY0: -3, bedX1: 165, bedY1: 230 };
+  s.job = { ...s.job, fitPrintArea: false };
+  const asked = [];
+  const svc = createPrintService({ transport: t, getSettings: () => s, preflight: [limitsCheck, partialCheck], confirm: async (m) => { asked.push(m); return false; }, ...clock() });
+  await svc.send(createDrawing({ layers: [{ id: 'l', name: 'l', lines: [[0, 0, 100, 100]] }], meta: { partial: { reasons: ['r1'] } } }), { print: false });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /перо за краем стола справа на 5,0 мм/);
+  assert.match(asked[0], /промежуточный: r1/);
+  assert.deepEqual(t.calls, []);
+});
+
+test('limitsCheck: confirm level, the bed note when the bed is not measured', async () => {
+  assert.deepEqual(await limitsCheck({ plan: { outOfLimits: null, outOfBed: null, bedChecked: false } }), { level: 'ok', message: '' });
+  const r = await limitsCheck({ plan: { outOfLimits: { x: 12, y: 0 }, outOfBed: null, bedChecked: false } });
+  assert.equal(r.level, 'confirm');
+  assert.match(r.message, /выход за X на 12,0 мм/);
+  assert.match(r.message, /Стол не измерен: проверка пера на столе пропущена/);
+  const both = await limitsCheck({ plan: { outOfLimits: { x: 6, y: 0 }, outOfBed: { left: 0, right: 19, bottom: 0, top: 0 }, bedChecked: true } });
+  assert.match(both.message, /выход за X на 6,0 мм, перо за краем стола справа на 19,0 мм/);
+  assert.doesNotMatch(both.message, /не измерен/);
 });

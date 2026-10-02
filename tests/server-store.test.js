@@ -80,15 +80,16 @@ test('state: a storage refusal gives a save-error event, the value stays in memo
   assert.deepEqual(events.filter((e) => e.type === 'save-error').map((e) => [e.section, e.message]), [['profile', 'нет права: изменение профиля машины']]);
 });
 
-const FILE = JSON.stringify({ format: 'neptune-plotter-settings', version: 1, sections: { profile: { fDraw: 1 }, calibration: { cornerX: 1 }, job: { marginMm: 9 }, presets: { svg: {} } } });
-const needs = (k) => (k === 'profile' ? 'нужно право «изменение профиля машины»' : k === 'calibration' ? 'нужно право «управление принтером»' : null);
+const PROFILES = { version: 1, rev: 1, activeId: 'p_00000001', items: [{ id: 'p_00000001', name: 'Neptune 3 Pro', rev: 1, values: { fDraw: 1 } }] };
+const FILE = JSON.stringify({ format: 'neptune-plotter-settings', version: 2, sections: { profiles: PROFILES, calibration: { cornerX: 1 }, job: { marginMm: 9 }, presets: { svg: {} } } });
+const needs = (k) => (k === 'profiles' ? 'нужно право «изменение профиля машины»' : k === 'calibration' ? 'нужно право «управление принтером»' : null);
 
 test('import without permissions: job and presets are written, profile and calibration skipped with a reason', async () => {
   const store = new MemoryStore();
   const r = await applySettings(store, parseSettings(FILE), undefined, { needs });
   assert.deepEqual(r.applied, ['job', 'presets']);
-  assert.deepEqual(r.skipped.map((s) => s.key), ['profile', 'calibration']);
-  assert.equal(await store.load('profile'), null);
+  assert.deepEqual(r.skipped.map((s) => s.key), ['profiles', 'calibration']);
+  assert.equal(await store.load('profiles'), null);
   assert.deepEqual(await store.load('job'), { marginMm: 9 });
 });
 
@@ -98,24 +99,24 @@ test('import with permissions: all sections; a storage refusal skips the section
   assert.equal(r.applied.length, 4);
   const failing = new MemoryStore();
   const save = failing.save.bind(failing);
-  failing.save = async (k, v) => { if (k === 'profile') throw new Error('нет права: изменение профиля машины'); return save(k, v); };
+  failing.save = async (k, v) => { if (k === 'profiles') throw new Error('нет права: изменение профиля машины'); return save(k, v); };
   const r2 = await applySettings(failing, parseSettings(FILE));
-  assert.deepEqual(r2.skipped, [{ key: 'profile', reason: 'нет права: изменение профиля машины' }]);
+  assert.deepEqual(r2.skipped, [{ key: 'profiles', reason: 'нет права: изменение профиля машины' }]);
   assert.equal(r2.applied.length, 3);
 });
 
 function flagsStub() { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; }
 
 test('transfer from localStorage: offered once, permissions are respected', async () => {
-  const local = new MemoryStore({ job: { marginMm: 4 }, profile: { fDraw: 2 } });
+  const local = new MemoryStore({ job: { marginMm: 4 }, profiles: PROFILES });
   const srv = new MemoryStore();
   const flags = flagsStub();
   let asked = 0;
   const args = { serverStore: srv, localStore: local, flags, flagKey: 'k', confirm: async () => { asked++; return true; }, needs };
   const msg = await offerLocalImport(args);
-  assert.match(msg, /Пропущено: Профиль машины/);
+  assert.match(msg, /Пропущено: Профили машины/);
   assert.deepEqual(await srv.load('job'), { marginMm: 4 });
-  assert.equal(await srv.load('profile'), null);
+  assert.equal(await srv.load('profiles'), null);
   assert.equal(await offerLocalImport(args), null);
   assert.equal(asked, 1);
 });
@@ -150,4 +151,93 @@ test('loadEnv: an unavailable or non-JSON env.json — standalone', async () => 
   assert.deepEqual(await loadEnv({ fetch: fakeFetch({ body: '<html>' }), origin: 'http://h' }), { mode: 'standalone' });
   assert.deepEqual(await loadEnv({ fetch: fakeFetch(new TypeError('x')), origin: 'http://h' }), { mode: 'standalone' });
   assert.equal((await loadEnv({ fetch: fakeFetch({ body: RAW }), origin: 'http://h' })).mode, 'plugin');
+});
+
+// --- machine profiles API
+
+const col = (over = {}) => ({ version: 1, rev: 3, activeId: 'p_00000001', items: [{ id: 'p_00000001', name: 'Neptune 3 Pro', rev: 2, values: { fDraw: 3000 } }], ...over });
+
+test('profiles: GET the collection next to the sections; operations — PUT/DELETE per profile, PUT active; the answer is returned', async () => {
+  const { store, fetch } = server(() => ({ body: col() }));
+  assert.deepEqual(await store.load('profiles'), col());
+  const c = col();
+  assert.deepEqual(await store.save('profiles', c, { kind: 'put', id: 'p_00000001' }), col());
+  await store.save('profiles', c, { kind: 'delete', id: 'p_00000001' });
+  await store.save('profiles', c, { kind: 'active', id: 'p_00000001' });
+  await store.save('profiles', c);
+  assert.deepEqual(fetch.calls.map((x) => `${x.method || 'GET'} ${x.url}`), [
+    'GET http://op/plugin/plotter/api/profiles',
+    'PUT http://op/plugin/plotter/api/profiles/p_00000001',
+    'DELETE http://op/plugin/plotter/api/profiles/p_00000001',
+    'PUT http://op/plugin/plotter/api/profiles/active',
+    'PUT http://op/plugin/plotter/api/profiles',
+  ]);
+  assert.deepEqual(JSON.parse(fetch.calls[1].body), { name: 'Neptune 3 Pro', values: { fDraw: 3000 }, rev: 2 });
+  assert.deepEqual(JSON.parse(fetch.calls[3].body), { id: 'p_00000001' });
+  assert.equal(fetch.calls[2].headers['X-CSRF-Token'], 'T');
+});
+
+test('profiles: 403 — permission required (any write, the active choice too); 404 and 409 keep the server text', async () => {
+  const deny = server({ status: 403, body: '{"error":"missing permission"}' });
+  await assert.rejects(deny.store.save('profiles', col(), { kind: 'active', id: 'p_00000001' }), (e) => e.status === 403 && e.message === 'нет права: изменение профиля машины');
+  const missing = server({ status: 404, body: '{"error":"unknown profile"}' });
+  await assert.rejects(missing.store.save('profiles', col(), { kind: 'delete', id: 'p_00000009' }), (e) => e.status === 404 && /unknown profile/.test(e.message));
+  const conflict = server({ status: 409, body: JSON.stringify({ error: 'profile changed', code: 'conflict', profile: { id: 'p_00000001', rev: 3 } }) });
+  await assert.rejects(conflict.store.save('profiles', col(), { kind: 'put', id: 'p_00000001' }), (e) => e.status === 409 && e.code === 'conflict' && e.current.rev === 3);
+});
+
+test('profiles: a conflict rereads the profiles and says another device changed it; the other value is not lost', async () => {
+  let serverCol = col({ items: [{ id: 'p_00000001', name: 'Neptune 3 Pro', rev: 2, values: { fDraw: 3000 } }] });
+  const { store } = server((url, init) => {
+    if (init.method === 'PUT' && url.endsWith('/p_00000001')) {
+      const body = JSON.parse(init.body);
+      if (body.rev !== serverCol.items[0].rev) return { status: 409, body: { error: 'profile changed', code: 'conflict', profile: serverCol.items[0] } };
+      serverCol = col({ items: [{ ...serverCol.items[0], rev: body.rev + 1, values: body.values }] });
+      return { body: serverCol };
+    }
+    if (url.endsWith('/profiles')) return { body: serverCol };
+    return { body: null };
+  });
+  const state = createState({ store });
+  await state.load();
+  // the first device saved the speed meanwhile
+  serverCol = col({ items: [{ id: 'p_00000001', name: 'Neptune 3 Pro', rev: 3, values: { fDraw: 2000 } }] });
+  const events = [];
+  state.subscribe((e) => events.push(e));
+  await state.patch('profile', { penWidthMm: 0.9 });
+  assert.equal(events.find((e) => e.type === 'save-error').message, 'Профиль изменён на другом устройстве: профили перечитаны, повторите изменение.');
+  assert.equal(state.get('profile').fDraw, 2000);
+  assert.equal(state.get('profile').penWidthMm, 0.5);
+  // the next edit goes on the new revision
+  await state.patch('profile', { penWidthMm: 0.9 });
+  assert.equal(serverCol.items[0].rev, 4);
+  assert.equal(serverCol.items[0].values.penWidthMm, 0.9);
+  assert.equal(state.profiles().items[0].rev, 4);
+});
+
+test('profiles: quick edits go one after another, each on the revision the server returned', async () => {
+  let serverCol = col();
+  const sent = [];
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { store } = server(async (url, init) => {
+    if (init.method === 'PUT') {
+      const body = JSON.parse(init.body);
+      sent.push(body);
+      await gate;
+      if (body.rev !== serverCol.items[0].rev) return { status: 409, body: { error: 'conflict', code: 'conflict' } };
+      serverCol = col({ items: [{ ...serverCol.items[0], rev: body.rev + 1, values: body.values }] });
+      return { body: serverCol };
+    }
+    return { body: serverCol };
+  });
+  const state = createState({ store });
+  await state.load();
+  const ps = [state.patch('profile', { fDraw: 1 })];
+  await new Promise((r) => setTimeout(r, 5)); // the first write is in flight, the next ones are coalesced
+  ps.push(state.patch('profile', { fDraw: 2 }), state.patch('profile', { fDraw: 3 }));
+  release();
+  await Promise.all(ps);
+  assert.deepEqual(sent.map((b) => [b.rev, b.values.fDraw]), [[2, 1], [3, 3]]);
+  assert.equal(state.get('profile').fDraw, 3);
 });

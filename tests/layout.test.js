@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDrawing, bbox, SPACE } from '../src/core/drawing.js';
-import { layout, resolveField, sheetOverflow, sheetWarnings, PAPER_FORMATS } from '../src/core/layout.js';
+import { layout, resolveField, sheetOverflow, sheetWarnings, fitRectFor, PAPER_FORMATS } from '../src/core/layout.js';
+import { buildPlan, sheetCheck, fitRectOf } from '../src/core/pipeline.js';
+import { defaultsOf, SCHEMAS } from '../src/core/profile.js';
+import { DrawingError } from '../src/core/drawing.js';
 import { closeTo } from './helpers/fixtures.js';
 import './helpers/ru.js';
 
@@ -73,4 +76,62 @@ test('A4 on the working profile exceeds the axis limits', () => {
 test('the layout does not accept a drawing in machine coordinates', () => {
   const m = createDrawing({ space: 'machine', layers: [{ id: 'l', name: 'l', lines: [[0, 0, 1, 1]] }] });
   assert.throws(() => layout(m, WORK), /document coordinates/);
+});
+
+// --- print area: the bed edge in nozzle coordinates at X150 cuts the working field (corner X-5, field 180, margin 5 → X0…170)
+const AREA = { x0: -4, y0: 1, x1: 150, y1: 231, bedMeasured: true };
+const settingsWith = ({ bed = [-12, -3, 150, 232], fit = true, job = {} } = {}) => ({
+  profile: { ...defaultsOf(SCHEMAS.profile), ...(bed ? { bedX0: bed[0], bedY0: bed[1], bedX1: bed[2], bedY1: bed[3] } : {}) },
+  calibration: { ...defaultsOf(SCHEMAS.calibration), cornerX: -5, cornerY: 50 },
+  job: { ...defaultsOf(SCHEMAS.job), fitPrintArea: fit, ...job },
+});
+const square = () => doc([[0, 0, 100, 100]]);
+
+test('the field beyond the bed on the right, option on: a square is fitted 150×150 and does not go right of X150', () => {
+  const r = fitRectFor({ w: 180, h: 180 }, 5, { x: -5, y: 50 }, AREA);
+  assert.deepEqual(r, { x0: 5, y0: 5, x1: 155, y1: 175 });
+  const b = bbox(layout(square(), { ...WORK, fitRect: r }));
+  assert.ok(closeTo(b.w, 150) && closeTo(b.h, 150));
+  assert.ok(closeTo(b.x0, 0) && closeTo(b.x1, 150));
+  const plan = buildPlan(square(), settingsWith());
+  assert.ok(closeTo(plan.stats.bbox.x1, 150) && closeTo(plan.stats.bbox.w, 150));
+  assert.equal(plan.outOfArea, null);
+});
+
+test('option off: X0…170 as without the print area, the area check reports the bed edge', () => {
+  const plan = buildPlan(square(), settingsWith({ fit: false }));
+  assert.ok(closeTo(plan.stats.bbox.x0, 0) && closeTo(plan.stats.bbox.x1, 170));
+  assert.ok(closeTo(plan.outOfBed.right, 20));
+  assert.equal(plan.outOfLimits, null);
+});
+
+test('as is with the option: aligned right inside the fit rectangle — the right edge at X150', () => {
+  const d = doc([[0, 0, 100, 100]], { unitMm: 1 });
+  const plan = buildPlan(d, settingsWith({ job: { asIs: true, halign: 'right' } }));
+  assert.ok(closeTo(plan.stats.bbox.x1, 150) && closeTo(plan.stats.bbox.w, 100));
+  const big = buildPlan(doc([[0, 0, 160, 100]], { unitMm: 1 }), settingsWith({ job: { asIs: true } }));
+  assert.ok(big.warnings.includes('рисунок больше поля'));
+});
+
+test('the sheet field entirely outside the print area: no layout, "the sheet field is outside the print area"', () => {
+  const s = settingsWith({ bed: [200, -3, 400, 232] });
+  assert.deepEqual(fitRectOf(s), { empty: true });
+  assert.throws(() => buildPlan(square(), s), (e) => e instanceof DrawingError && e.message === 'поле листа вне области печати');
+});
+
+test('the field inside the print area: no fit rectangle, the layout is unchanged', () => {
+  assert.equal(fitRectOf(settingsWith({ bed: null })), null);
+  assert.equal(fitRectOf(settingsWith({ bed: [-12, -3, 223, 232] })), null);
+  const a = buildPlan(square(), settingsWith({ bed: null })), b = buildPlan(square(), settingsWith({ bed: null, fit: false }));
+  assert.equal(a.gcode, b.gcode);
+});
+
+test('the sheet beyond the bed on the right: 14.0 mm, the format stays chosen; with the option — "fitted"', () => {
+  const area = { x0: -5, y0: 1, x1: 221, y1: 300, bedMeasured: true };
+  assert.deepEqual(sheetWarnings({ w: 240, h: 180 }, { x: -5, y: 50 }, area), ['лист выходит за область печати справа на 14,0 мм']);
+  assert.deepEqual(sheetWarnings({ w: 240, h: 180 }, { x: -5, y: 50 }, area, { fitted: true }),
+    ['лист выходит за область печати справа на 14,0 мм', 'рисунок вписан в область печати']);
+  assert.deepEqual(sheetWarnings({ w: 180, h: 180 }, { x: -5, y: 50 }, area, { fitted: true }), []);
+  // pipeline: the sheet against the print area of the profile
+  assert.match(sheetCheck(settingsWith()).join('\n'), /справа на 25,0 мм\nрисунок вписан/);
 });
