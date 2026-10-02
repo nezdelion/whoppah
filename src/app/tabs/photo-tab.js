@@ -1,22 +1,21 @@
 // "Photo" source: image -> stack of style layers (workers) -> preview -> ctx.emit(drawing).
 // The tab knows nothing about specific styles: only the registry, the parameter description and the runner.
+// The model (image, layers, runs) lives in photo/photo-model.js and outlives the view: mount/unmount only build and remove
+// the DOM (a live language switch remounts the view; the image, layers, parameters and running computations stay).
 import { h, button } from '../ui/dom.js';
 import { createViewport } from '../ui/viewport.js';
 import { exportSvg } from '../../core/svg-export.js';
-import { stats } from '../../core/drawing.js';
-import { downloadText, baseName } from '../download.js';
-import { STYLES, getStyle, groupedStyles, groupLabel, originLabel, defaultsOfParams, sessionFactory } from '../../styles/registry.js';
+import { downloadText } from '../download.js';
+import { STYLES, getStyle, groupedStyles, groupLabel, originLabel, sessionFactory } from '../../styles/registry.js';
 import { createRunner } from '../../styles/runner.js';
 import { loadModels } from '../../styles/plotterfun-models.js';
-import { createLayerStack, normalizeParams, clampSize, SIZE_RANGE, reasonText } from '../photo/layer-stack.js';
+import { SIZE_RANGE, reasonText } from '../photo/layer-stack.js';
+import { createPhotoModel, DEFAULT_STYLE } from '../photo/photo-model.js';
 import { t, hasKey } from '../../i18n/index.js';
 import { decodeImage, rasterize, ImageLoadError, ACCEPT } from '../photo/image-loader.js';
 import { buildParamForm } from '../photo/param-form.js';
 import { estimateSpacing, densityText } from '../photo/density.js';
 
-const PARAM_DEBOUNCE_MS = 180;
-const SAVE_DEBOUNCE_MS = 400;
-const DEFAULT_STYLE = 'own:crosshatch';
 const statusLabel = (s) => (s === 'idle' ? '' : t(`photo.status.${s}`));
 // progress from the worker: its own text is a dictionary key (styles.progress.*), plotterfun texts as is
 const progressText = (p) => (hasKey(p, 'en') ? t(p) : p);
@@ -27,20 +26,31 @@ const fetchText = async (url) => {
   return r.text();
 };
 
-export function createPhotoSource() {
+// the runner is created after reading the model manifest (without it all plotterfun styles are "intermediate")
+const loadRunner = () => loadModels(fetchText, {
+  manifestUrl: new URL('../../styles/plotterfun-completion.json', import.meta.url).href,
+  upstreamUrl: new URL('../../../vendor/plotterfun/UPSTREAM', import.meta.url).href,
+}).then((modelOf) => createRunner({ createSession: sessionFactory(modelOf) }));
+
+/** @param createModel () => photo model (tests); by default the real one with workers */
+export function createPhotoSource({ createModel = () => createPhotoModel({ getStyle, loadRunner, decodeImage, rasterize, isLoadError: (e) => e instanceof ImageLoadError }) } = {}) {
+  let model = null;
   let cleanup = [];
+  // view state that outlives a remount: preview zoom/pan, the canvas size, "show photo"
+  const view = createViewport();
+  let canvasSize = { w: 900, h: 300 }, showPhoto = true;
 
   return {
     id: 'photo',
     get title() { return t('tab.photo'); },
+    /** The model (tests and diagnostics). */
+    get model() { return model; },
 
     mount(el, ctx) {
-      const stack = createLayerStack({ getStyle });
-      const paramCache = new Map(); // styleId -> parameter description (for dynamic — from the worker sliders)
-      const timers = new Map();     // uid -> deferred start timer
-      let decoded = null, imageData = null, workingSize = SIZE_RANGE.default, imageName = '';
-      let printParams = ctx.printParams.get();
-      let runner = null, runnerReady = null, saveTimer = 0, drawQueued = false, disposed = false;
+      if (!model) model = createModel();
+      const m = model, stack = m.stack;
+      m.attach(ctx);
+      let drawQueued = false, alive = true;
 
       // --- DOM
       const $ = {};
@@ -49,18 +59,17 @@ export function createPhotoSource() {
       $.drop = h('div', { class: 'drop', tabindex: 0, role: 'button' }, t('photo.drop'), input);
       $.info = h('div', { class: 'note' });
       $.warn = h('div', { class: 'warn', role: 'alert' });
-      $.size = h('input', { type: 'number', min: SIZE_RANGE.min, max: SIZE_RANGE.max, step: 50, value: workingSize, inputMode: 'numeric' });
+      $.size = h('input', { type: 'number', min: SIZE_RANGE.min, max: SIZE_RANGE.max, step: 50, value: m.workingSize(), inputMode: 'numeric' });
       $.layers = h('div', { class: 'layers' });
       $.addStyle = h('select', { 'aria-label': t('photo.newLayerStyle') }, groupedStyles().map((g) =>
         h('optgroup', { label: groupLabel(g.group) }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === DEFAULT_STYLE }, `${s.name} · ${originLabel(s)}`)))));
-      $.add = button({ label: t('photo.addLayer'), hint: 'photo.addLayer.hint', onclick: () => addLayer($.addStyle.value) });
-      $.canvas = h('canvas', { class: 'preview photo-preview', width: 900, height: 300, 'aria-label': t('photo.previewAria') });
-      const view = createViewport();
+      $.add = button({ label: t('photo.addLayer'), hint: 'photo.addLayer.hint', onclick: () => m.addLayer($.addStyle.value) });
+      $.canvas = h('canvas', { class: 'preview photo-preview', width: canvasSize.w, height: canvasSize.h, 'aria-label': t('photo.previewAria') });
       $.fit = button({ label: t('photo.fit'), hint: 'photo.fit.hint', onclick: () => { view.reset(); $.canvas.style.touchAction = 'pan-y'; requestDraw(); } });
-      $.showPhoto = h('input', { type: 'checkbox', checked: true, onchange: requestDraw });
+      $.showPhoto = h('input', { type: 'checkbox', checked: showPhoto, onchange: () => { showPhoto = $.showPhoto.checked; requestDraw(); } });
       $.stats = h('div', { class: 'stats' });
       $.sendWarn = h('div', { class: 'warn' });
-      $.toPrint = button({ label: t('photo.toPrint'), hint: 'photo.toPrint.hint', class: 'primary', onclick: sendToPrint });
+      $.toPrint = button({ label: t('photo.toPrint'), hint: 'photo.toPrint.hint', class: 'primary', onclick: () => m.sendToPrint((text) => window.confirm(text)) });
       $.exportSvg = button({ label: t('photo.exportSvg'), hint: 'photo.exportSvg.hint', onclick: exportSvgFile });
       $.exportPreset = button({ label: t('photo.exportPreset'), hint: 'photo.exportPreset.hint', onclick: exportPreset });
       $.importPreset = button({ label: t('photo.importPreset'), hint: 'photo.importPreset.hint', onclick: () => presetInput.click() });
@@ -75,89 +84,16 @@ export function createPhotoSource() {
         h('div', { class: 'row' }, $.toPrint, $.exportSvg, $.exportPreset, $.importPreset, presetInput));
       el.append(h('div', { class: 'columns' }, h('div', {}, imageCard, layersCard), h('div', { class: 'work-col sticky' }, previewCard)));
 
-      // --- runner: created after reading the model manifest (without it all plotterfun styles are "intermediate")
-      function getRunner() {
-        if (!runnerReady) {
-          runnerReady = loadModels(fetchText, {
-            manifestUrl: new URL('../../styles/plotterfun-completion.json', import.meta.url).href,
-            upstreamUrl: new URL('../../../vendor/plotterfun/UPSTREAM', import.meta.url).href,
-          }).then((modelOf) => { runner = createRunner({ createSession: sessionFactory(modelOf) }); return runner; });
-        }
-        return runnerReady;
-      }
-
-      async function descsOf(style) {
-        if (Array.isArray(style.params)) return style.params;
-        if (!paramCache.has(style.id)) paramCache.set(style.id, getRunner().then((r) => r.probe(style)).catch((e) => { paramCache.delete(style.id); throw e; }));
-        return paramCache.get(style.id);
-      }
-
-      // --- layer runs
-      function schedule(layer, delay = 0) {
-        clearTimeout(timers.get(layer.uid));
-        timers.set(layer.uid, setTimeout(() => start(layer.uid), delay));
-      }
-
-      async function start(uid) {
-        timers.delete(uid);
-        const layer = stack.find(uid);
-        if (!layer || !layer.visible || !imageData || disposed) return;
-        const style = getStyle(layer.styleId);
-        try {
-          const [descs, r] = await Promise.all([descsOf(style), getRunner()]);
-          if (disposed || stack.find(uid) !== layer || !layer.visible) return;
-          layer.params = normalizeParams(descs, layer.params);
-          r.run(uid, { ...style, params: descs }, { image: imageData, params: layer.params }, (state) => stack.applyResult(uid, state));
-        } catch (e) {
-          stack.applyResult(uid, { status: 'error', message: e.message, lines: [] });
-        }
-      }
-
-      const cancel = (uid) => { clearTimeout(timers.get(uid)); timers.delete(uid); if (runner) runner.cancel(uid); };
-
-      function rerunAll() {
-        for (const l of stack.layers) {
-          if (l.visible) schedule(l, 0); else { cancel(l.uid); stack.reset(l.uid); }
-        }
-      }
-
-      async function addLayer(styleId) {
-        try {
-          const descs = await descsOf(getStyle(styleId));
-          const layer = stack.add(styleId, { params: defaultsOfParams(descs) });
-          schedule(layer, 0);
-        } catch (e) { $.warn.textContent = t('photo.addLayerFailed', { message: e.message }); }
-      }
-
-      // --- image
-      async function loadFile(file) {
-        if (!file) return;
-        let next;
-        try { next = await decodeImage(file); } catch (e) {
-          $.warn.textContent = e instanceof ImageLoadError ? t('photo.err.openImage') : t('common.errorWith', { message: e.message });
-          return; // the previous image and layers stay
-        }
-        if (decoded) decoded.bitmap.close();
-        decoded = next;
-        view.reset();
-        imageName = baseName(file.name, 'photo');
-        $.warn.textContent = '';
-        applyWorkingSize();
-        if (!stack.layers.length) await addLayer(DEFAULT_STYLE); else rerunAll();
-      }
-
-      function applyWorkingSize() {
-        if (!decoded) return;
-        imageData = rasterize(decoded, workingSize);
-        $.info.textContent = t('photo.imageInfo', { name: imageName, w: decoded.width, h: decoded.height, ww: imageData.width, wh: imageData.height });
-        renderLayers();
-        requestDraw();
+      function renderMessages() {
+        $.info.textContent = m.text('info');
+        $.warn.textContent = m.text('warn');
+        $.sendWarn.textContent = m.text('sendWarn');
       }
 
       // --- layers: DOM
       function statusText(l) {
         if (!l.visible) return t('photo.status.hidden');
-        if (l.status === 'idle') return imageData ? t('photo.status.waiting') : t('photo.status.noImage');
+        if (l.status === 'idle') return m.image().imageData ? t('photo.status.waiting') : t('photo.status.noImage');
         const base = statusLabel(l.status);
         if (l.status === 'error') return `${base}: ${l.message}`;
         if (l.status === 'done') return base;
@@ -165,8 +101,8 @@ export function createPhotoSource() {
       }
 
       function densityOf(l) {
-        const style = getStyle(l.styleId);
-        if (!style.spacing || !imageData || !l.visible) return null;
+        const style = getStyle(l.styleId), { imageData } = m.image(), printParams = m.printParams();
+        if (!style.spacing || !imageData || !l.visible || !printParams) return null;
         try {
           const px = style.spacing(l.params, imageData);
           const est = estimateSpacing(px, imageData, printParams);
@@ -194,60 +130,37 @@ export function createPhotoSource() {
       }
 
       function layerView(l, i, total) {
-        const style = getStyle(l.styleId);
         const e = { status: h('div', { class: 'layer-status', role: 'status' }), density: h('div', { class: 'note' }) };
         elements.set(l.uid, e);
-        const styleSelect = h('select', { 'aria-label': t('photo.layerStyle'), onchange: () => changeStyle(l.uid, styleSelect.value) },
+        const styleSelect = h('select', { 'aria-label': t('photo.layerStyle'), onchange: () => m.changeStyle(l.uid, styleSelect.value) },
           groupedStyles().map((g) => h('optgroup', { label: groupLabel(g.group) }, g.styles.map((s) => h('option', { value: s.id, selected: s.id === l.styleId }, `${s.name} · ${originLabel(s)}`)))));
         const inner = h('div');
         const body = h('details', { class: 'layer-body', open: i === total - 1 }, h('summary', {}, t('photo.params')), inner);
-        descsOf(style).then((descs) => {
-          if (disposed || stack.find(l.uid) !== l) return;
-          l.params = normalizeParams(descs, l.params);
-          inner.replaceChildren(buildParamForm(descs, l.params, (key, value) => changeParam(l, descs, key, value)));
+        m.layerDescs(l.uid).then((descs) => {
+          if (!alive || !descs || stack.find(l.uid) !== l) return;
+          inner.replaceChildren(buildParamForm(descs, l.params, (key, value) => m.changeParam(l.uid, descs, key, value)));
           refreshLayerInfo(l.uid);
         }).catch((err) => { inner.textContent = t('photo.paramsFailed', { message: err.message }); });
         return h('div', { class: 'layer', style: `--layer-color: var(--layer-${i % 4})` },
           h('div', { class: 'layer-head' },
-            h('label', { class: 'check', title: t('photo.showLayer') }, h('input', { type: 'checkbox', checked: l.visible, 'aria-label': t('photo.showLayerAria'), onchange: (ev) => setVisible(l, ev.target.checked) })),
+            h('label', { class: 'check', title: t('photo.showLayer') }, h('input', { type: 'checkbox', checked: l.visible, 'aria-label': t('photo.showLayerAria'), onchange: (ev) => m.setVisible(l.uid, ev.target.checked) })),
             h('input', { class: 'layer-name', value: l.name, 'aria-label': t('photo.layerName'), onchange: (ev) => { stack.rename(l.uid, ev.target.value); ev.target.value = l.name; } }),
             button({ label: '↑', hint: 'photo.up.hint', 'aria-label': t('photo.upAria'), disabled: i === 0, onclick: () => stack.move(l.uid, -1) }),
             button({ label: '↓', hint: 'photo.down.hint', 'aria-label': t('photo.downAria'), disabled: i === total - 1, onclick: () => stack.move(l.uid, 1) }),
-            button({ label: '×', hint: 'photo.remove.hint', class: 'danger', 'aria-label': t('photo.removeAria'), onclick: () => removeLayer(l.uid) })),
+            button({ label: '×', hint: 'photo.remove.hint', class: 'danger', 'aria-label': t('photo.removeAria'), onclick: () => m.removeLayer(l.uid) })),
           h('label', {}, t('photo.style'), styleSelect),
           e.status, e.density, body);
-      }
-
-      function setVisible(l, visible) {
-        stack.setVisible(l.uid, visible);
-        if (visible) { if (l.status !== 'done') schedule(l, 0); } else { cancel(l.uid); if (l.status !== 'done') stack.reset(l.uid); }
-      }
-
-      function removeLayer(uid) { cancel(uid); stack.remove(uid); }
-
-      function changeStyle(uid, styleId) {
-        const l = stack.find(uid);
-        cancel(uid);
-        stack.setStyle(uid, styleId);
-        if (l.visible) schedule(l, 0);
-      }
-
-      function changeParam(l, descs, key, value) {
-        stack.setParams(l.uid, { [key]: value });
-        const desc = descs.find((d) => d.key === key);
-        // live parameters go to the running worker, the rest restart the layer (with a delay for slider movement)
-        if (l.visible && desc && desc.live && runner && runner.live(l.uid, l.params)) return;
-        if (l.visible) { clearTimeout(timers.get(l.uid)); schedule(l, PARAM_DEBOUNCE_MS); }
       }
 
       // --- preview
       function requestDraw() {
         if (drawQueued) return;
         drawQueued = true;
-        requestAnimationFrame(() => { drawQueued = false; if (!disposed) draw(); });
+        requestAnimationFrame(() => { drawQueued = false; if (alive) draw(); });
       }
 
       function draw() {
+        const { decoded, imageData } = m.image();
         const css = getComputedStyle(document.documentElement);
         const col = (n) => css.getPropertyValue(n).trim();
         const g = $.canvas.getContext('2d');
@@ -259,7 +172,7 @@ export function createPhotoSource() {
         g.fillStyle = col('--paper'); g.fillRect(0, 0, W, H);
         if (!imageData) { g.fillStyle = col('--muted'); g.font = `${16 * dpr}px system-ui`; g.fillText(t('photo.noPhoto'), 16 * dpr, 30 * dpr); return; }
         view.apply(g);
-        if ($.showPhoto.checked && decoded) { g.globalAlpha = 0.3; g.drawImage(decoded.bitmap, 0, 0, W, H); g.globalAlpha = 1; }
+        if (showPhoto && decoded) { g.globalAlpha = 0.3; g.drawImage(decoded.bitmap, 0, 0, W, H); g.globalAlpha = 1; }
         const k = W / imageData.width;
         g.lineJoin = 'round'; g.lineWidth = (1.4 * dpr) / view.zoom; // constant thickness in screen pixels
         const eps = (0.6 * dpr) / view.zoom;
@@ -290,65 +203,34 @@ export function createPhotoSource() {
       }
 
       // --- output
-      function currentDrawing() { return stack.toDrawing({ name: imageName }); }
-
-      function sendToPrint() {
-        const drawing = currentDrawing();
-        if (!drawing) return;
-        const pending = stack.pending();
-        if (pending.length) {
-          const list = pending.map((p) => t('photo.layer.notFinished', { name: p.name }) + (p.reason ? ` (${p.reason})` : '')).join('\n');
-          if (!window.confirm(t('photo.sendConfirm', { list }))) return;
-          $.sendWarn.textContent = t('photo.sentPartial', { list });
-        } else $.sendWarn.textContent = '';
-        const s = stats(drawing);
-        $.info.textContent = t('photo.sent', { name: imageName, lines: t('svgtab.lines', { count: s.lines }), points: t('svgtab.points', { count: s.points }) });
-        ctx.emit(drawing);
-      }
-
       function exportSvgFile() {
-        const drawing = currentDrawing();
-        if (drawing) downloadText(`${imageName || 'photo'}.svg`, exportSvg(drawing), 'image/svg+xml');
+        const drawing = m.currentDrawing();
+        if (drawing) downloadText(`${m.image().name || 'photo'}.svg`, exportSvg(drawing), 'image/svg+xml');
       }
 
-      // --- presets
       function exportPreset() {
-        downloadText(`${imageName || 'photo'}-layers.json`, JSON.stringify(stack.toPreset(workingSize), null, 2), 'application/json');
-      }
-
-      async function applyPreset(preset) {
-        for (const l of stack.layers) cancel(l.uid);
-        const { workingSize: size, skipped } = stack.loadPreset(preset);
-        workingSize = size; $.size.value = size;
-        if (skipped.length) $.warn.textContent = t('photo.unknownStyles', { list: skipped.join(', ') });
-        if (decoded) applyWorkingSize(); else renderLayers();
-        rerunAll();
-      }
-
-      async function importPresetFile(file) {
-        if (!file) return;
-        try { await applyPreset(JSON.parse(await file.text())); } catch (e) { $.warn.textContent = t('photo.presetFailed', { message: e.message }); }
-      }
-
-      function persist() {
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => ctx.presets.save(stack.toPreset(workingSize)), SAVE_DEBOUNCE_MS);
+        downloadText(`${m.image().name || 'photo'}-layers.json`, JSON.stringify(m.toPreset(), null, 2), 'application/json');
       }
 
       // --- events
       const offStack = stack.subscribe((e) => {
         if (e.type === 'result') { refreshLayerInfo(e.uid); updateActions(); requestDraw(); return; }
-        if (e.type === 'params') { refreshLayerInfo(e.uid); persist(); return; }
-        if (e.type === 'meta') { persist(); return; }
-        renderLayers(); requestDraw(); persist();
+        if (e.type === 'params') { refreshLayerInfo(e.uid); return; }
+        if (e.type === 'meta') return;
+        renderLayers(); requestDraw();
       });
-      const offPrint = ctx.printParams.subscribe((p) => { printParams = p; for (const l of stack.layers) refreshLayerInfo(l.uid); });
+      const offModel = m.subscribe((e) => {
+        if (e.type === 'image') { if (e.fresh) view.reset(); renderMessages(); renderLayers(); requestDraw(); }
+        else if (e.type === 'size') $.size.value = m.workingSize();
+        else if (e.type === 'message') renderMessages();
+        else if (e.type === 'print-params') for (const l of stack.layers) refreshLayerInfo(l.uid);
+      });
       const detachView = view.attach($.canvas, requestDraw);
       const resizeObs = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
         const r = $.canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
         const w = Math.round(r.width * dpr), hh = Math.round(r.height * dpr);
         if (w < 2 || hh < 2 || ($.canvas.width === w && $.canvas.height === hh)) return;
-        $.canvas.width = w; $.canvas.height = hh; requestDraw();
+        $.canvas.width = w; $.canvas.height = hh; canvasSize = { w, h: hh }; requestDraw();
       }) : null;
       if (resizeObs) resizeObs.observe($.canvas);
       const dark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -356,38 +238,25 @@ export function createPhotoSource() {
 
       $.drop.addEventListener('click', () => input.click());
       $.drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
-      input.addEventListener('change', () => { loadFile(input.files[0]).finally(() => { input.value = ''; }); });
-      presetInput.addEventListener('change', () => { importPresetFile(presetInput.files[0]).finally(() => { presetInput.value = ''; }); });
+      input.addEventListener('change', () => { m.loadFile(input.files[0]).finally(() => { input.value = ''; }); });
+      presetInput.addEventListener('change', () => { m.importPresetFile(presetInput.files[0]).finally(() => { presetInput.value = ''; }); });
       $.drop.addEventListener('dragover', (e) => { e.preventDefault(); $.drop.classList.add('over'); });
       $.drop.addEventListener('dragleave', () => $.drop.classList.remove('over'));
-      $.drop.addEventListener('drop', (e) => { e.preventDefault(); $.drop.classList.remove('over'); loadFile(e.dataTransfer.files[0]); });
-      $.size.addEventListener('change', () => {
-        workingSize = clampSize($.size.value);
-        $.size.value = workingSize;
-        persist();
-        if (decoded) { applyWorkingSize(); rerunAll(); }
-      });
+      $.drop.addEventListener('drop', (e) => { e.preventDefault(); $.drop.classList.remove('over'); m.loadFile(e.dataTransfer.files[0]); });
+      $.size.addEventListener('change', () => { $.size.value = m.setWorkingSize($.size.value); });
 
-      cleanup = [offStack, offPrint, detachView, () => { if (resizeObs) resizeObs.disconnect(); }, () => dark.removeEventListener('change', requestDraw), () => {
-        disposed = true;
-        clearTimeout(saveTimer);
-        for (const t of timers.values()) clearTimeout(t);
-        if (runner) runner.dispose();
-      }];
+      cleanup = [offStack, offModel, detachView, () => { if (resizeObs) resizeObs.disconnect(); }, () => dark.removeEventListener('change', requestDraw), () => { alive = false; }];
 
-      // restoring the saved stack (without an image; computation starts after the photo is loaded)
+      renderMessages();
       renderLayers();
       draw();
-      ctx.presets.load().then((saved) => {
-        if (!saved || disposed) return;
-        try {
-          const { workingSize: size } = stack.loadPreset(saved);
-          workingSize = size; $.size.value = size;
-        } catch (e) { /* a corrupted preset is ignored */ }
-      });
     },
 
+    /** Removes the view: subscriptions and DOM listeners; the model (image, layers, running computations) stays. */
     unmount() { for (const fn of cleanup) fn(); cleanup = []; },
+
+    /** Full teardown: the view and the model (workers, timers). */
+    dispose() { this.unmount(); if (model) model.dispose(); model = null; },
   };
 }
 

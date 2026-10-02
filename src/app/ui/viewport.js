@@ -89,7 +89,7 @@ export function createViewport({ minZoom = 1, maxZoom = 20 } = {}) {
       },
     };
     for (const [n, f] of Object.entries(on)) canvas.addEventListener(n, f, n === 'wheel' ? { passive: false } : undefined);
-    canvas.style.touchAction = 'pan-y';
+    canvas.style.touchAction = v.zoom > 1 ? 'none' : 'pan-y'; // a view kept across a remount may already be zoomed
     if (!canvas.hasAttribute('tabindex')) canvas.setAttribute('tabindex', '0');
     return () => { for (const [n, f] of Object.entries(on)) canvas.removeEventListener(n, f); };
   };

@@ -13,16 +13,19 @@ import { limitsCheck, partialCheck } from './print/checks.js';
 import { createOctoPrintPosition } from '../transport/octoprint-position.js';
 import { createPrinterFeed, createFeedPositionSource } from '../transport/octoprint-feed.js';
 import { createFirmwareMemo } from './ui/feed-firmware.js';
+import { createLimitsMemo } from './ui/feed-limits.js';
 import * as marlinReplies from '../core/marlin-replies.js';
 import { setupCalibration } from './calibration/setup.js';
 import { createSvgSource } from './tabs/svg-tab.js';
 import { createPhotoSource } from './tabs/photo-tab.js';
 import { createPrintTab } from './tabs/print-tab.js';
-import { h, button } from './ui/dom.js';
+import { h } from './ui/dom.js';
+import { createTabHost } from './ui/tab-host.js';
+import { createLanguageSwitch } from './ui/lang-switch.js';
 import { createConnectionMonitor, isValidBaseUrl } from './connection-monitor.js';
 import { createConnectionIndicator } from './ui/connection-indicator.js';
 import { t } from '../i18n/index.js';
-import { applyLanguage, saveLanguageChoice } from './lang.js';
+import { applyLanguage, createLanguageControl } from './lang.js';
 
 const notice = (() => {
   const el = h('div', { class: 'notice', hidden: true, role: 'status' });
@@ -31,6 +34,9 @@ const notice = (() => {
     show(...content) { el.replaceChildren(...content, ' ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); el.hidden = true; } }, t('notice.hide'))); el.hidden = false; },
   };
 })();
+
+// the right side of the header (index.html); an older page without it — the header itself
+const headerTools = () => document.getElementById('header-tools') || document.querySelector('header');
 
 const pageVisibility = () => ({
   visible: () => document.visibilityState !== 'hidden',
@@ -52,7 +58,7 @@ function setupPlugin(env) {
     if (section === 'calibration' && !env.canEditCalibration) return t('needs.right', { what: t('perm.control') });
     return null;
   };
-  document.querySelector('header').append(h('a', { class: 'back-link', href: env.octoprintUrl }, '← OctoPrint'));
+  headerTools().append(h('a', { class: 'back-link', href: env.octoprintUrl }, '← OctoPrint'));
   const positionSource = createOctoPrintPosition({ apiUrl: `${env.baseUrl}/plugin/plotter/api`, auth });
   return { store, transport, needs, positionSource, ui: { hideConnection: true, needs } };
 }
@@ -61,7 +67,6 @@ async function start() {
   const env = await loadEnv();
   // the language is chosen before any UI is built: user choice → OctoPrint language (plugin) → browser language → en
   const { choice } = applyLanguage({ env });
-  const language = { get: () => choice, set: (v) => { saveLanguageChoice(v); location.reload(); } };
   document.body.prepend(notice.el);
   let store, transport, plugin = null;
   if (env.mode === 'plugin') {
@@ -126,7 +131,6 @@ async function start() {
     transport = { ...rawTransport, command: (lines) => feed.command(lines) };
     state.subscribe((e) => { if (e.type === 'settings' && (e.section === 'connection' || e.section === '*')) feed.configChanged(); });
   }
-  document.querySelector('header h1').after(createConnectionIndicator(connection).element);
   // Capture and jog panel: plugin — the plugin source (epochs and write on the server); standalone — the feed source, the app stores the calibration.
   const positionSource = plugin ? plugin.positionSource
     : createFeedPositionSource(feed, { calibration: { get: () => state.get('calibration'), patch: (changes) => state.patch('calibration', changes) } });
@@ -142,40 +146,57 @@ async function start() {
     beforePlan: calibration ? [calibration.beforePlan] : [],
   });
 
-  // Firmware settings (M503) — standalone with a feed only; in plugin mode there is no feed and no read button (out of scope)
+  // Firmware settings (M503) and the M211 limits — standalone with a feed only (memory, outlives a rebuilt UI);
+  // in plugin mode there is no feed and no read buttons (out of scope)
   const firmware = feed ? createFirmwareMemo(feed) : null;
-  const tabs = [
-    ...[createSvgSource(), createPhotoSource()].map((source) => ({ id: source.id, title: source.title, source })),
-    { id: 'print', title: t('tab.print'), tab: createPrintTab({ state, store, service, transport, connection, calibrator, ui: { ...(plugin ? plugin.ui : { feed, firmware }), language } }) },
-  ];
+  const limits = feed ? createLimitsMemo(feed) : null;
 
-  const nav = document.getElementById('tabs');
-  const panels = document.getElementById('panels');
-  const buttons = new Map(), views = new Map();
-  const show = (id) => {
-    for (const [tid, btn] of buttons) {
-      const active = tid === id;
-      btn.setAttribute('aria-selected', String(active));
-      views.get(tid).hidden = !active;
-    }
+  // Tabs and their models are created once; on a language switch only their views are rebuilt (tab-host.js).
+  // Sources keep one context: their models stay bound to it across remounts.
+  const sourceTab = (source) => {
+    const ctx = createSourceContext({ state, store, sourceId: source.id });
+    return { id: source.id, get title() { return source.title; }, mount: (view) => source.mount(view, ctx), unmount: () => source.unmount() };
   };
+  const printTab = createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : { feed, firmware, limits } });
+  const tabs = createTabHost({
+    nav: document.getElementById('tabs'),
+    panels: document.getElementById('panels'),
+    tabs: [
+      sourceTab(createSvgSource()), sourceTab(createPhotoSource()),
+      { id: 'print', get title() { return printTab.title; }, mount: (view) => printTab.mount(view), unmount: () => printTab.unmount() },
+    ],
+  });
 
-  for (const tab of tabs) {
-    const view = h('div', { class: 'tab-panel', role: 'tabpanel', hidden: true });
-    const btn = button({ label: tab.title, hint: 'tab.hint', role: 'tab', onclick: () => show(tab.id) });
-    nav.append(btn);
-    panels.append(view);
-    buttons.set(tab.id, btn.button);
-    views.set(tab.id, view);
-    if (tab.source) tab.source.mount(view, createSourceContext({ state, store, sourceId: tab.source.id }));
-    else tab.tab.mount(view);
-  }
-  show(tabs[0].id);
+  // Header: the connection indicator next to the title, the language switch (all tabs, both modes).
+  let header = { destroy() {} };
+  const mountHeader = () => {
+    const indicator = createConnectionIndicator(connection);
+    const lang = createLanguageSwitch(language);
+    document.querySelector('header h1').after(indicator.element);
+    headerTools().prepend(lang.element);
+    header = { select: lang.select, destroy() { indicator.destroy(); indicator.element.remove(); lang.element.remove(); } };
+  };
+  // Live language switch: the static markup is already translated, here the views are rebuilt in place. Services (state,
+  // transport, feed, monitors, calibration) and the tab models stay: the drawing, loaded files, running computations,
+  // the active tab and the preview zoom survive.
+  const language = createLanguageControl({
+    env, choice,
+    rebuild: () => {
+      const y = window.scrollY;
+      header.destroy();
+      mountHeader();
+      tabs.rebuild();
+      window.scrollTo(0, y);
+      if (header.select) header.select.focus();
+    },
+  });
+  mountHeader();
+  tabs.mount();
   connection.start();
   if (feed) feed.start();
 
   // after loading a drawing, show the result immediately
-  state.subscribe((e) => { if (e.type === 'drawing') show('print'); });
+  state.subscribe((e) => { if (e.type === 'drawing') tabs.show('print'); });
 }
 
 start().catch((e) => {

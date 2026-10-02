@@ -16,8 +16,6 @@ const connectionSchema = () => [
   { key: 'key', label: t('settings.connection.key'), type: 'password', group: 'OctoPrint' },
 ];
 
-const LANG_CHOICES = [['auto', () => t('lang.auto')], ['en', () => 'English'], ['ru', () => 'Русский']];
-
 export function importMessage(applied, skipped) {
   const names = (keys) => keys.map((k) => t(SECTION_LABELS[k])).join(', ');
   let m = t('settings.imported', { names: names(applied) || t('settings.importedNothing') });
@@ -38,17 +36,18 @@ const CALIBRATION_FORM = () => SCHEMAS.calibration.filter((f) => f.key !== 'corn
  * ui.hideConnection — hide the address and key (plugin mode);
  * ui.connectionMonitor — the connection monitor: in the "Connection" section an indicator is shown;
  * ui.feed — the printer connection feed (standalone): its state is shown next to the indicator;
- * ui.language — { get(): 'auto'|'en'|'ru', set(value) }: the language switch (set saves the choice and reloads the page);
  * ui.needs(section) — the "permission required …" text for a section without write permission, or null (the section is then read-only);
  * ui.calibrator — capture, jog ("Go to"), the Home guard (null — no capture and "Go to" buttons);
  * ui.cornerOffset() — the pen offset from the sheet corner for "Use current position" of the corner;
  * ui.configured() — the printer connection is configured.
+ * @returns {{ destroy() }} removes the subscriptions (state, calibration, indicators): the panel can be built again (language switch)
  */
 export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
   const needs = ui.needs || (() => null);
   const cal = ui.calibrator || null;
   const forms = {};
   const refreshers = [];
+  const off = [];
 
   function section(id, title, schema, extra = {}) {
     const form = renderForm({ schema, values: state.get(id), onChange: (changes) => state.patch(id, changes) });
@@ -107,6 +106,8 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
     for (const p of [ll, ur]) p.setEnabled({ edit: canProfile, capture: read && canProfile, move });
   }
 
+  function indicator(made) { off.push(made.destroy); return made.element; }
+
   // --- "Print" area
   const printArea = h('div', { class: 'settings-area' }, h('h2', {}, t('settings.area.print')),
     section('job', t('settings.section.job'), SCHEMAS.job),
@@ -122,12 +123,12 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
     section('profile', t('settings.section.profile'), SCHEMAS.profile, { before: bedBlock }),
     ui.hideConnection ? null : section('connection', t('settings.section.connection'), connectionSchema(), {
       before: h('div', {},
-        ui.connectionMonitor ? createConnectionIndicator(ui.connectionMonitor, { text: true }).element : null,
-        ui.feed ? createFeedIndicator(ui.feed, {
+        ui.connectionMonitor ? indicator(createConnectionIndicator(ui.connectionMonitor, { text: true })) : null,
+        ui.feed ? indicator(createFeedIndicator(ui.feed, {
           getProfile: () => state.get('profile'), getCalibration: () => state.get('calibration'),
-          firmware: ui.firmware, patchProfile: (changes) => state.patch('profile', changes), confirm: (m) => window.confirm(m),
+          firmware: ui.firmware, limits: ui.limits, patchProfile: (changes) => state.patch('profile', changes), confirm: (m) => window.confirm(m),
           onProfile: (fn) => state.subscribe((e) => { if (e.type === 'settings') fn(); }),
-        }).element : null),
+        })) : null),
     }));
   host.append(printArea, printerArea);
 
@@ -137,11 +138,11 @@ export function mountSettingsPanel(host, { state, store, notify, ui = {} }) {
     syncPoints();
   };
   refresh();
-  state.subscribe((e) => { if (e.type === 'settings') refresh(); });
-  if (cal) { cal.subscribeLink(syncPoints); cal.monitor.subscribe(syncPoints); }
+  off.push(state.subscribe((e) => { if (e.type === 'settings') refresh(); }));
+  if (cal) off.push(cal.subscribeLink(syncPoints), cal.monitor.subscribe(syncPoints));
 
   host.append(mountTransfer({ state, store, notify, needs }));
-  if (ui.language) host.append(mountLanguage(ui.language));
+  return { destroy() { for (const fn of off.splice(0)) if (typeof fn === 'function') fn(); } };
 }
 
 /** Choosing the active machine profile and the operations on profiles; read-only without the permission. */
@@ -184,15 +185,6 @@ function mountProfiles({ state, notify, need, refreshers }) {
     h('label', {}, t('profiles.active'), select),
     h('div', { class: 'row' }, add, dup, rename, remove),
     message);
-}
-
-function mountLanguage(language) {
-  const select = h('select', { onchange: () => language.set(select.value) },
-    LANG_CHOICES.map(([v, name]) => h('option', { value: v, selected: v === language.get() }, name())));
-  return h('section', { class: 'settings-section' },
-    h('h3', {}, t('lang.title')),
-    h('label', {}, t('lang.label'), select),
-    h('div', { class: 'note' }, t('lang.note')));
 }
 
 function mountTransfer({ state, store, notify, needs }) {

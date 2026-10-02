@@ -16,13 +16,24 @@ export class FakeElement {
     this.type = '';
     this.value = '';
     this.checked = false;
+    this.dataset = {};
+    this.style = { setProperty() {} };
+    const classes = new Set();
+    this.classList = { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) };
   }
 
   append(...nodes) { for (const n of nodes) this.children.push(typeof n === 'string' || typeof n === 'number' ? new FakeText(n) : n); }
   replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
   setAttribute(k, v) { this.attributes.set(k, String(v)); }
   getAttribute(k) { return this.attributes.has(k) ? this.attributes.get(k) : null; }
+  hasAttribute(k) { return this.attributes.has(k); }
   addEventListener(type, fn) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(fn); }
+  removeEventListener(type, fn) { this.listeners.set(type, (this.listeners.get(type) || []).filter((f) => f !== fn)); }
+  /** The number of listeners of all types (a remounted view must not leave the old ones). */
+  listenerCount() { let n = 0; for (const fns of this.listeners.values()) n += fns.length; return n; }
+  focus() {}
+  /** Canvas: a 2D context that accepts every call. */
+  getContext() { return new Proxy({}, { get: (o, k) => (k in o ? o[k] : () => {}), set: (o, k, v) => { o[k] = v; return true; } }); }
 
   get textContent() { return this.children.map((c) => c.textContent).join(''); }
   set textContent(v) { this.children = v === '' ? [] : [new FakeText(v)]; }

@@ -30,12 +30,12 @@ Languages: English (`en`, fallback) and Russian (`ru`). Dictionaries are flat mo
 
 Which language to enable (`src/i18n/detect.js`, `src/app/lang.js`), in descending priority:
 
-1. an explicit choice in settings ("Language": Auto / English / Russian), stored in `localStorage` (`neptune-plotter.lang`);
+1. an explicit choice in the language switch in the page header (Auto / English / Русский, on every tab, standalone and plugin), stored in `localStorage` (`neptune-plotter.lang`);
 2. plugin: the interface language of the current OctoPrint user — `language` in the dynamic `env.json` (user setting `interface.language`, otherwise the global `appearance.defaultLanguage`; "_default" means "not chosen");
 3. `navigator.languages`: the first supported one (`ru*` → Russian, `en*` → English);
 4. otherwise English (including for an unsupported OctoPrint language, e.g. `de`, in which case the browser language is checked).
 
-The language is chosen once at startup, before the UI is built; changing it in settings saves the choice and **reloads the page** (simpler and more reliable than rebuilding live tabs). Texts that appear in schemas, constants and the registry are computed on access (getters), so they do not get "frozen" in the language at module load. The plugin server (Python) texts stay English: the app shows them only as error details.
+The language is chosen at startup, before the UI is built. Switching it in the header works **live, without a page reload** (`createLanguageControl` in `src/app/lang.js`): the choice is saved, the language is enabled, the static markup is translated (`translateStatic`), and the views are rebuilt in place (`src/app/ui/tab-host.js` unmounts and mounts every tab again; the header indicator and switch are recreated). Services are not recreated — state (drawing, settings, profiles), transport, the printer feed, the connection and calibration monitors, the firmware/limits memory — and neither are the tab models: the SVG tab keeps the loaded file, the Photo tab keeps its model in `src/app/photo/photo-model.js` (image, layers, parameters, running worker computations, which finish into the new view), the Print tab keeps its log, file name, "travel" and jog step; the active tab and the preview zoom stay too. Messages already shown are recomputed in the new language; texts produced earlier by core or OctoPrint (import warnings, the job log, the connection detail) stay in the old language until they are produced again. Texts that appear in schemas, constants and the registry are computed on access (getters), so they do not get "frozen" in the language at module load. The plugin server (Python) texts stay English: the app shows them only as error details.
 
 **New string**: add the key to both dictionaries (in `en.js` and `ru.js`, same parameters), in code — `t('key', { param })`. Tests that check Russian texts import `tests/helpers/ru.js` (pins `ru`).
 
@@ -134,7 +134,7 @@ Golden G-code for parity with the old implementation: `tests/fixtures/*.gcode`; 
 
 ## How to add a drawing source
 
-Create `src/app/tabs/<name>-tab.js`, export a factory of the object `{ id, title, mount(el, ctx), unmount() }` and add it to the tab list in `src/app/main.js`. A source receives only `ctx`:
+Create `src/app/tabs/<name>-tab.js`, export a factory of the object `{ id, title, mount(el, ctx), unmount(), dispose?() }` and add it to the tab list in `src/app/main.js`. `mount` may be called again after `unmount` with the same `ctx` (a language switch rebuilds the views): keep the model (loaded data, results, running work) in the factory, not in the view; `unmount` removes only the view's subscriptions and listeners, `dispose` (optional) tears down the model too. A source receives only `ctx`:
 
 - `ctx.emit(drawing)` — emit a drawing (`createDrawing` from `core/drawing.js`, "document" coordinates);
 - `ctx.presets.load()/save(obj)` — its own storage area;

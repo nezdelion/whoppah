@@ -84,7 +84,12 @@ dialog { background: var(--panel); color: var(--text); border: 1px solid var(--l
 dialog::backdrop { background: rgba(0, 0, 0, .4); }
 .notice { padding: 8px 16px; background: var(--warn-bg); color: var(--warn); }
 .notice[hidden] { display: none; }
-header .back-link { margin-left: auto; color: var(--accent); }
+header .back-link { color: var(--accent); }
+/* the right side of the header: the language switch (all tabs) and, in the plugin, the link back to OctoPrint */
+.header-tools { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; max-width: 100%; }
+.lang-switch { justify-content: flex-end; }
+.lang-switch .lang-select { width: auto; max-width: 100%; padding: 2px 4px; font-size: 13px; }
+.lang-switch .hint-text { text-align: left; }
 fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7; }
 
 /* "Photo" tab */

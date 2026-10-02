@@ -32,14 +32,14 @@ export function firmwareSummary(fw) {
  * @param getProfile  () => machine profile (limits limX0…limY1, feeds, accelerations)
  * @param getCalibration () => calibration (touch Z)
  * @param firmware    { get(), read(), subscribe(fn) } — firmware settings memory (feed-firmware.js); without it there is no button
+ * @param limits      the M211 limits memory (feed-limits.js); passed from outside so that a read result outlives a rebuilt indicator
  * @param patchProfile (changes) => apply values to the profile; confirm (text) => boolean
  * @param onProfile   (fn) => unsubscribe — the profile changed
  * @returns { element, destroy }
  */
 export function createFeedIndicator(feed, {
-  getProfile, getCalibration = () => null, onProfile, firmware = null, patchProfile = () => {}, confirm = () => false,
+  getProfile, getCalibration = () => null, onProfile, firmware = null, limits: memo = createLimitsMemo(feed), patchProfile = () => {}, confirm = () => false,
 }) {
-  const memo = createLimitsMemo(feed);
   let message = '', busy = false;
   const dot = h('span', { class: 'conn-dot', 'aria-hidden': 'true' });
   const label = h('span', { class: 'conn-label' });

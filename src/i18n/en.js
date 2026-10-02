@@ -20,10 +20,9 @@ export default {
   'conn.sessionRejected': 'OctoPrint session rejected ({status}): sign in again',
 
   // Language
-  'lang.title': 'Language',
   'lang.label': 'Interface language',
-  'lang.auto': 'Auto',
-  'lang.note': 'Auto: the OctoPrint language (plugin) or the browser language. The page reloads after you choose.',
+  'lang.auto': 'Language: auto',
+  'lang.hint': 'Interface language. Auto: the OctoPrint language (plugin) or the browser language. Switches at once, your drawing and settings stay',
 
   // Settings panel
   'settings.connection.url': 'Address',

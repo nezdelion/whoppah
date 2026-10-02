@@ -35,36 +35,43 @@ const readOffset = () => {
 export function createPrintTab({ state, store, service, transport, connection, ui = {}, calibrator = null }) {
   let timer = 0, offCycle = () => {}, unsubscribe = () => {}, plan = null, planError = '';
   let lastJobState = '', darkQuery = null, redraw = null, stopMonitor = () => {}, stopLink = () => {}, stopFirmware = () => {};
+  let settingsPanel = null, detachView = () => {};
+  // The current view's elements. Functions of an earlier view (an async action finishing after a remount) reach the new one.
+  let $ = {};
+  // View state that outlives a remount (live language switch): the log, the file name, "travel", the jog step, the preview zoom.
+  const view = createViewport();
+  let logText = '', nameState = { value: '', touched: '' }, showTravel = true, jogStep = 1, capBusy = false;
 
   return {
     id: 'print',
     get title() { return t('tab.print'); },
 
     mount(el) {
-      const $ = {};
+      $ = {};
 
       // --- left column: settings
       const settingsHost = h('div', { class: 'settings' });
-      mountSettingsPanel(settingsHost, {
+      settingsPanel = mountSettingsPanel(settingsHost, {
         state, store, notify: (m) => log(m),
         ui: { ...ui, connectionMonitor: connection, calibrator, cornerOffset: readOffset, configured: () => transport.configured() },
       });
 
       // --- right column
       $.canvas = h('canvas', { class: 'preview', width: 900, height: 900 });
-      $.travel = h('input', { type: 'checkbox', checked: true, onchange: draw });
+      $.travel = h('input', { type: 'checkbox', checked: showTravel, onchange: () => { showTravel = $.travel.checked; draw(); } });
       $.stats = h('div', { class: 'stats' });
       $.calibration = h('div', { class: 'note' });
       $.bed = h('div', { class: 'note', role: 'status' });
       $.partial = h('div', { class: 'warn' });
       $.warn = h('div', { class: 'warn' });
-      $.name = h('input', { placeholder: 'plot.gcode' });
+      $.name = h('input', { placeholder: 'plot.gcode', value: nameState.value });
+      $.name.dataset.touched = nameState.touched;
       $.job = h('div', { class: 'job' }, t('print.jobNone'));
       $.progress = h('progress', { max: 100, value: 0 });
       $.log = h('div', { class: 'log' });
+      $.log.textContent = logText;
 
-      const view = createViewport();
-      view.attach($.canvas, () => draw());
+      detachView = view.attach($.canvas, () => draw());
       const previewCard = h('div', { class: 'card' },
         $.canvas,
         h('div', { class: 'row spread' }, h('label', { class: 'check' }, $.travel, t('print.travel'))),
@@ -105,7 +112,8 @@ export function createPrintTab({ state, store, service, transport, connection, u
 
       // --- behavior
       const log = (msg) => {
-        $.log.textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`;
+        logText += `${new Date().toLocaleTimeString()}  ${msg}\n`;
+        $.log.textContent = logText;
         $.log.scrollTop = $.log.scrollHeight;
       };
 
@@ -139,7 +147,8 @@ export function createPrintTab({ state, store, service, transport, connection, u
             }
           },
         });
-        $.step = h('select', { 'aria-label': t('print.stepLabel') }, JOG_STEPS.map((v) => h('option', { value: v, selected: v === 1 }, t('print.stepOption', { v }))));
+        $.step = h('select', { 'aria-label': t('print.stepLabel'), onchange: () => { jogStep = Number($.step.value); } },
+          JOG_STEPS.map((v) => h('option', { value: v, selected: v === jogStep }, t('print.stepOption', { v }))));
         const jogBtn = (axis, dir) => {
           const text = `${axis.toUpperCase()}${dir > 0 ? '+' : '−'}`;
           return ($[`jog${axis}${dir}`] = button({ label: text, hint: 'print.jog.hint', onclick: act(text, () => calibrator.jog.move(axis, dir, Number($.step.value))) }));
@@ -167,7 +176,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
       }
 
       const JOG_KEYS = calibrator && calibrator.jog ? ['x', 'y', 'z'].flatMap((a) => [`jog${a}-1`, `jog${a}1`]) : [];
-      let capBusy = false; // a capture or a jog step is in progress: all buttons are disabled
+      // capBusy: a capture or a jog step is in progress — all buttons are disabled (kept across a remount)
       function syncCapture() {
         if (!calibrator) return;
         const base = !transport.configured() || !!(ui.needs && ui.needs('calibration'));
@@ -249,12 +258,12 @@ export function createPrintTab({ state, store, service, transport, connection, u
         for (const k of ['frame', 'upload', 'print']) $[k].disabled = !plan || !online;
         for (const k of ['test', 'pause', 'cancel', ...MANUAL_BUTTONS.map((id) => 'm-' + id)]) $[k].disabled = !online;
         if (!online) $.job.textContent = t('print.notConfigured');
-        if (!$.name.dataset.touched) $.name.value = drawing ? `${baseName(state.sourceName())}.gcode` : '';
+        if (!$.name.dataset.touched) { $.name.value = drawing ? `${baseName(state.sourceName())}.gcode` : ''; nameState = { value: $.name.value, touched: '' }; }
         syncCapture();
         draw();
       }
 
-      $.name.addEventListener('input', () => { $.name.dataset.touched = '1'; });
+      $.name.addEventListener('input', () => { $.name.dataset.touched = '1'; nameState = { value: $.name.value, touched: '1' }; });
 
       let polling = false;
       // after the connection test: if OctoPrint responds, read the job, otherwise show the reason
@@ -283,7 +292,7 @@ export function createPrintTab({ state, store, service, transport, connection, u
       stopLink = calibrator ? calibrator.subscribeLink(syncCapture) : () => {};
       unsubscribe = state.subscribe((e) => {
         if (e.type === 'settings' && e.section === 'connection') { render(); return; }
-        if (e.type === 'drawing') $.name.dataset.touched = '';
+        if (e.type === 'drawing') { $.name.dataset.touched = ''; nameState = { ...nameState, touched: '' }; }
         clearTimeout(timer);
         timer = setTimeout(render, 120);
       });
@@ -296,7 +305,12 @@ export function createPrintTab({ state, store, service, transport, connection, u
       if (['ok', 'printer-off'].includes(connection.status().status)) poll();
     },
 
+    /** Removes the view (subscriptions, timers, listeners); the log, the file name and the preview zoom stay for the next mount. */
     unmount() {
+      if (settingsPanel) settingsPanel.destroy();
+      settingsPanel = null;
+      detachView();
+      detachView = () => {};
       unsubscribe();
       stopFirmware();
       stopMonitor();

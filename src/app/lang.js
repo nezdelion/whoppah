@@ -1,7 +1,8 @@
 // Interface language: the user's choice in browser storage, the OctoPrint language (plugin env.json), the browser language.
 // The choice logic is the pure function detectLanguage (i18n/detect.js); here only reading the sources and applying to the page.
-// Changing the language in settings saves the choice and reloads the page: the whole UI is then built anew in the new language.
-import { setLocale, t } from '../i18n/index.js';
+// Changing the language (the header switch) saves the choice and rebuilds the UI in place, without a page reload:
+// the drawing, loaded files, settings and running computations stay (createLanguageControl).
+import { setLocale, getLocale, t } from '../i18n/index.js';
 import { detectLanguage } from '../i18n/detect.js';
 
 export const LANG_KEY = 'neptune-plotter.lang';
@@ -38,8 +39,34 @@ export function translateStatic(root = globalThis.document) {
  */
 export function applyLanguage({ env = {}, storage = storageOf(), nav = globalThis.navigator, root = globalThis.document } = {}) {
   const choice = readLanguageChoice(storage);
+  return { locale: enable(choice, { env, nav, root }), choice };
+}
+
+function enable(choice, { env, nav, root }) {
   const browser = nav ? (nav.languages && nav.languages.length ? [...nav.languages] : [nav.language]) : [];
   const locale = setLocale(detectLanguage({ stored: choice, server: env.language, browser }));
   translateStatic(root);
-  return { locale, choice };
+  return locale;
+}
+
+/**
+ * The live language switch: { get(), set(choice) }. set saves the choice, enables the language, translates the static markup
+ * and, if the language changed, calls rebuild() — the views are built anew in place, no page reload.
+ * The choice is also kept in memory: with unavailable storage the switch still works (until the page is reloaded).
+ * @param choice  the choice at startup (applyLanguage result)
+ * @param rebuild () => void — rebuilds the UI views
+ */
+export function createLanguageControl({ env = {}, storage = storageOf(), nav = globalThis.navigator, root = globalThis.document, choice = readLanguageChoice(storage), rebuild = () => {} } = {}) {
+  let current = choice;
+  return {
+    get: () => current,
+    set(next) {
+      current = next === 'en' || next === 'ru' ? next : 'auto';
+      saveLanguageChoice(current, storage);
+      const before = getLocale();
+      const locale = enable(current, { env, nav, root });
+      if (locale !== before) rebuild();
+      return locale;
+    },
+  };
 }
