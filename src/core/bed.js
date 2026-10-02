@@ -92,11 +92,14 @@ export function applyBedPoint(p, which, point) {
 /** Bed not measured: all four corner fields cleared. */
 export const clearedBed = () => ({ bedX0: null, bedY0: null, bedX1: null, bedY1: null, bedUrNominal: false });
 
-/** Hints when the measured size differs from the nominal one by more than tol mm; [] for a nominal upper right corner. */
+/**
+ * Hints when the measured bed is larger than the nominal one by more than tol mm (the pen may leave the bed);
+ * a smaller bed is just a cautious area and gives no hint. [] for a nominal upper right corner.
+ */
 export function bedHint(bed, nominal, tol = BED_HINT_MM, { urNominal = false } = {}) {
   if (!bed || urNominal) return [];
   const out = [];
-  const dw = Math.abs((bed.x1 - bed.x0) - nominal.w), dh = Math.abs((bed.y1 - bed.y0) - nominal.h);
+  const dw = (bed.x1 - bed.x0) - nominal.w, dh = (bed.y1 - bed.y0) - nominal.h;
   if (dw > tol + 1e-9) out.push(t('bed.hint.width', { mm: fmtMm(dw) }));
   if (dh > tol + 1e-9) out.push(t('bed.hint.height', { mm: fmtMm(dh) }));
   return out;

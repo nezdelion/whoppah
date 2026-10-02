@@ -12,3 +12,4 @@ octoprint-plugin/octoprint_plotter/static/app/
 /openspec
 /.claude/skills
 /.claude/commands
+/.claude/worktrees/

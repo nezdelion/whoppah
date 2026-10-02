@@ -36,12 +36,13 @@ test('rectOverflow per side', () => {
   assert.deepEqual(rectOverflow({ x0: 10, y0: 10, x1: 50, y1: 50 }, area), { left: 0, right: 0, bottom: 0, top: 0 });
 });
 
-test('bedHint: 8 mm off the nominal — a hint, 4 mm — none; a nominal corner — none', () => {
+test('bedHint: only a bed larger than the nominal one by more than tol gives a hint; a smaller one is a cautious area', () => {
   const nominal = { w: 235, h: 235 };
-  assert.deepEqual(bedHint({ x0: -12, y0: -3, x1: 215, y1: 230 }, nominal, 5), ['ширина стола отличается от номинальной на 8,0 мм: проверьте точку']);
-  assert.deepEqual(bedHint({ x0: -12, y0: -3, x1: 219, y1: 230 }, nominal, 5), []);
-  assert.deepEqual(bedHint({ x0: 0, y0: 0, x1: 235, y1: 225 }, nominal, 5), ['глубина стола отличается от номинальной на 10,0 мм: проверьте точку']);
-  assert.deepEqual(bedHint({ x0: -12, y0: -3, x1: 215, y1: 230 }, nominal, 5, { urNominal: true }), []);
+  assert.deepEqual(bedHint({ x0: -12, y0: -3, x1: 231, y1: 230 }, nominal, 5), ['стол шире номинального на 8,0 мм: перо может выйти за стол, проверьте точку']);
+  assert.deepEqual(bedHint({ x0: -12, y0: -3, x1: 227, y1: 230 }, nominal, 5), []);
+  assert.deepEqual(bedHint({ x0: 0, y0: 0, x1: 235, y1: 245 }, nominal, 5), ['стол глубже номинального на 10,0 мм: перо может выйти за стол, проверьте точку']);
+  assert.deepEqual(bedHint({ x0: -12, y0: 34, x1: 220, y1: 220 }, nominal, 5), [], 'manual upper right corner well inside the bed: no hint');
+  assert.deepEqual(bedHint({ x0: -12, y0: -3, x1: 231, y1: 230 }, nominal, 5, { urNominal: true }), []);
   assert.deepEqual(bedHint(null, nominal), []);
 });
 
