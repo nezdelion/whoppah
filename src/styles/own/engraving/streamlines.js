@@ -45,13 +45,15 @@ export const stepFor = (dMin) => Math.min(2, Math.max(0.5, 0.4 * dMin));
  *   dsep(u) — separation in px for the tone u, dMin, dMax — its range (the grid cell, the light run, the coverage cells),
  *   tau — the light break: points with u < tau are not drawn, seeds need u ≥ tau,
  *   maxLen, minLen — px: the longest line (both directions together) and the shortest drawn length of an accepted line,
+ *   minSeps — an accepted line is also at least this many separations long (the mean dsep over its drawn points): no short
+ *     fragments in textured or converging areas, the space is left to longer lines (default 0),
  *   maxPoints — the point limit (default MAX_POINTS)
  * }
  * @returns { lines: [{ pts: Float64Array [x0,y0,...], u: Float32Array per point, sep: Float32Array dsep per point }],
  *            limited: boolean }
  */
 export function* placeStreamlines(opts) {
-  const { w, h, field, tone, dsep, dMin, dMax, tau, maxLen, minLen = 0, maxPoints = MAX_POINTS } = opts;
+  const { w, h, field, tone, dsep, dMin, dMax, tau, maxLen, minLen = 0, minSeps = 0, maxPoints = MAX_POINTS } = opts;
   const dirAt = fieldSampler(field);
   const stepPx = stepFor(dMin);
   const cosTurn = Math.cos((MAX_TURN_DEG * Math.PI) / 180);
@@ -174,11 +176,14 @@ export function* placeStreamlines(opts) {
     let k = 0;
     for (let i = end - 1; i >= mid; i--, k++) { pts[2 * k] = PX[i]; pts[2 * k + 1] = PY[i]; u[k] = PU[i]; }
     for (let i = start; i < mid; i++, k++) { pts[2 * k] = PX[i]; pts[2 * k + 1] = PY[i]; u[k] = PU[i]; }
-    let drawn = 0;
-    for (let i = 1; i < count; i++) if (u[i] >= tau && u[i - 1] >= tau) drawn += Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]);
-    if (!(drawn > 0) || drawn < minLen) { popTo(start); return -1; }
+    let drawn = 0, sepSum = 0, sepN = 0;
     const sep = new Float32Array(count);
-    for (let i = 0; i < count; i++) sep[i] = dsep(u[i]);
+    for (let i = 0; i < count; i++) {
+      sep[i] = dsep(u[i]);
+      if (u[i] >= tau) { sepSum += sep[i]; sepN++; }
+      if (i > 0 && u[i] >= tau && u[i - 1] >= tau) drawn += Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]);
+    }
+    if (!(drawn > 0) || drawn < minLen || (minSeps > 0 && drawn < (minSeps * sepSum) / sepN)) { popTo(start); return -1; }
     lines.push({ pts, u, sep });
     for (let i = start; i < end; i++) {
       const c = Math.min(ph - 1, Math.floor(PY[i] / pc)) * pw + Math.min(pw - 1, Math.floor(PX[i] / pc));
@@ -256,4 +261,46 @@ export function* placeStreamlines(opts) {
 export function streamlines(opts) {
   const gen = placeStreamlines(opts);
   for (;;) { const r = gen.next(); if (r.done) return r.value; }
+}
+
+/**
+ * The distance from every point of every line to the nearest point of another line, at most the separation at that point
+ * (lines that converge get a smaller value; the dark cap keeps a white gap between their thickened strokes).
+ * @param lines placeStreamlines result lines ({ pts, sep })
+ * @returns Float32Array[] — per line, per point
+ */
+export function neighbourGaps(lines, w, h) {
+  let total = 0, maxSep = 1;
+  for (const { pts, sep } of lines) { total += pts.length >> 1; for (let i = 0; i < sep.length; i++) if (sep[i] > maxSep) maxSep = sep[i]; }
+  const cell = maxSep;
+  const gw = Math.max(1, Math.ceil(w / cell)), gh = Math.max(1, Math.ceil(h / cell));
+  const head = new Int32Array(gw * gh).fill(-1), next = new Int32Array(total);
+  const X = new Float32Array(total), Y = new Float32Array(total), L = new Int32Array(total);
+  const cellOf = (x, y) => Math.min(gh - 1, Math.max(0, Math.floor(y / cell))) * gw + Math.min(gw - 1, Math.max(0, Math.floor(x / cell)));
+  let k = 0;
+  lines.forEach(({ pts }, line) => {
+    for (let i = 0; i < pts.length; i += 2, k++) {
+      X[k] = pts[i]; Y[k] = pts[i + 1]; L[k] = line;
+      const c = cellOf(pts[i], pts[i + 1]);
+      next[k] = head[c]; head[c] = k;
+    }
+  });
+  return lines.map(({ pts, sep }, line) => {
+    const out = new Float32Array(pts.length >> 1);
+    for (let i = 0; i < out.length; i++) {
+      const x = pts[2 * i], y = pts[2 * i + 1], r = sep[i];
+      let best = r * r;
+      const cx0 = Math.max(0, Math.floor((x - r) / cell)), cx1 = Math.min(gw - 1, Math.floor((x + r) / cell));
+      const cy0 = Math.max(0, Math.floor((y - r) / cell)), cy1 = Math.min(gh - 1, Math.floor((y + r) / cell));
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+        for (let j = head[cy * gw + cx]; j >= 0; j = next[j]) {
+          if (L[j] === line) continue;
+          const dx = X[j] - x, dy = Y[j] - y, d2 = dx * dx + dy * dy;
+          if (d2 < best) best = d2;
+        }
+      }
+      out[i] = Math.sqrt(best);
+    }
+    return out;
+  });
 }

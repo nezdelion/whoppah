@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toGray, toDarkness, boxBlur, sampleBilinear } from '../src/styles/tone.js';
+import { toGray, toDarkness, boxBlur, sampleBilinear, levelsRange, autoLevels, localContrast, LEVELS_MIN_RANGE } from '../src/styles/tone.js';
 import './helpers/ru.js';
 
 const near = (a, b, eps = 1e-5) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
@@ -100,4 +100,44 @@ test('sampleBilinear: the pixel value at its centre, the mean between centres, t
   near(sampleBilinear(f, 3, 2, 99, 99), 12);
   near(sampleBilinear(f, 3, 2, 3, 0.5), 2);
   near(sampleBilinear(Float32Array.of(7), 1, 1, 0.2, 0.9), 7);
+});
+
+test('auto levels: the percentile range is stretched to 0..255, the clipped tails clamp, a flat image stays as is', () => {
+  // a washed-out image: 1000 pixels evenly 100..199 plus 1 % outliers at 0 and at 255
+  const g = new Float32Array(1020);
+  for (let i = 0; i < 1000; i++) g[i] = 100 + (i % 100);
+  for (let i = 1000; i < 1010; i++) g[i] = 0;
+  for (let i = 1010; i < 1020; i++) g[i] = 255;
+  assert.deepEqual(levelsRange(g, 0), [0, 255]);
+  assert.deepEqual(levelsRange(g, 1.5), [100, 199]);
+  const out = autoLevels(g, 1.5);
+  near(out[0], 0); near(out[99], 255); // 100 → 0, 199 → 255
+  near(out[49], (49 / 99) * 255, 1e-3);
+  assert.equal(out[1005], 0); assert.equal(out[1015], 255);
+  for (let i = 1; i < 100; i++) assert.ok(out[i] > out[i - 1], 'monotone');
+  // a flat (or almost flat) image: an unchanged copy
+  const flat = new Float32Array(50).fill(128);
+  flat[3] = 128 + LEVELS_MIN_RANGE - 1;
+  const same = autoLevels(flat, 0);
+  assert.notEqual(same, flat);
+  assert.deepEqual(Array.from(same), Array.from(flat));
+});
+
+test('local contrast: amount 0 and a flat image are unchanged; a dim face beside a bright background gets its range back', () => {
+  const w = 160, h = 80;
+  const flat = new Float32Array(w * h).fill(90);
+  assert.deepEqual(Array.from(localContrast(flat, w, h, { amount: 0.8 }), (v) => Math.round(v)), Array.from(flat));
+  // left half: a low-contrast gradient 200..230 (a washed-out face), right half: white
+  const g = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) g[y * w + x] = x < w / 2 ? 200 + 30 * (y / (h - 1)) : 255;
+  assert.deepEqual(Array.from(localContrast(g, w, h, { amount: 0 })), Array.from(g));
+  const out = localContrast(g, w, h, { amount: 1, tiles: 8 });
+  const col = (img, x) => Array.from({ length: h }, (_, y) => img[y * w + x]);
+  const range = (a) => Math.max(...a) - Math.min(...a);
+  const before = range(col(g, 20)), after = range(col(out, 20));
+  assert.ok(after > 1.4 * before, `the face range ${before.toFixed(0)} → ${after.toFixed(0)}`);
+  // the order of tones along the face is kept, the white stays white
+  const c = col(out, 20);
+  for (let y = 1; y < h; y++) assert.ok(c[y] >= c[y - 1] - 0.5, `row ${y}: ${c[y - 1]} → ${c[y]}`);
+  assert.ok(out[40 * w + 150] > 245);
 });

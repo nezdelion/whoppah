@@ -71,11 +71,13 @@ export function normalsAndRadii(pts) {
  *                 dropped (no "drops"); 0 — the offset jumps right after the lens end;
  *   endTaperPx  — the level is scaled by min(1, s/endTaperPx, (S − s)/endTaperPx): thin stroke ends, like a burin; 0 — off;
  *   radiusLimit — a pass offset is limited by radiusLimit·R (local curvature radius), so the inner side of a tight curve
- *                 does not loop (default 0.9)
+ *                 does not loop (default 0.9);
+ *   maxHalf     — optional per-point limit of the outermost pass offset (px): the pass of lens k is limited by
+ *                 k/K·maxHalf[i] (K — the top lens of the line), the passes stay evenly spread but closer together
  * }
  * @returns Float64Array: starts at the first and ends at the last centre point; level 0 everywhere — a copy of the centre
  */
-export function thicken(center, level, { pitchPx, taperPx = 0, endTaperPx = 0, radiusLimit = 0.9 } = {}) {
+export function thicken(center, level, { pitchPx, taperPx = 0, endTaperPx = 0, radiusLimit = 0.9, maxHalf = null } = {}) {
   const n = center.length >> 1;
   if (n < 2 || !(pitchPx > 0)) return Float64Array.from(center);
   const s = arcLengths(center), S = s[n - 1];
@@ -116,7 +118,9 @@ export function thicken(center, level, { pitchPx, taperPx = 0, endTaperPx = 0, r
     const c = Math.min(from, to), d = Math.max(from, to), step = from <= to ? 1 : -1;
     for (let i = from; ; i += step) {
       const tau = smoothstep(0, taperPx, s[i] - s[c]) * smoothstep(0, taperPx, s[d] - s[i]);
-      const off = sign * Math.min(k * pitchPx * tau, radiusLimit * R[i]);
+      let off = Math.min(k * pitchPx * tau, radiusLimit * R[i]);
+      if (maxHalf) off = Math.min(off, (k / K) * maxHalf[i]);
+      off *= sign;
       push(center[2 * i] + nx[i] * off, center[2 * i + 1] + ny[i] * off);
       if (i === to) break;
     }

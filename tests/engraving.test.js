@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  engraving, engravingSteps, geometry, PARAMS, PRESETS, defaultParams, PROGRESS, drawnRuns, SIMPLIFY_MM,
+  engraving, engravingSteps, geometry, PARAMS, PRESETS, defaultParams, PROGRESS, drawnRuns, SIMPLIFY_MM, FRAGMENT_SEPS,
 } from '../src/styles/own/engraving.js';
 import { structureField, directionField, fieldSampler, orientationDeg, boxRadiusForSigma } from '../src/styles/own/engraving/field.js';
 import { streamlines, separation, DTEST } from '../src/styles/own/engraving/streamlines.js';
@@ -287,7 +287,8 @@ test('cross layer: only in the darkest tones, at crossAngle to the main lines; o
 test('thickness: 3 passes in black at passPitch·pen, thin stroke ends (a parameter), one polyline per stroke', () => {
   const w = 300, h = 80;
   const gray = field(w, h, () => 0);
-  const params = { maxPasses: 3, passPitch: 0.5, followForm: 0, baseAngle: 0, cross: false, thickStart: 50 };
+  // spacing 2 mm in black (8 px): three passes 4 px wide stay below the dark cap
+  const params = { maxPasses: 3, passPitch: 0.5, followForm: 0, baseAngle: 0, cross: false, thickStart: 50, spacing: 2, sepDark: 1 };
   const g = geometry(params, PAPER);
   const cache = createCache();
   const lines = run(gray, w, h, params, PAPER, cache);
@@ -330,7 +331,8 @@ test('output: no strokes shorter than minLength, short travels in placement orde
   let worst = 0;
   for (const line of stageOf(cache, 'streams').lines) {
     for (const [a, b] of drawnRuns(line, g.tau)) {
-      if (polylineLength(line.pts.slice(2 * a, 2 * b + 2)) < g.minPx) continue; // dropped as too short
+      const meanSep = line.sep.slice(a, b + 1).reduce((s, v) => s + v, 0) / (b - a + 1);
+      if (polylineLength(line.pts.slice(2 * a, 2 * b + 2)) < Math.max(g.minPx, FRAGMENT_SEPS * meanSep)) continue; // dropped as too short
       for (let i = a; i <= b; i++) {
         const x = line.pts[2 * i], y = line.pts[2 * i + 1];
         let best = Infinity;
@@ -349,7 +351,7 @@ test('stage cache: each parameter recomputes only its stages', () => {
   const cache = new Spy();
   let p = { ...defaultParams() };
   run(gray, w, h, p, PAPER, cache);
-  assert.deepEqual(cache.log, ['tensor', 'field', 'tone', 'streams', 'cross', 'finish']);
+  assert.deepEqual(cache.log, ['levels', 'tensor', 'field', 'tone', 'streams', 'cross', 'gaps', 'finish']);
   const step = (change, want) => {
     cache.log = [];
     p = { ...p, ...change };
@@ -359,11 +361,15 @@ test('stage cache: each parameter recomputes only its stages', () => {
   };
   step({ maxPasses: 5 }, ['finish']);
   step({ thinEnds: false, thickStart: 40, passPitch: 0.6 }, ['finish']);
+  step({ darkCap: 70 }, ['finish']);
   step({ crossThreshold: 60 }, ['cross', 'finish']);
   step({ crossAngle: 45 }, ['cross', 'finish']);
-  step({ baseAngle: -10 }, ['field', 'streams', 'cross', 'finish']);
-  step({ contrast: 30 }, ['tone', 'streams', 'cross', 'finish']);
-  step({ smoothing: 6 }, ['tensor', 'field', 'streams', 'cross', 'finish']);
+  step({ baseAngle: -10 }, ['field', 'streams', 'cross', 'gaps', 'finish']);
+  step({ simplify: 20, detail: 60 }, ['field', 'streams', 'cross', 'gaps', 'finish']);
+  step({ contrast: 30 }, ['tone', 'streams', 'cross', 'gaps', 'finish']);
+  step({ localContrast: 70 }, ['tone', 'streams', 'cross', 'gaps', 'finish']);
+  step({ levelsClip: 2 }, ['levels', 'tensor', 'field', 'tone', 'streams', 'cross', 'gaps', 'finish']);
+  step({ smoothing: 6 }, ['tensor', 'field', 'streams', 'cross', 'gaps', 'finish']);
   step({ smoothing: 6 }, []);
 });
 
@@ -384,7 +390,7 @@ test('determinism: identical runs; a chain of live changes equals a fresh run; a
   for (const l of a) len += polylineLength(l);
   assert.deepEqual([a.length, Math.round(len * 1e3) / 1e3], SNAPSHOT);
 });
-const SNAPSHOT = [55, 5907.287];
+const SNAPSHOT = [62, 5453.823];
 
 test('parameters and presets: odd pass counts, all live, valid presets, portrait = defaults, registry descriptor', () => {
   const byKey = Object.fromEntries(PARAMS.map((d) => [d.key, d]));
@@ -406,6 +412,148 @@ test('parameters and presets: odd pass counts, all live, valid presets, portrait
   // the density check gets the smallest separation in px: spacing 1 mm × sepDark 0.7 at 0.25 mm/px
   assert.ok(Math.abs(d.spacing({ ...defaultParams() }, { width: 10, height: 10 }, PAPER) - 2.8) < 1e-9);
   assert.equal(geometry({ spacing: 0.4, sepDark: 0.3 }, PAPER).dMin, 1, 'at least 1 px');
+});
+
+// --- real photos: tone, background, multi-scale field, fragments, shadows
+
+/** Deterministic noise 0..1 (LCG). */
+const lcg = (seed) => () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+/** Share of the pixels i in the box where pred(orientation) holds. */
+const shareIn = (f, w, [x0, x1, y0, y1], pred) => {
+  let n = 0, ok = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { n++; if (pred(orientationDeg(f, y * w + x))) ok++; }
+  return ok / n;
+};
+const FIELD_OPTS = { sigmaPx: 8, detailSigmaPx: 8 / 3, puritySigmaPx: 16, scalePx: 40 };
+
+test('tone: auto levels (on by default) stretch a washed-out image to the full darkness range; off — the old tone', () => {
+  const w = 200, h = 100;
+  const gray = field(w, h, (x) => 240 - 70 * (x / w)); // 240 .. 170: no darks at all
+  const toneRange = (params) => {
+    const cache = createCache();
+    run(gray, w, h, { cross: false, maxPasses: 1, localContrast: 0, ...params }, PAPER, cache);
+    const t = stageOf(cache, 'tone');
+    let lo = Infinity, hi = -Infinity;
+    for (let y = 10; y < h - 10; y++) for (const x of [10, w - 11]) { lo = Math.min(lo, t[y * w + x]); hi = Math.max(hi, t[y * w + x]); }
+    return [lo, hi];
+  };
+  const [lo, hi] = toneRange({});
+  assert.ok(lo < 0.06 && hi > 0.94, `auto levels: darkness ${lo.toFixed(2)}..${hi.toFixed(2)}`);
+  const [lo0, hi0] = toneRange({ autoLevels: false });
+  assert.ok(lo0 > 0.05 && hi0 < 0.35, `off: darkness ${lo0.toFixed(2)}..${hi0.toFixed(2)}`);
+  assert.equal(defaultParams().autoLevels, true);
+  // more lines with auto levels
+  assert.ok(engraving(gray, w, h, {}, PAPER).length > engraving(gray, w, h, { autoLevels: false }, PAPER).length);
+});
+
+test('field: chaotic texture falls back to the base angle ("Simplify background"), a form keeps its isophotes', () => {
+  // left: a clean vertical gradient (isophotes horizontal, 0°); right: a horizontal gradient (isophotes vertical, 90°)
+  // under strong blocky noise (foliage over a lighting gradient)
+  const w = 240, h = 120, rnd = lcg(5);
+  const blocks = Array.from({ length: 40 * 40 }, () => 140 * rnd() - 70);
+  const gray = field(w, h, (x, y) => (x < w / 2 ? 60 + 140 * (y / h)
+    : 200 - 120 * ((x - w / 2) / (w / 2)) + 0.6 * blocks[Math.floor(y / 3) * 40 + Math.floor((x - w / 2) / 3)]));
+  const raw = structureField(gray, w, h, FIELD_OPTS);
+  const near45 = (a) => angDiff(a, 45) <= 15, near90 = (a) => angDiff(a, 90) <= 15, near0 = (a) => angDiff(a, 0) <= 10;
+  const noise = [w / 2 + 30, w - 10, 20, h - 20], form = [10, w / 2 - 30, 20, h - 20];
+  const none = directionField(raw, { baseAngle: 45, simplify: 0, detail: 0 });
+  assert.ok(shareIn(none, w, noise, near90) >= 0.8, `simplify 0: the gradient under the noise is followed (${shareIn(none, w, noise, near90).toFixed(2)})`);
+  assert.ok(shareIn(none, w, form, near0) >= 0.9);
+  for (const simplify of [50, 100]) {
+    const f = directionField(raw, { baseAngle: 45, simplify, detail: 0 });
+    assert.ok(shareIn(f, w, noise, near45) >= 0.9, `simplify ${simplify}: the noise at the base angle (${shareIn(f, w, noise, near45).toFixed(2)})`);
+    assert.ok(shareIn(f, w, form, near0) >= 0.9, `simplify ${simplify}: the form kept (${shareIn(f, w, form, near0).toFixed(2)})`);
+  }
+});
+
+test('field: the form leads, fine detail only bends it by the "Fine detail" share', () => {
+  // form: a horizontal gradient (isophotes vertical, 90°); detail: fine ripples with isophotes at 45°
+  const w = 200, h = 160;
+  const gray = field(w, h, (x, y) => 230 - 200 * (x / w) + 10 * Math.sin((2 * Math.PI * (x - y)) / 8));
+  const raw = structureField(gray, w, h, FIELD_OPTS);
+  const box = [40, w - 40, 40, h - 40];
+  const deg = (c, s) => { const a = (0.5 * Math.atan2(s, c)) / RAD; return a < 0 ? a + 180 : a; };
+  const mean = (fn) => {
+    let s = 0, n = 0;
+    for (let y = box[2]; y < box[3]; y++) for (let x = box[0]; x < box[1]; x++) { s += fn(y * w + x); n++; }
+    return s / n;
+  };
+  // the two scales really disagree: the form scale sees the gradient, the detail scale is pulled toward the ripples
+  const form = mean((i) => deg(raw.c2[i], raw.s2[i])), detail = mean((i) => deg(raw.dc2[i], raw.ds2[i]));
+  assert.ok(Math.abs(form - 90) <= 3, `form scale ${form.toFixed(1)}°`);
+  assert.ok(form - detail >= 15, `detail scale ${detail.toFixed(1)}°`);
+  assert.ok(mean((i) => raw.dcoherence[i]) > 0.3, "the ripples are coherent at the detail scale");
+  const at = (d) => { const f = directionField(raw, { baseAngle: 0, simplify: 0, detail: d }); return mean((i) => { const a = orientationDeg(f, i); return a < 0 ? a + 180 : a; }); };
+  assert.ok(Math.abs(at(0) - form) <= 1, `detail 0: the form, ${at(0).toFixed(1)}°`);
+  assert.ok(Math.abs(at(100) - detail) <= 3, `detail 100: the detail scale, ${at(100).toFixed(1)}°`);
+  const want = form - 0.3 * (form - detail);
+  assert.ok(Math.abs(at(30) - want) <= 3, `detail 30: bent by 30 % of the angle, ${at(30).toFixed(1)}° vs ${want.toFixed(1)}°`);
+});
+
+test('field: a hard edge does not drag the lines along it across the shading beside it', () => {
+  // gentle vertical shading (isophotes horizontal) with a hard vertical step in the middle
+  const w = 240, h = 160;
+  const gray = field(w, h, (x, y) => 60 + 120 * (y / h) + (x >= w / 2 ? 60 : 0));
+  const f = directionField(structureField(gray, w, h, FIELD_OPTS), { baseAngle: 45, simplify: 0, detail: 0 });
+  const at = (d) => orientationDeg(f, 80 * w + w / 2 + d);
+  assert.ok(angDiff(at(1), 90) <= 30, `at the edge: along it, ${at(1).toFixed(0)}°`);
+  assert.ok(angDiff(at(2 * FIELD_OPTS.sigmaPx), 0) <= 25, `two form scales away: the shading, ${at(2 * FIELD_OPTS.sigmaPx).toFixed(0)}°`);
+});
+
+test('streamlines: lines shorter than minSeps separations are not accepted (no fragments in a chaotic field)', () => {
+  const w = 200, h = 200, sep = 4, rnd = lcg(11);
+  // a chaotic field: a random orientation per 6 px block
+  const f = { w, h, c2: new Float32Array(w * h), s2: new Float32Array(w * h) };
+  const ang = Array.from({ length: 34 * 34 }, () => 2 * Math.PI * rnd());
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const a = ang[Math.floor(y / 6) * 34 + Math.floor(x / 6)]; f.c2[y * w + x] = Math.cos(a); f.s2[y * w + x] = Math.sin(a); }
+  const opts = { w, h, field: f, tone: new Float32Array(w * h).fill(0.5), dsep: () => sep, dMin: sep, dMax: sep, tau: 0.1, maxLen: 1e9, minLen: 2 };
+  const short = (lines) => lines.filter(({ pts }) => polylineLength(pts) < 3 * sep).length;
+  const all = streamlines(opts).lines;
+  assert.ok(short(all) > 20, `without minSeps: ${short(all)} short lines`);
+  const kept = streamlines({ ...opts, minSeps: 3 }).lines;
+  assert.ok(kept.length > 10);
+  assert.equal(short(kept), 0);
+  // the style: every placed line is drawn over at least FRAGMENT_SEPS separations, no output stroke is shorter than that
+  const W = 240, H = 180;
+  const gray = field(W, H, (x, y) => 128 + 100 * Math.sin(x / 7) * Math.cos(y / 5));
+  const params = { maxPasses: 1, cross: false, minLength: 0, simplify: 0, detail: 100 };
+  const g = geometry(params, PAPER);
+  const cache = createCache();
+  const out = run(gray, W, H, params, PAPER, cache);
+  for (const { pts, u, sep } of stageOf(cache, 'streams').lines) {
+    let drawn = 0, sum = 0, n = 0;
+    for (let i = 0; i < u.length; i++) {
+      if (u[i] >= g.tau) { sum += sep[i]; n++; }
+      if (i && u[i] >= g.tau && u[i - 1] >= g.tau) drawn += Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]);
+    }
+    assert.ok(drawn >= (FRAGMENT_SEPS * sum) / n - 1e-6, `a line drawn over ${drawn.toFixed(1)} px < ${FRAGMENT_SEPS} × ${(sum / n).toFixed(1)}`);
+  }
+  for (const l of out) assert.ok(polylineLength(l) >= FRAGMENT_SEPS * g.dMin - 2 * g.tolPx, `stroke ${polylineLength(l).toFixed(1)} px`);
+});
+
+test('dark cap: in black the thickened strokes keep a white gap of (100 − darkCap) % of the line distance', () => {
+  // spacing 1 mm × 1 in black = 4 px; pen 2 px, 3 passes at pitch 1 px would be 4 px wide — solid black without the cap
+  const w = 240, h = 80;
+  const gray = field(w, h, () => 0);
+  const base = { maxPasses: 3, passPitch: 0.5, followForm: 0, baseAngle: 0, cross: false, thickStart: 30, sepDark: 1, autoLevels: false, localContrast: 0 };
+  const g = geometry(base, PAPER);
+  const spread = (params) => {
+    const lines = run(gray, w, h, params).filter((l) => l[1] > 10 && l[1] < h - 10);
+    let worst = 0;
+    for (const l of lines) {
+      const ys = [];
+      for (let i = 2; i < l.length; i += 2) { const a = l[i - 2] - w / 2 - 0.3, b = l[i] - w / 2 - 0.3; if (a * b < 0) ys.push(l[i - 1] + (a / (a - b)) * (l[i + 1] - l[i - 1])); }
+      if (ys.length) worst = Math.max(worst, Math.max(...ys) - Math.min(...ys));
+    }
+    return worst;
+  };
+  const open = spread({ ...base, darkCap: 100 }), capped = spread({ ...base, darkCap: 85 });
+  // without a cap the passes go out to pitch (the ink would be pen + 2 px = the full 4 px)
+  assert.ok(Math.abs(open - 2 * Math.min(g.pitchPx, (g.dMin - g.penPx) / 2)) < 0.1, `darkCap 100: spread ${open}`);
+  // with the cap: pen + spread ≤ 85 % of the distance → a white gap of ≥ 15 %
+  assert.ok(capped + g.penPx <= 0.85 * g.dMin + 1e-6, `darkCap 85: ink ${capped + g.penPx} px of ${g.dMin} px`);
+  // the cap is below what one pen pass can do: no lens at all, one pass
+  assert.equal(spread({ ...base, darkCap: 50 }), 0);
 });
 
 // --- 4. limits and performance
