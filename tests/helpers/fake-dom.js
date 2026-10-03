@@ -23,7 +23,8 @@ export class FakeElement {
     this.classList = { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) };
   }
 
-  append(...nodes) { for (const n of nodes) this.children.push(typeof n === 'string' || typeof n === 'number' ? new FakeText(n) : n); }
+  // like the DOM: anything that is not a node (null and undefined included) becomes a text node with its String()
+  append(...nodes) { for (const n of nodes) this.children.push(n !== null && typeof n === 'object' ? n : new FakeText(String(n))); }
   replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
   setAttribute(k, v) { this.attributes.set(k, String(v)); }
   getAttribute(k) { return this.attributes.has(k) ? this.attributes.get(k) : null; }

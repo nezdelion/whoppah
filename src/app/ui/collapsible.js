@@ -17,6 +17,7 @@ const writeOpen = (id, open) => { try { localStorage.setItem(FOLD_KEY(id), open 
 export function fold({ id, title, open = false, note = '' }, ...children) {
   const details = h('details', { class: 'fold', open: readOpen(id, open) });
   details.addEventListener('toggle', () => writeOpen(id, !!details.open));
-  details.append(h('summary', {}, title), note ? h('div', { class: 'note fold-note' }, note) : null, ...children);
+  // h() skips null children; a bare append(null) would show the text "null"
+  details.append(...[h('summary', {}, title), note ? h('div', { class: 'note fold-note' }, note) : null, ...children].filter((c) => c != null));
   return details;
 }
