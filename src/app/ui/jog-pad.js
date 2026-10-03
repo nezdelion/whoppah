@@ -1,5 +1,6 @@
-// Jog pad: step choice, X±/Y±/Z± buttons, the "Not homed" hint with "Already homed". Shared by the wizard and the Print tab.
-import { h, button } from './dom.js';
+// Jog pad like OctoPrint's: step choice (radio segments), an XY cross (Y+ away from you, X+ right) and a Z column,
+// the "Not homed" hint with "Already homed". Shared by the wizard and the Print tab.
+import { h, button, disclosure } from './dom.js';
 import { JOG_STEPS } from '../../core/jog.js';
 import { t } from '../../i18n/index.js';
 
@@ -11,6 +12,8 @@ import { t } from '../../i18n/index.js';
  * @param onBusy      (busy) => void — a step is in progress (the owner may disable its own buttons)
  * @returns {{ element, sync(), busy: boolean, destroy() }}
  */
+let padCount = 0;
+
 export function createJogPad({ calibrator, allowed = () => true, log = () => {}, step, onBusy = () => {} }) {
   const $ = {};
   let busy = false;
@@ -24,17 +27,31 @@ export function createJogPad({ calibrator, allowed = () => true, log = () => {},
     label: t('print.homeDone'), hint: 'print.homeDone.hint', hidden: true,
     onclick: () => { if (confirm(t('print.homeConfirm'))) { calibrator.markHomed(); log(t('print.homeAccepted')); sync(); } },
   });
-  $.step = h('select', { 'aria-label': t('print.stepLabel'), onchange: () => step.set(Number($.step.value)) },
-    JOG_STEPS.map((v) => h('option', { value: v, selected: v === step.get() }, t('print.stepOption', { v }))));
-  const jogBtn = (axis, dir) => {
+  // a radio group per pad: two pads on one page (Print tab and the wizard) must not share a group
+  const group = `jog-step-${++padCount}`;
+  const steps = JOG_STEPS.map((v) => h('input', {
+    type: 'radio', name: group, value: v, checked: v === step.get(), 'aria-label': t('print.stepOption', { v }),
+    onchange: () => step.set(v),
+  }));
+  const current = () => { const r = steps.find((x) => x.checked); return r ? Number(r.value) : step.get(); };
+  const jogBtn = (axis, dir, area) => {
     const text = `${axis.toUpperCase()}${dir > 0 ? '+' : '−'}`;
-    return ($[`jog${axis}${dir}`] = button({ label: text, hint: 'print.jog.hint', class: 'jog-btn', onclick: act(text, () => calibrator.jog.move(axis, dir, Number($.step.value))) }));
+    const b = button({ label: text, hint: 'print.jog.hint', class: 'jog-btn', onclick: act(text, () => calibrator.jog.move(axis, dir, current())) });
+    b.style.gridArea = area;
+    return ($[`jog${axis}${dir}`] = b);
   };
   const keys = ['x', 'y', 'z'].flatMap((a) => [`jog${a}-1`, `jog${a}1`]);
+  const hint = disclosure('?', t('print.jog.hint'));
   const element = h('div', { class: 'jog-pad' },
     $.homeHint, $.homeDone,
-    h('div', { class: 'row' }, h('label', {}, t('jogpad.step'), $.step),
-      ['x', 'y', 'z'].flatMap((a) => [jogBtn(a, -1), jogBtn(a, 1)])));
+    h('div', { class: 'jog-steps', role: 'radiogroup', 'aria-label': t('print.stepLabel') },
+      h('span', {}, t('jogpad.step')),
+      steps.map((r, i) => h('label', { class: 'jog-step' }, r, h('span', {}, t('print.stepOption', { v: JOG_STEPS[i] })))),
+      hint.icon),
+    hint.text,
+    h('div', { class: 'jog-grid' },
+      jogBtn('y', 1, 'yp'), jogBtn('x', -1, 'xm'), jogBtn('x', 1, 'xp'), jogBtn('y', -1, 'ym'),
+      jogBtn('z', 1, 'zp'), jogBtn('z', -1, 'zm')));
 
   function sync() {
     const link = calibrator.link();

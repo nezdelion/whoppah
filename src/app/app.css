@@ -169,6 +169,16 @@ button.small { padding: 4px 8px; font-size: 12px; }
 .mini-map { width: 100%; max-width: 240px; aspect-ratio: 1; height: auto; background: var(--bg); border-radius: 6px; justify-self: center; }
 .area-modes { gap: 6px 16px; }
 .area-reach { font-weight: 600; color: var(--text); }
-.jog-pad .row { align-items: flex-end; }
-.jog-pad .jog-btn { min-width: 44px; min-height: 40px; }
-.jog-pad label { width: 6em; }
+.jog-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.jog-step { display: inline-flex; width: auto; }
+.jog-step input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.jog-step span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; min-width: 44px; text-align: center; }
+.jog-step input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.jog-step input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* XY cross on the left, Z column on the right, as in OctoPrint's Control tab */
+.jog-grid { display: grid; gap: 6px; justify-content: start;
+  grid-template-columns: repeat(3, 52px) 18px 52px; grid-template-rows: repeat(3, 44px);
+  grid-template-areas: ". yp . . zp" "xm . xp . ." ". ym . . zm"; }
+.jog-grid .btn-wrap, .jog-grid .jog-btn { width: 100%; height: 100%; }
+.jog-grid .jog-btn { padding: 0; }
+.jog-grid .hint-icon, .jog-grid .hint-text { display: none !important; } /* one "?" for the whole pad, next to the step */

@@ -10,11 +10,12 @@ import { fakeServer } from './helpers/fake-position.js';
 import { t } from '../src/i18n/index.js';
 import './helpers/ru.js';
 
-let fold, FOLD_KEY, createJogPad, createAreaEditor, createReadinessCard, createSetupWizard, OFFSET_KEY;
+let h, fold, FOLD_KEY, createJogPad, createAreaEditor, createReadinessCard, createSetupWizard, OFFSET_KEY;
 const savedGlobals = {};
 before(async () => {
   installFakeDom();
   for (const k of ['localStorage', 'confirm']) savedGlobals[k] = Object.getOwnPropertyDescriptor(globalThis, k);
+  ({ h } = await import('../src/app/ui/dom.js'));
   ({ fold, FOLD_KEY } = await import('../src/app/ui/collapsible.js'));
   ({ createJogPad } = await import('../src/app/ui/jog-pad.js'));
   ({ createAreaEditor } = await import('../src/app/ui/area-editor.js'));
@@ -129,6 +130,11 @@ test('fold: a throwing or missing storage falls back to the default and toggling
 const JOG = ['X−', 'X+', 'Y−', 'Y+', 'Z−', 'Z+'];
 const jogDisabled = (pad) => JOG.map((l) => btn(pad.element, l).disabled);
 
+test('fold without a note shows no stray "null" text', () => {
+  const d = fold({ id: 'nullcheck', title: 'T' }, h('p', {}, 'body'));
+  assert.doesNotMatch(d.textContent, /null|undefined/);
+});
+
 test('jog pad: without Home all six are disabled, the hint and "Already homed" are shown; after it they work', () => {
   const cal = fakeCalibrator({ link: NO_HOME });
   setGlobal('confirm', () => true);
@@ -149,6 +155,15 @@ test('jog pad: without Home all six are disabled, the hint and "Already homed" a
   assert.equal(cal.linkSubs.size, 0);
 });
 
+test('jog pad: XY cross and Z column in OctoPrint order; two pads use separate radio groups', () => {
+  const a = createJogPad({ calibrator: fakeCalibrator({}), step: { get: () => 1, set() {} } });
+  const b = createJogPad({ calibrator: fakeCalibrator({}), step: { get: () => 10, set() {} } });
+  const areas = Object.fromEntries(JOG.map((l) => [l, all(a.element, 'SPAN').find((s) => s.button === btn(a.element, l)).style.gridArea]));
+  assert.deepEqual(areas, { 'X−': 'xm', 'X+': 'xp', 'Y−': 'ym', 'Y+': 'yp', 'Z−': 'zm', 'Z+': 'zp' });
+  const name = (pad) => { const r = pad.element.findAll((e) => e.type === 'radio')[0]; return r.name ?? r.getAttribute('name'); };
+  assert.notEqual(name(a), name(b));
+});
+
 test('jog pad: without permission (allowed false) everything is disabled', () => {
   const cal = fakeCalibrator({});
   let allowed = false;
@@ -164,9 +179,13 @@ test('jog pad: the chosen step goes into jog.move; while a step runs all buttons
   let step = 1;
   const busy = [], log = [];
   const pad = createJogPad({ calibrator: cal, step: { get: () => step, set: (v) => { step = v; } }, onBusy: (b) => busy.push(b), log: (m) => log.push(m) });
-  const sel = all(pad.element, 'SELECT')[0];
-  assert.deepEqual(sel.findAll((o) => o.tagName === 'OPTION' && o.hasAttribute('selected')).map((o) => o.value), [1], 'the owner step is preselected');
-  change(sel, '10');
+  const radios = pad.element.findAll((e) => e.tagName === 'INPUT' && e.type === 'radio');
+  const pick = (v) => { for (const r of radios) r.checked = String(r.value) === String(v); radios.find((r) => String(r.value) === String(v)).dispatch('change'); };
+  assert.deepEqual(radios.map((r) => Number(r.value)), [0.1, 1, 10], 'step segments');
+  assert.deepEqual(radios.filter((r) => r.checked).map((r) => Number(r.value)), [1], 'the owner step is preselected');
+  const group = (r) => r.name ?? r.getAttribute('name');
+  assert.equal(new Set(radios.map(group)).size, 1, 'one radio group');
+  pick(10);
   assert.equal(step, 10);
   let release;
   cal.jog.gate = new Promise((r) => { release = r; });
@@ -182,7 +201,7 @@ test('jog pad: the chosen step goes into jog.move; while a step runs all buttons
   assert.deepEqual(busy, [true, false]);
   assert.deepEqual(jogDisabled(pad), [false, false, false, false, false, false]);
   assert.deepEqual(log, ['Y−: готово']);
-  change(sel, '0.1');
+  pick(0.1);
   btn(pad.element, 'Z+').click();
   await tick();
   assert.deepEqual(cal.jog.moves[1], ['z', 1, 0.1]);
