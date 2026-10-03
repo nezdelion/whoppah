@@ -133,6 +133,7 @@ export default {
   'waves.param.angle': 'Угол линий, °',
   'waves.param.amplitude': 'Амплитуда, доля шага',
   'waves.param.wavelength': 'Период волны в тёмном, мм',
+  'waves.param.freqRange': 'Диапазон частот: тёмное ÷ светлое, раз',
   'waves.param.mode': 'Модуляция',
   'waves.param.stagger': 'Сдвигать каждую вторую линию на полпериода',
   'waves.param.maxPasses': 'Макс. проходов (толщина)',

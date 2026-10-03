@@ -16,8 +16,11 @@ export const PROGRESS_KEY = 'styles.progress.waves';
 export const HYSTERESIS = 0.02;
 /** Simplification tolerance of the output polylines, mm on paper. */
 export const SIMPLIFY_MM = 0.02;
-/** Wavelength factor at the lightest tone in the frequency modes: λ(u) = wavelength / (LIGHT_FREQ + (1 − LIGHT_FREQ)·u). */
-export const LIGHT_FREQ = 0.15;
+/**
+ * Frequency modes: the dark/light frequency ratio R (param freqRange). With f = 1/R at the lightest tone,
+ * λ(u) = wavelength / (f + (1 − f)·u): the darkest tone gets the set period, the lightest one R times longer.
+ */
+export const lightFreq = (range) => 1 / Math.max(1, range);
 
 const param = paramFactory('waves');
 const preset = presetFactory('waves');
@@ -27,7 +30,8 @@ export const PARAMS = Object.freeze([
   param({ key: 'spacing', type: 'number', min: 0.3, max: 10, step: 0.05, default: 1.2, live: true }),
   param({ key: 'angle', type: 'number', min: -90, max: 90, step: 1, default: 0, live: true }),
   param({ key: 'amplitude', type: 'number', min: 0, max: 0.5, step: 0.01, default: 0.3, live: true }),
-  param({ key: 'wavelength', type: 'number', min: 0.4, max: 20, step: 0.1, default: 1.6, live: true }),
+  param({ key: 'wavelength', type: 'number', min: 0.2, max: 20, step: 0.05, default: 1.6, live: true }),
+  param({ key: 'freqRange', type: 'number', min: 1, max: 30, step: 0.5, default: 6.5, live: true }),
   param({ key: 'mode', type: 'select', options: MODES, default: 'both', live: true }),
   param({ key: 'stagger', type: 'bool', default: false, live: true }),
   param({ key: 'maxPasses', type: 'number', min: 1, max: 5, step: 2, default: 3, live: true }),
@@ -84,7 +88,7 @@ const clampInto = (pts, w, h) => {
  * Wave centre lines of one family line: strokes [{ pts, u }] in increasing t (u — the effective tone per point).
  * Exported for tests (phase continuity, breaks).
  */
-export function waveLine(line, dark, w, h, { s, aMax, lambda, mode, threshold, stagger }) {
+export function waveLine(line, dark, w, h, { s, aMax, lambda, mode, threshold, stagger, freqRange = 6.5 }) {
   const { j, ox, oy, dx, dy, nx, ny, t0, t1 } = line;
   const tau = threshold / 100;
   const ds = Math.min(0.5, lambda / 16);
@@ -114,7 +118,8 @@ export function waveLine(line, dark, w, h, { s, aMax, lambda, mode, threshold, s
   // the wave: the phase is the integral of 2π/λ(u) along the whole line from t0, starting from 2π·t0/λ(0) — it depends on
   // the position along the line, not on where a stroke begins; frequency changes keep the line continuous
   const freqMode = mode !== 'amplitude';
-  const invLam = (uu) => (freqMode ? (LIGHT_FREQ + (1 - LIGHT_FREQ) * uu) / lambda : 1 / lambda);
+  const f0 = lightFreq(freqRange);
+  const invLam = (uu) => (freqMode ? (f0 + (1 - f0) * uu) / lambda : 1 / lambda);
   const amp = (uu) => (mode === 'frequency' ? aMax * smoothstep(0, 0.1, uu) : aMax * uu);
   const phase = new Float64Array(n);
   phase[0] = 2 * Math.PI * t0 * invLam(0) + (stagger && (Math.abs(j) & 1) ? Math.PI : 0);
@@ -150,8 +155,8 @@ export function* wavesSteps({ gray, w, h, params, paper, cache }) {
     () => boxBlur(toDarkness(gray, { invert: !!p.invert, brightness: p.brightness, contrast: p.contrast, gamma: p.gamma }), w, h, blurR));
 
   // 2. wave centre lines (grouped by family line, in increasing j)
-  const wave = { s, aMax, lambda, mode: p.mode, threshold: p.threshold, stagger: !!p.stagger };
-  const centres = yield* stageGen(cache, 'centres', [dark, s, p.angle, aMax, lambda, p.mode, p.threshold, !!p.stagger], function* () {
+  const wave = { s, aMax, lambda, mode: p.mode, threshold: p.threshold, stagger: !!p.stagger, freqRange: p.freqRange };
+  const centres = yield* stageGen(cache, 'centres', [dark, s, p.angle, aMax, lambda, p.mode, p.threshold, !!p.stagger, p.freqRange], function* () {
     const fam = lineFamily(w, h, p.angle, s);
     const groups = [];
     for (let i = 0; i < fam.length; i++) {

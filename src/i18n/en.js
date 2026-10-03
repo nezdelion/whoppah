@@ -133,6 +133,7 @@ export default {
   'waves.param.angle': 'Line angle, °',
   'waves.param.amplitude': 'Amplitude, fraction of spacing',
   'waves.param.wavelength': 'Wave period in dark areas, mm',
+  'waves.param.freqRange': 'Frequency range, dark ÷ light, times',
   'waves.param.mode': 'Modulation',
   'waves.param.stagger': 'Shift every other line by half a period',
   'waves.param.maxPasses': 'Max. passes (thickness)',

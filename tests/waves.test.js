@@ -141,6 +141,33 @@ test('phase continuity: a frequency jump keeps the wave continuous (no step in t
   assert.ok(zc(0, 95) * 2 < zc(105, 200), `denser on the dark side: ${zc(0, 95)} vs ${zc(105, 200)}`);
 });
 
+test('frequency range: the dark/light frequency ratio follows freqRange (1 — same period everywhere)', () => {
+  const w = 400, h = 20;
+  // light side 0.2 (a zero tone has no wave in the frequency mode), dark side 1
+  const dark = field(w, h, (x) => (x < 200 ? 0.2 : 1));
+  const [line] = lineFamily(w, h, 0, 100).filter((l) => l.j === 0);
+  const expected = (R) => 1 / (1 / R + (1 - 1 / R) * 0.2); // frequency ratio dark ÷ (tone 0.2)
+  const crossings = (freqRange) => {
+    const [stroke] = waveLine(line, dark, w, h, { s: 8, aMax: 3, lambda: 6, mode: 'frequency', threshold: 0, stagger: false, freqRange });
+    const zc = (x0, x1) => {
+      let n = 0;
+      for (let i = 2; i < stroke.pts.length; i += 2) {
+        if (stroke.pts[i] < x0 || stroke.pts[i] >= x1) continue;
+        if ((stroke.pts[i - 1] - h / 2) * (stroke.pts[i + 1] - h / 2) < 0) n++;
+      }
+      return n;
+    };
+    return [zc(0, 190), zc(210, 400)];
+  };
+  const [light1, dark1] = crossings(1);
+  assert.ok(Math.abs(light1 - dark1) <= 2, `range 1: ${light1} vs ${dark1}`);
+  for (const R of [4, 20]) {
+    const [light, darkN] = crossings(R);
+    assert.ok(Math.abs(darkN / light - expected(R)) < 0.15 * expected(R), `range ${R}: ${darkN} / ${light} vs ${expected(R)}`);
+  }
+  assert.equal(PARAMS.find((p) => p.key === 'wavelength').min, 0.2);
+});
+
 // --- thickness
 
 test('thickness: 3 and 5 passes in black at pass pitch, 1 pass in the light part, one polyline per stroke', () => {
