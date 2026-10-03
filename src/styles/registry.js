@@ -1,7 +1,12 @@
 // Style registry: description, parameters, worker creation. The "Photo" tab knows only this interface.
 // Descriptor: { id, name, group, origin: 'plotterfun'|'own', params: [...]|'dynamic', adapter: 'plotterfun'|'native',
-//   createWorker(), spacing?(params, image) -> px|null }
+//   createWorker(), spacing?(params, image, paper) -> px|null,
+//   usesPaper?: true — size parameters are in mm on paper: the run gets paper { mmPerPx, penWidthMm } and the layer is
+//                      recomputed when the field, margin, rotation or pen width change the paper scale;
+//   presets?: [{ id, label (lazy), params: {...partial values} }] — style presets offered in the layer card }
+// Parameter description: { key, label, type: 'number'|'bool'|'select', min, max, step, options, optionLabel?(value), default, live }
 import { defaultParams as crosshatchDefaults, PARAMS as CROSSHATCH_PARAMS } from './own/crosshatch.js';
+import { PARAMS as WAVES_PARAMS, PRESETS as WAVES_PRESETS, spacingPx as wavesSpacing } from './own/waves.js';
 import { createPlotterfunSession } from './plotterfun-adapter.js';
 import { createNativeSession } from './native-adapter.js';
 import { t } from '../i18n/index.js';
@@ -22,6 +27,8 @@ const PF_SPACING = {
   longwave: (p) => 2 * p['Step size'],
 };
 
+const ownWorker = () => new Worker(new URL('./own/worker.js', import.meta.url), { type: 'module' });
+
 const pf = (style, name, group, extra = {}) => ({
   id: `pf:${style}`, name, group, origin: 'plotterfun', params: 'dynamic', adapter: 'plotterfun', pfStyle: style,
   createWorker: () => new Worker(PF_HOST),
@@ -30,6 +37,12 @@ const pf = (style, name, group, extra = {}) => ({
 });
 
 export const STYLES = Object.freeze([
+  {
+    id: 'own:waves', get name() { return t('style.name.waves'); }, group: GROUPS.lines, origin: 'own',
+    params: WAVES_PARAMS, adapter: 'native', usesPaper: true, presets: WAVES_PRESETS,
+    createWorker: ownWorker,
+    spacing: (p, img, paper) => wavesSpacing(p, paper),
+  },
   pf('squiggle', 'Squiggle', GROUPS.lines),
   pf('squiggleLeftRight', 'Squiggle left-right', GROUPS.lines),
   pf('spiral', 'Spiral', GROUPS.lines),
@@ -44,7 +57,7 @@ export const STYLES = Object.freeze([
   {
     id: 'own:crosshatch', name: 'Crosshatch', group: GROUPS.contour, origin: 'own',
     params: CROSSHATCH_PARAMS, adapter: 'native',
-    createWorker: () => new Worker(new URL('./own/worker.js', import.meta.url), { type: 'module' }),
+    createWorker: ownWorker,
     spacing: (p) => p.spacing,
   },
   pf('halftone', 'Halftone', GROUPS.dots),

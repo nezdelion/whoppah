@@ -102,6 +102,7 @@ fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7;
 .layer-status[data-status="error"] { color: var(--danger); }
 .layer-status[data-status="partial"], .layer-status[data-status="running"] { color: var(--warn); }
 .layer-body .param-grid { grid-template-columns: minmax(0, 1fr); }
+.layer-body label.preset { margin-bottom: 6px; }
 .param-inputs { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 6px; align-items: center; }
 .param-inputs input[type=range] { padding: 0; border: 0; background: none; }
 .size { margin-top: 8px; }

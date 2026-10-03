@@ -2,12 +2,12 @@
 // Unpacking plotterfun messages (['svg-path', d], etc.) stays inside plotterfun-host and the adapter.
 
 // main -> worker
-export const RUN = 'run';         // {type, runId, styleId?, image:{width,height,data}, params}
+export const RUN = 'run';         // {type, runId, styleId?, image:{width,height,data}, params, paper?:{mmPerPx, penWidthMm}}
 export const PARAMS = 'params';   // {type, runId, params}: live parameters of a running computation
 export const INIT = 'init';       // {type, style, model, base}: for plotterfun-host only
 
 // worker -> main
-export const PROGRESS = 'progress'; // {type, runId, text}
+export const PROGRESS = 'progress'; // {type, runId, text}: text — a string (dictionary key or a plotterfun text) or {key, params}
 export const RESULT = 'result';     // {type, runId, lines:[Float64Array|number[]...], final:boolean, reason?, late?}
 export const ERROR = 'error';       // {type, runId, message}
 export const SLIDERS = 'sliders';   // {type, controls}: plotterfun style parameters (adapter only)

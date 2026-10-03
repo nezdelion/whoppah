@@ -26,6 +26,18 @@ function rdpLine(line, tol) {
   return out;
 }
 
+/**
+ * RDP of one polyline [x0,y0,x1,y1,...] (the same algorithm as simplify()); the ends are always kept.
+ * tol <= 0 or fewer than 3 points — the input as is. A typed array in — a Float64Array out (own buffer), a plain array in — a plain array.
+ * Shared by own styles (src/styles/own/*) to thin out densely sampled lines in image px.
+ */
+export function simplifyLine(pts, tol) {
+  if (!(tol > 0)) return pts;
+  const out = rdpLine(pts, tol);
+  if (out === pts) return pts;
+  return ArrayBuffer.isView(pts) ? Float64Array.from(out) : out;
+}
+
 /** Tolerance in drawing units (mm for a drawing in machine coordinates); 0 — unchanged. */
 export function simplify(drawing, tol) {
   if (!(tol > 0)) return drawing;

@@ -9,16 +9,14 @@ import { downloadText } from '../download.js';
 import { STYLES, getStyle, groupedStyles, groupLabel, originLabel, sessionFactory } from '../../styles/registry.js';
 import { createRunner } from '../../styles/runner.js';
 import { loadModels } from '../../styles/plotterfun-models.js';
-import { SIZE_RANGE, reasonText } from '../photo/layer-stack.js';
+import { SIZE_RANGE, reasonText, progressText } from '../photo/layer-stack.js';
 import { createPhotoModel, DEFAULT_STYLE } from '../photo/photo-model.js';
-import { t, hasKey } from '../../i18n/index.js';
+import { t } from '../../i18n/index.js';
 import { decodeImage, rasterize, ImageLoadError, ACCEPT } from '../photo/image-loader.js';
-import { buildParamForm } from '../photo/param-form.js';
+import { buildParamForm, buildPresetPicker } from '../photo/param-form.js';
 import { estimateSpacing, densityText } from '../photo/density.js';
 
 const statusLabel = (s) => (s === 'idle' ? '' : t(`photo.status.${s}`));
-// progress from the worker: its own text is a dictionary key (styles.progress.*), plotterfun texts as is
-const progressText = (p) => (hasKey(p, 'en') ? t(p) : p);
 
 const fetchText = async (url) => {
   const r = await fetch(url);
@@ -104,7 +102,7 @@ export function createPhotoSource({ createModel = () => createPhotoModel({ getSt
         const style = getStyle(l.styleId), { imageData } = m.image(), printParams = m.printParams();
         if (!style.spacing || !imageData || !l.visible || !printParams) return null;
         try {
-          const px = style.spacing(l.params, imageData);
+          const px = style.spacing(l.params, imageData, m.paper());
           const est = estimateSpacing(px, imageData, printParams);
           return est ? { est, text: densityText(est, printParams.penWidthMm) } : null;
         } catch (e) { return null; }
@@ -138,7 +136,14 @@ export function createPhotoSource({ createModel = () => createPhotoModel({ getSt
         const body = h('details', { class: 'layer-body', open: i === total - 1 }, h('summary', {}, t('photo.params')), inner);
         m.layerDescs(l.uid).then((descs) => {
           if (!alive || !descs || stack.find(l.uid) !== l) return;
-          inner.replaceChildren(buildParamForm(descs, l.params, (key, value) => m.changeParam(l.uid, descs, key, value)));
+          const presets = getStyle(l.styleId).presets || [];
+          // a style preset sets many values at once: the form is rebuilt with them
+          const renderForm = () => {
+            const picker = presets.length ? buildPresetPicker(descs, presets, l.params, (id) => { m.applyStylePreset(l.uid, id); renderForm(); }) : null;
+            e.syncPreset = picker ? picker.sync : null;
+            inner.replaceChildren(...(picker ? [picker.el] : []), buildParamForm(descs, l.params, (key, value) => m.changeParam(l.uid, descs, key, value)));
+          };
+          renderForm();
           refreshLayerInfo(l.uid);
         }).catch((err) => { inner.textContent = t('photo.paramsFailed', { message: err.message }); });
         return h('div', { class: 'layer', style: `--layer-color: var(--layer-${i % 4})` },
@@ -215,7 +220,12 @@ export function createPhotoSource({ createModel = () => createPhotoModel({ getSt
       // --- events
       const offStack = stack.subscribe((e) => {
         if (e.type === 'result') { refreshLayerInfo(e.uid); updateActions(); requestDraw(); return; }
-        if (e.type === 'params') { refreshLayerInfo(e.uid); return; }
+        if (e.type === 'params') {
+          refreshLayerInfo(e.uid);
+          const el = elements.get(e.uid), l = stack.find(e.uid);
+          if (el && el.syncPreset && l) el.syncPreset(l.params);
+          return;
+        }
         if (e.type === 'meta') return;
         renderLayers(); requestDraw();
       });

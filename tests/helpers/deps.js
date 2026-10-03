@@ -1,5 +1,5 @@
 // Dependency boundary check: core, transport, storage — only within their own layer; app — anywhere.
-// styles: styles/tone.js and styles/own/* — only core and each other (pure functions, no DOM);
+// styles: styles/tone.js and styles/own/* (including own/kit/*, except own/worker.js) — only core and each other (pure functions, no DOM);
 // the rest of styles — core and styles; core, transport and storage do not know about styles.
 // i18n is a leaf layer: it imports nothing outside i18n and does not touch the DOM; it can be imported from any layer
 // (core returns ready-made error and warning texts, so it needs t()).

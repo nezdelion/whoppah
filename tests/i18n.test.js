@@ -11,6 +11,7 @@ import { PROFILE_SCHEMA, JOB_SCHEMA, validate } from '../src/core/profile.js';
 import { PAPER_FORMATS, paperLabel } from '../src/core/layout.js';
 import { PARAMS as CROSSHATCH_PARAMS } from '../src/styles/own/crosshatch.js';
 import { importSvg, SvgImportError } from '../src/core/svg-import.js';
+import { STYLES } from '../src/styles/registry.js';
 
 const srcDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 const { en, ru } = dictionaries;
@@ -262,4 +263,37 @@ test('env.json: the OctoPrint language passes into env, empty and non-string —
   assert.equal(resolveEnv({ ...base, language: '' }, 'http://h').language, null);
   assert.equal(resolveEnv({ ...base, language: 5 }, 'http://h').language, null);
   assert.equal(resolveEnv(base, 'http://h').language, null);
+});
+
+// --- own styles: dynamic keys (t(`${prefix}.param.${key}`) etc.) are not seen by the literal scan above
+
+// every own style and its dictionary prefix; a new own style must be added here
+const OWN_PREFIX = { 'own:crosshatch': 'crosshatch', 'own:waves': 'waves' };
+
+test('own styles: every parameter, select option, preset and the style name have labels in en and ru', () => {
+  const own = STYLES.filter((s) => s.origin === 'own');
+  assert.deepEqual(own.map((s) => s.id).sort(), Object.keys(OWN_PREFIX).sort(), 'all own styles are listed');
+  const missing = [];
+  for (const style of own) {
+    const prefix = OWN_PREFIX[style.id];
+    const keys = style.params.map((d) => `${prefix}.param.${d.key}`);
+    for (const d of style.params) if (d.type === 'select') for (const o of d.options) keys.push(`${prefix}.${d.key}.${o}`);
+    for (const p of style.presets || []) keys.push(`${prefix}.preset.${p.id}`);
+    if (style.id === 'own:waves') keys.push('style.name.waves', 'styles.progress.waves', 'photo.stylePreset', 'photo.stylePreset.none');
+    for (const k of keys) for (const loc of ['en', 'ru']) if (!hasKey(k, loc)) missing.push(`${loc}: ${k}`);
+  }
+  assert.deepEqual(missing, []);
+});
+
+test('own styles: labels, option labels, preset names and the style name switch language live', () => {
+  const waves = STYLES.find((s) => s.id === 'own:waves');
+  const mode = waves.params.find((d) => d.key === 'mode');
+  const bold = waves.presets.find((p) => p.id === 'bold');
+  setLocale('en');
+  assert.deepEqual([waves.name, mode.label, mode.optionLabel('both'), bold.label], ['Wave lines', 'Modulation', 'Both', 'Bold']);
+  assert.equal(waves.params.find((d) => d.key === 'spacing').label, 'Line spacing, mm');
+  setLocale('ru');
+  assert.deepEqual([waves.name, mode.label, mode.optionLabel('both'), bold.label], ['Волнистые линии', 'Модуляция', 'Обе', 'Крупно']);
+  assert.equal(waves.params.find((d) => d.key === 'stagger').label, 'Сдвигать каждую вторую линию на полпериода');
+  assert.equal(mode.default, 'both', 'the value does not depend on the language');
 });

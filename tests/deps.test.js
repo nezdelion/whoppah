@@ -96,3 +96,25 @@ test('i18n: allowed from any layer, i18n itself imports no other layers and does
     assert.match(checkDeps(dir).join('\n'), /i18n\/index\.js.*DOM/);
   } finally { rmSync(dir, { recursive: true }); }
 });
+
+test('styles/own/kit: in the pure zone — core, i18n, tone.js and each other; app, the driver and the DOM are caught', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deps-'));
+  try {
+    for (const d of ['core', 'app', 'i18n', 'styles/own/kit']) mkdirSync(join(dir, d), { recursive: true });
+    writeFileSync(join(dir, 'app', 'x.js'), 'export const x = 1;\n');
+    writeFileSync(join(dir, 'core', 'c.js'), 'export const c = 1;\n');
+    writeFileSync(join(dir, 'i18n', 'index.js'), 'export const t = (k) => k;\n');
+    writeFileSync(join(dir, 'styles', 'tone.js'), 'export const tone = 1;\n');
+    writeFileSync(join(dir, 'styles', 'style-driver.js'), "import { tone } from './tone.js';\nexport const d = setTimeout;\n");
+    writeFileSync(join(dir, 'styles', 'own', 'kit', 'b.js'), 'export const b = 1;\n');
+    writeFileSync(join(dir, 'styles', 'own', 'kit', 'a.js'),
+      "import { c } from '../../../core/c.js';\nimport { t } from '../../../i18n/index.js';\nimport { tone } from '../../tone.js';\nimport { b } from './b.js';\n");
+    writeFileSync(join(dir, 'styles', 'own', 'w.js'), "import { b } from './kit/b.js';\n");
+    assert.deepEqual(checkDeps(dir), []);
+
+    for (const bad of ["import { x } from '../../../app/x.js';\n", "import { d } from '../../style-driver.js';\n", 'export const n = navigator.language;\n']) {
+      writeFileSync(join(dir, 'styles', 'own', 'kit', 'a.js'), bad);
+      assert.match(checkDeps(dir).join('\n'), /own\/kit\/a\.js/, bad);
+    }
+  } finally { rmSync(dir, { recursive: true }); }
+});

@@ -3,6 +3,9 @@
 // and running computations stay here: a run reports to the stack, not to the view.
 import { createLayerStack, normalizeParams, clampSize, SIZE_RANGE } from './layer-stack.js';
 import { defaultsOfParams } from '../../styles/registry.js';
+import { DEFAULT_PAPER, samePaper } from '../../styles/own/kit/paper.js';
+import { presetValues } from '../../styles/own/kit/params.js';
+import { scaleToPaper } from './density.js';
 import { stats } from '../../core/drawing.js';
 import { baseName } from '../download.js';
 import { t } from '../../i18n/index.js';
@@ -21,6 +24,10 @@ export const DEFAULT_STYLE = 'own:crosshatch';
  * Messages (info, warn, sendWarn) are kept as functions and computed by the view on render: after a language switch they
  * are shown in the new language. Events of subscribe(fn): { type: 'image', fresh } — the image or its working size changed
  * (fresh: a new file), 'size' — the working size field, 'message', 'print-params'; stack events — model.stack.subscribe.
+ *
+ * Paper scale: styles with usesPaper get paper = { mmPerPx, penWidthMm } (mmPerPx = scaleToPaper(working image, print
+ * params), the same as the density check). When the print parameters change that scale or the pen width, visible layers of
+ * such styles restart (with the parameter delay); hidden ones are reset so that showing them recomputes; others are untouched.
  */
 export function createPhotoModel({
   getStyle, loadRunner, decodeImage, rasterize, isLoadError = () => false,
@@ -34,7 +41,7 @@ export function createPhotoModel({
   const messages = { info: null, warn: null, sendWarn: null };
   let decoded = null, imageData = null, workingSize = SIZE_RANGE.default, imageName = '';
   let runner = null, runnerReady = null, saveTimer = 0, disposed = false;
-  let ctx = null, printParams = null, offPrint = () => {};
+  let ctx = null, printParams = null, offPrint = () => {}, lastPaper = null;
 
   const emit = (event) => { for (const fn of [...listeners]) fn(event); };
   const say = (name, fn) => { messages[name] = fn; emit({ type: 'message', name }); };
@@ -49,6 +56,25 @@ export function createPhotoModel({
     if (Array.isArray(style.params)) return style.params;
     if (!paramCache.has(style.id)) paramCache.set(style.id, getRunner().then((r) => r.probe(style)).catch((e) => { paramCache.delete(style.id); throw e; }));
     return paramCache.get(style.id);
+  }
+
+  // --- paper scale for styles with parameters in mm on paper
+  function paperNow() {
+    const k = imageData && printParams ? scaleToPaper(imageData, printParams) : null;
+    const pen = printParams && printParams.penWidthMm > 0 ? printParams.penWidthMm : DEFAULT_PAPER.penWidthMm;
+    return { mmPerPx: k > 0 ? k : DEFAULT_PAPER.mmPerPx, penWidthMm: pen };
+  }
+
+  function onPaperChange() {
+    const next = paperNow();
+    const changed = !samePaper(next, lastPaper);
+    lastPaper = next;
+    if (!changed || !imageData) return;
+    for (const l of stack.layers) {
+      const style = getStyle(l.styleId);
+      if (!style || !style.usesPaper) continue;
+      if (l.visible) schedule(l, paramDelay); else { cancel(l.uid); stack.reset(l.uid); }
+    }
   }
 
   // --- layer runs
@@ -66,7 +92,7 @@ export function createPhotoModel({
       const [descs, r] = await Promise.all([descsOf(style), getRunner()]);
       if (disposed || stack.find(uid) !== layer || !layer.visible) return;
       layer.params = normalizeParams(descs, layer.params);
-      r.run(uid, { ...style, params: descs }, { image: imageData, params: layer.params }, (state) => stack.applyResult(uid, state));
+      r.run(uid, { ...style, params: descs }, { image: imageData, params: layer.params, paper: paperNow() }, (state) => stack.applyResult(uid, state));
     } catch (e) {
       stack.applyResult(uid, { status: 'error', message: e.message, lines: [] });
     }
@@ -83,6 +109,7 @@ export function createPhotoModel({
   function applyWorkingSize({ fresh = false } = {}) {
     if (!decoded) return;
     imageData = rasterize(decoded, workingSize);
+    lastPaper = paperNow();
     const info = { name: imageName, w: decoded.width, h: decoded.height, ww: imageData.width, wh: imageData.height };
     messages.info = () => t('photo.imageInfo', info);
     emit({ type: 'image', fresh });
@@ -101,6 +128,8 @@ export function createPhotoModel({
     image: () => ({ decoded, imageData, name: imageName }),
     workingSize: () => workingSize,
     printParams: () => printParams,
+    /** The current paper scale { mmPerPx, penWidthMm } (defaults without an image or print parameters). */
+    paper: () => paperNow(),
     /** The message text in the current language ('' — none). */
     text: (name) => (messages[name] ? messages[name]() : ''),
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -115,7 +144,8 @@ export function createPhotoModel({
       ctx = next;
       offPrint();
       printParams = ctx.printParams.get();
-      offPrint = ctx.printParams.subscribe((p) => { printParams = p; emit({ type: 'print-params' }); });
+      lastPaper = paperNow();
+      offPrint = ctx.printParams.subscribe((p) => { printParams = p; emit({ type: 'print-params' }); onPaperChange(); });
       if (!first) return;
       ctx.presets.load().then((saved) => {
         if (!saved || disposed) return;
@@ -195,6 +225,20 @@ export function createPhotoModel({
       // live parameters go to the running worker, the rest restart the layer (with a delay for slider movement)
       if (l.visible && desc && desc.live && runner && runner.live(uid, l.params)) return;
       if (l.visible) schedule(l, paramDelay);
+    },
+
+    /**
+     * Style preset: the layer parameters become the defaults overlaid with the preset values (one change), and the layer
+     * restarts (not the live path: many parameters change at once). Returns false for an unknown layer or preset.
+     */
+    applyStylePreset(uid, presetId) {
+      const l = stack.find(uid);
+      const style = l && getStyle(l.styleId);
+      const preset = style && Array.isArray(style.params) && (style.presets || []).find((p) => p.id === presetId);
+      if (!preset) return false;
+      stack.setParams(uid, presetValues(style.params, preset));
+      if (l.visible) schedule(l, 0);
+      return true;
     },
 
     currentDrawing: () => stack.toDrawing({ name: imageName }),

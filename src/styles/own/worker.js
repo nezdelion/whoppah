@@ -1,23 +1,21 @@
-// Shared module worker of own styles (native protocol): {type:'run', styleId, image, params} -> progress/result.
-import { RUN, PROGRESS, RESULT, ERROR } from '../protocol.js';
-import { toGray } from '../tone.js';
+// Shared module worker of own styles (native protocol): {type:'run', styleId, image, params, paper} and live
+// {type:'params', runId, params} -> progress/result/error. The work is done by the style driver (../style-driver.js):
+// time slices, live parameters (the latest wins), progress, intermediate and final results.
+import { createDriver, plain, staged } from '../style-driver.js';
 import { crosshatch } from './crosshatch.js';
+import { wavesSteps } from './waves.js';
 
-// id -> function (gray, w, h, params) => lines
-const IMPL = { 'own:crosshatch': crosshatch };
-
-self.onmessage = (e) => {
-  const msg = e.data;
-  if (!msg || msg.type !== RUN) return;
-  const { runId, styleId, image, params } = msg;
-  try {
-    const fn = IMPL[styleId];
-    if (!fn) throw new Error(`unknown style ${styleId}`);
-    self.postMessage({ type: PROGRESS, runId, text: 'styles.progress.hatch' });
-    const gray = toGray(image.data, image.width, image.height);
-    const lines = fn(gray, image.width, image.height, params);
-    self.postMessage({ type: RESULT, runId, lines, final: true }, lines.map((l) => l.buffer));
-  } catch (err) {
-    self.postMessage({ type: ERROR, runId, message: err && err.message ? err.message : String(err) });
-  }
+// id -> steps factory: plain(fn) for a function (gray, w, h, params, paper) => lines, staged(steps) for a generator
+const IMPL = {
+  'own:crosshatch': plain(crosshatch, 'styles.progress.hatch'),
+  'own:waves': staged(wavesSteps),
 };
+
+const driver = createDriver({
+  impl: IMPL,
+  post: (msg, transfer) => self.postMessage(msg, transfer || []),
+  now: () => performance.now(),
+  defer: (fn) => setTimeout(fn, 0),
+});
+
+self.onmessage = (e) => driver.onMessage(e.data);

@@ -208,3 +208,16 @@ test('quick restarts: only the last run reaches the result', () => {
   assert.equal(seen.at(-1).status, STATUS.DONE);
   assert.deepEqual(Array.from(seen.at(-1).lines[0]), [9, 0, 10, 1]);
 });
+
+test('paper goes into the run message of own styles; live parameters go to the same worker without it', () => {
+  const runner = setup();
+  const paper = { mmPerPx: 0.25, penWidthMm: 0.5 };
+  runner.run('a', descriptor({ params: [{ key: 'amplitude', live: true }] }), { image: image(), params: { amplitude: 0.2 }, paper }, () => {});
+  const w = FakeWorker.all[0];
+  assert.deepEqual(w.sent[0].msg.paper, paper);
+  assert.equal(runner.live('a', { amplitude: 0.4 }), true);
+  assert.equal(FakeWorker.all.length, 1, 'the same worker');
+  assert.deepEqual(w.sent.at(-1).msg, { type: 'params', runId: w.sent[0].msg.runId, styleId: 'own:fake', params: { amplitude: 0.4 } });
+  runner.run('b', descriptor(), { image: image(), params: {} }, () => {});
+  assert.equal(FakeWorker.all[1].sent[0].msg.paper, null, 'no paper — null');
+});

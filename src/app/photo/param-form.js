@@ -1,10 +1,12 @@
 // The layer parameter form built only from the style parameter description.
 import { h } from '../ui/dom.js';
+import { optionText, matchPreset } from '../../styles/own/kit/params.js';
+import { t } from '../../i18n/index.js';
 
 const decimals = (step) => (String(step).split('.')[1] || '').length;
 
 /**
- * @param descs  [{key,label,type,min,max,step,options,default,live}]
+ * @param descs  [{key,label,type,min,max,step,options,optionLabel?,default,live}]; select options are shown by optionLabel(value)
  * @param values current values (key -> value)
  * @param onChange (key, value) => void
  */
@@ -16,7 +18,7 @@ export function buildParamForm(descs, values, onChange) {
     }
     if (d.type === 'select') {
       const sel = h('select', { onchange: () => onChange(d.key, sel.value) },
-        d.options.map((o) => h('option', { value: o, selected: o === values[d.key] }, o)));
+        d.options.map((o) => h('option', { value: o, selected: o === values[d.key] }, optionText(d, o))));
       return h('label', {}, d.label, sel);
     }
     const step = d.step || 1;
@@ -38,4 +40,19 @@ export function buildParamForm(descs, values, onChange) {
     return h('label', { class: 'param' }, d.label, h('div', { class: 'param-inputs' }, range, num));
   });
   return h('div', { class: 'grid param-grid' }, rows);
+}
+
+/**
+ * The "Preset" row of a layer card: "—" and the style presets (descriptor presets). The preset whose values (defaults
+ * overlaid with the preset) equal the current ones is shown selected, otherwise "—".
+ * @param onPick (presetId) => void — called when a preset is chosen ("—" does nothing)
+ * @returns { el, select, sync(values) } — sync after any parameter change
+ */
+export function buildPresetPicker(descs, presets, values, onPick) {
+  const select = h('select', { onchange: () => { if (select.value) onPick(select.value); } },
+    h('option', { value: '' }, t('photo.stylePreset.none')),
+    presets.map((p) => h('option', { value: p.id }, p.label)));
+  const sync = (v) => { select.value = matchPreset(descs, presets, v); };
+  sync(values);
+  return { el: h('label', { class: 'preset' }, t('photo.stylePreset'), select), select, sync };
 }

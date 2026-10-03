@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDrawing, stats, allLines } from '../src/core/drawing.js';
-import { simplify, sortMerge, optimize, travelLength } from '../src/core/optimize.js';
+import { simplify, simplifyLine, sortMerge, optimize, travelLength } from '../src/core/optimize.js';
 import { pointSegmentDistance } from '../src/core/geometry.js';
 import { deepFreeze } from './helpers/fixtures.js';
 import './helpers/ru.js';
@@ -97,4 +97,20 @@ test('joining by a stroke: beyond the tolerance — a separate line with a lift'
   const out = sortMerge(d, { start: [0, 0], tol: 0.05, linkTol: 1.5 });
   assert.equal(out.layers[0].lines.length, 2);
   assert.equal(sortMerge(d, { start: [0, 0] }).layers[0].lines.length, 2, 'off by default');
+});
+
+test('simplifyLine: the same RDP as simplify, the ends are kept, the type follows the input', () => {
+  const r = rng(3);
+  const line = [];
+  for (let i = 0; i < 300; i++) line.push(i * 0.5, 4 * Math.sin(i / 15) + (r() - 0.5) * 0.1);
+  const viaDrawing = simplify(draw([line]), 0.2).layers[0].lines[0];
+  assert.ok(viaDrawing.length < line.length);
+  assert.deepEqual(simplifyLine(line, 0.2), viaDrawing, 'plain array: identical to simplify()');
+  const typed = simplifyLine(Float64Array.from(line), 0.2);
+  assert.ok(typed instanceof Float64Array);
+  assert.deepEqual(Array.from(typed), viaDrawing);
+  // all points within the tolerance of the chord: only the ends remain
+  const flat = Float64Array.of(0, 0, 1, 0.01, 2, -0.01, 3, 0.005, 4, 0);
+  assert.deepEqual(Array.from(simplifyLine(flat, 0.05)), [0, 0, 4, 0]);
+  assert.equal(simplifyLine(flat, 0), flat, 'tolerance 0 — unchanged');
 });

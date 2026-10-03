@@ -1,10 +1,24 @@
 // Model of the "Photo" tab style-layer stack: no DOM and no workers.
 // Layer: { uid, styleId, name, visible, params, status: idle|running|partial|done|error, progress, reason, message, lines }
 import { createDrawing, SPACE } from '../../core/drawing.js';
-import { t } from '../../i18n/index.js';
+import { t, hasKey, fmtNumber } from '../../i18n/index.js';
 
 /** The "intermediate" reason from a style: a dictionary key reason.* is translated, anything else (plotterfun texts) as is. */
 export const reasonText = (r) => (typeof r === 'string' && r.startsWith('reason.') ? t(r) : r || '');
+
+/**
+ * Style progress in the current language: { key, params } — t(key, params) with numbers formatted for the locale
+ * (count stays a number for the plural choice); a string — a dictionary key (own styles) or a plotterfun text as is.
+ */
+export function progressText(p) {
+  if (p && typeof p === 'object' && typeof p.key === 'string') {
+    const params = {};
+    for (const [k, v] of Object.entries(p.params || {})) params[k] = typeof v === 'number' && k !== 'count' ? fmtNumber(v, { maxFrac: 1 }) : v;
+    return t(p.key, params);
+  }
+  if (typeof p !== 'string') return '';
+  return hasKey(p, 'en') ? t(p) : p;
+}
 
 export const PRESET_VERSION = 1;
 export const SIZE_RANGE = Object.freeze({ min: 200, max: 2000, default: 800 });

@@ -121,7 +121,7 @@ src/core/                 pure functions over Drawing: geometry, svg-import, svg
 src/transport/            Transport interface, OctoPrint REST (fetch), auth by key and by session (plugin)
 src/storage/              SettingsStore (localStorage, OctoPrint server), settings file
 src/i18n/                 localization: t(key, params), dictionaries en.js / ru.js, language choice (detect.js); imports nothing
-src/styles/               "image → lines" styles: registry, runner (workers), plotterfun adapter, own styles (own/)
+src/styles/               "image → lines" styles: registry, runner (workers), style driver, plotterfun adapter, own styles (own/, helpers own/kit/)
 vendor/plotterfun/        third-party plotterfun code (unmodified copy), version in vendor/plotterfun/UPSTREAM
 octoprint-plugin/         OctoPrint Python plugin (page, env.json, settings API, permission)
 tools/                    build_plugin.py (zip build), dev_octoprint.sh (local OctoPrint)
@@ -129,7 +129,7 @@ src/app/                  shell: state, tabs, forms, preview, print service
 tests/                    node --test
 ```
 
-`i18n` → nothing (and does not touch the DOM); `core`, `transport`, `storage`, `styles`, `app` may import `i18n` (core returns ready-made error and warning texts); `core` → only `core` and `i18n`; `transport`, `storage` — likewise only their own layer and `i18n`; `styles` → `core` (`styles/tone.js` and `styles/own/*` — only `core`, no DOM); `app` → everything. The rule is checked by `tests/deps.test.js`.
+`i18n` → nothing (and does not touch the DOM); `core`, `transport`, `storage`, `styles`, `app` may import `i18n` (core returns ready-made error and warning texts); `core` → only `core` and `i18n`; `transport`, `storage` — likewise only their own layer and `i18n`; `styles` → `core` (`styles/tone.js` and `styles/own/*` including `own/kit/*`, except `own/worker.js` — only `core`, `i18n`, `tone.js` and each other, no DOM); `app` → everything. The rule is checked by `tests/deps.test.js`.
 All modules exchange the `Drawing` model (layers of polylines, flat arrays `[x0, y0, x1, y1, ...]`, "document" or "machine" coordinate system).
 
 Processing order (`core/pipeline.js`): import → layout (mm) → simplification → sorting/merging → G-code.
@@ -160,7 +160,38 @@ The "Print" tab does not change. An intermediate result is marked `meta.partial 
 
 The "Photo" tab (`src/app/tabs/photo-tab.js`) is an ordinary source: image → stack of style layers → `ctx.emit(drawing)`, each visible layer becomes a drawing layer. Computation runs in workers (`src/styles/runner.js`), a new run of a layer cancels the previous one. A layer gets the "done" status only on a reliable completion signal; for plotterfun styles it is built by the wrapper `src/styles/plotterfun-host.js` from the manifest `src/styles/plotterfun-completion.json` (execution model of each style: `sync`, `async-handler`, `timer-chain`, `none`). The manifest applies only to the commit from the first line of `vendor/plotterfun/UPSTREAM`; after updating vendor run `python3 tools/audit_plotterfun.py` — unverified styles get `none` (the result stays intermediate, printing needs confirmation).
 
-Adding your own style: a pure function `(gray, w, h, params) => lines` in `src/styles/own/`, an entry in `src/styles/own/worker.js` (the `IMPL` table) and a descriptor in `src/styles/registry.js`.
+Status texts of own styles may carry numbers: the worker sends progress as `{ key, params }` (for example `{ key: 'styles.progress.waves', params: { percent: 40 } }` → "Wave lines 40%"), plain strings are dictionary keys or plotterfun texts.
+
+#### Adding your own style
+
+The simple way: a pure function `(gray, w, h, params, paper) => lines` (lines are `Float64Array` polylines in working-image px) in `src/styles/own/`, an entry `'own:<name>': plain(fn, 'styles.progress.<key>')` in the `IMPL` table of `src/styles/own/worker.js` and a descriptor in `src/styles/registry.js` (`crosshatch` works like this).
+
+A style with live sliders is a staged generator (`src/styles/own/waves.js` is the example):
+
+```js
+function* mySteps({ gray, w, h, params, paper, cache }) {
+  const dark = stage(cache, 'tone', [params.invert, params.gamma], () => toDarkness(gray, params));       // cached stage
+  const geo = yield* stageGen(cache, 'geo', [dark, params.spacing], function* () { /* yield progressOf(KEY, f) */ });
+  return stage(cache, 'finish', [geo, params.passes], () => /* Float64Array[] */);
+}
+export const myStyle = (gray, w, h, params, paper) => runToEnd(mySteps({ gray, w, h, params, paper, cache: createCache() }));
+```
+
+It is registered as `staged(mySteps)` in `IMPL`. The worker runs it through the driver `src/styles/style-driver.js`: in time slices (30 ms; messages are handled in between), progress at most every 200 ms, `yield { partial: lines }` sends an intermediate result, the return value is the final one. Parameters marked `live: true` go to the running worker; the latest value wins (the current generator is dropped at the next slice boundary and restarted with the same stage cache, so only the stages whose dependencies changed are recomputed; a dropped stage stores nothing). Stage dependencies are compared with `===`; pass the upstream stage value as a dependency to chain them. The result must depend only on the image, the parameters and `paper` — a live change gives exactly what a fresh run gives (tests check it).
+
+Descriptor fields beyond `id, name, group, origin, params, adapter, createWorker, spacing`:
+
+- `usesPaper: true` — size parameters are in mm on paper. The run gets `paper = { mmPerPx, penWidthMm }` (`mmPerPx` — the "working px → mm" scale of the density check, from the field minus margins and the rotation; without print parameters 0.25 mm/px and a 0.5 mm pen); the tab recomputes the layer when the field, margin, rotation or pen width change that scale. The scale assumes the drawing fills the image (the layout fits the drawing's bounding box), "Limit to print area" is not taken into account yet. `spacing(params, image, paper)` returns the line step in px for the density check.
+- `presets: [{ id, label, params }]` — style presets: the layer card gets a "Preset" row (values = the defaults overlaid with the preset, the layer restarts); the values are saved in the tab preset as usual.
+- a `select` parameter may have `optionLabel(value)` — the shown text of an option (the value itself does not depend on the language).
+
+Shared pure helpers in `src/styles/own/kit/` (no DOM, usable in node tests): `params.js` (`paramFactory(prefix)` — lazy labels `t('<prefix>.param.<key>')` and option labels `t('<prefix>.<key>.<value>')`; `presetFactory(prefix)` — `t('<prefix>.preset.<id>')`; `presetValues`, `matchPreset`), `paper.js` (`DEFAULT_PAPER`, `paperOf`, `mmToPx`, `samePaper`), `lines.js` (`lineFamily` — parallel lines through the image clipped to it, `clipLine`, `arcLengths`, `dropShort`), `stroke.js` (`thicknessProfile`, `thicken` — line thickness by 1/3/5 close passes inside one continuous polyline with tapered "lenses", `endTaperPx` for thin stroke ends), `order.js` (`orientChain`, `orientGroups` — stroke directions for short travels, a serpentine for line families), `stages.js` (`createCache`, `stage`, `stageGen`, `runToEnd`, `progressOf`). Also `toDarkness` (with `gamma`), `boxBlur`, `sampleBilinear` from `src/styles/tone.js` and `simplifyLine` from `src/core/optimize.js`. All texts go through `t()`: add the `<prefix>.param.*`, option and preset keys to `en.js` and `ru.js` and the style to `OWN_PREFIX` in `tests/i18n.test.js`.
+
+#### Wave lines
+
+Parallel lines at an angle and step (mm on paper); each line is a wave whose amplitude, frequency or both grow with the darkness of its band; in dark areas the line gets thicker by up to 3 or 5 passes `pass pitch × pen width` apart (they merge into one thick line; the pen is not lifted inside a stroke); in light areas below the break threshold the line stops (highlights shorter than one step do not break it). The amplitude is capped so that neighbouring lines at full thickness do not touch; "Shift every other line by half a period" puts neighbours in antiphase (off — in phase). The lines come out as a serpentine. Three presets: fine waves, classic (the defaults), bold. The defaults are placeholders until a paper test.
+
+With wave lines set "Join ends with a stroke up to" (`linkTolMm`, Optimization) either to 0, or deliberately a bit more than the line step: then neighbouring lines of the serpentine are joined by a stroke along the image edge or the edge of a light area — faster, but the joins are visible as an outline. A value below the step joins nothing.
 
 ## Third-party code
 

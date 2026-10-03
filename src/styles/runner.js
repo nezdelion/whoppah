@@ -38,8 +38,11 @@ export function createRunner({ createSession }) {
     stop(run);
   }
 
-  /** Run of layer key; the previous run of the same layer is cancelled (the worker is terminated). */
-  function run(key, descriptor, { image, params }, listener) {
+  /**
+   * Run of layer key; the previous run of the same layer is cancelled (the worker is terminated).
+   * paper { mmPerPx, penWidthMm } — the paper scale for styles with parameters in mm (descriptor usesPaper); others ignore it.
+   */
+  function run(key, descriptor, { image, params, paper = null }, listener) {
     cancel(key);
     const runId = ++counter;
     const session = createSession(descriptor);
@@ -66,7 +69,7 @@ export function createRunner({ createSession }) {
       for (const entry of session.initMessages()) post(worker, entry);
       // a copy of the buffer: each layer has its own, transfer does not break the shared image
       const copy = { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
-      post(worker, session.runMessage({ runId, image: copy, params }));
+      post(worker, session.runMessage({ runId, image: copy, params, paper }));
     } catch (e) {
       onFail(e);
       return;
