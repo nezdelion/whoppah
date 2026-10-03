@@ -49,7 +49,7 @@ export function createRunner({ createSession }) {
     const worker = descriptor.createWorker();
     const r = {
       runId, key, worker, session, listener, hasLive: Array.isArray(descriptor.params) && descriptor.params.some((p) => p.live),
-      state: { runId, status: STATUS.RUNNING, progress: '', lines: [], partial: true, reason: '' },
+      state: { runId, status: STATUS.RUNNING, progress: '', lines: [], partial: true, reason: '', note: '' },
     };
     runs.set(key, r);
     const emit = () => { if (runs.get(key) === r) listener({ ...r.state }); };
@@ -85,6 +85,7 @@ export function createRunner({ createSession }) {
     else if (ev.type === RESULT) {
       s.lines = ev.lines;
       s.reason = ev.reason || '';
+      s.note = ev.note || '';
       if (ev.final) { s.status = STATUS.DONE; s.partial = false; s.reason = ''; }
       else { s.status = ev.late ? STATUS.PARTIAL : STATUS.RUNNING; s.partial = true; }
     } else if (ev.type === ERROR) {

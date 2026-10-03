@@ -1,5 +1,6 @@
 // Model of the "Photo" tab style-layer stack: no DOM and no workers.
-// Layer: { uid, styleId, name, visible, params, status: idle|running|partial|done|error, progress, reason, message, lines }
+// Layer: { uid, styleId, name, visible, params, status: idle|running|partial|done|error, progress, reason, message, note, lines }
+// note — a remark of the style that stays with its result (own styles, e.g. "too many lines"), shown like progress
 import { createDrawing, SPACE } from '../../core/drawing.js';
 import { t, hasKey, fmtNumber } from '../../i18n/index.js';
 
@@ -60,7 +61,7 @@ export function createLayerStack({ getStyle, uid = (() => { let n = 0; return ()
 
     add(styleId, { params = {}, name, visible = true } = {}) {
       const layer = { uid: uid(), styleId, name: name || nameFor(styleId), visible, params: { ...params },
-        status: 'idle', progress: '', reason: '', message: '', lines: [] };
+        status: 'idle', progress: '', reason: '', message: '', note: '', lines: [] };
       layers = [...layers, layer];
       emit({ type: 'structure', uid: layer.uid });
       return layer;
@@ -109,14 +110,14 @@ export function createLayerStack({ getStyle, uid = (() => { let n = 0; return ()
     reset(id) {
       const l = find(id);
       if (!l) return;
-      Object.assign(l, { status: 'idle', progress: '', reason: '', message: '', lines: [] });
+      Object.assign(l, { status: 'idle', progress: '', reason: '', message: '', note: '', lines: [] });
       emit({ type: 'result', uid: id });
     },
-    /** State from the runner: {status, progress, lines, reason, message} */
+    /** State from the runner: {status, progress, lines, reason, message, note} */
     applyResult(id, state) {
       const l = find(id);
       if (!l) return;
-      Object.assign(l, { status: state.status, progress: state.progress || '', reason: state.reason || '', message: state.message || '', lines: state.lines || [] });
+      Object.assign(l, { status: state.status, progress: state.progress || '', reason: state.reason || '', message: state.message || '', note: state.note || '', lines: state.lines || [] });
       emit({ type: 'result', uid: id });
     },
 

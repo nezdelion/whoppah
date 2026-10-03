@@ -268,7 +268,7 @@ test('env.json: the OctoPrint language passes into env, empty and non-string —
 // --- own styles: dynamic keys (t(`${prefix}.param.${key}`) etc.) are not seen by the literal scan above
 
 // every own style and its dictionary prefix; a new own style must be added here
-const OWN_PREFIX = { 'own:crosshatch': 'crosshatch', 'own:waves': 'waves' };
+const OWN_PREFIX = { 'own:crosshatch': 'crosshatch', 'own:waves': 'waves', 'own:engraving': 'engraving' };
 
 test('own styles: every parameter, select option, preset and the style name have labels in en and ru', () => {
   const own = STYLES.filter((s) => s.origin === 'own');
@@ -280,6 +280,7 @@ test('own styles: every parameter, select option, preset and the style name have
     for (const d of style.params) if (d.type === 'select') for (const o of d.options) keys.push(`${prefix}.${d.key}.${o}`);
     for (const p of style.presets || []) keys.push(`${prefix}.preset.${p.id}`);
     if (style.id === 'own:waves') keys.push('style.name.waves', 'styles.progress.waves', 'photo.stylePreset', 'photo.stylePreset.none');
+    if (style.id === 'own:engraving') keys.push('style.name.engraving', ...['field', 'lines', 'cross', 'finish', 'limit'].map((k) => `styles.progress.engraving.${k}`));
     for (const k of keys) for (const loc of ['en', 'ru']) if (!hasKey(k, loc)) missing.push(`${loc}: ${k}`);
   }
   assert.deepEqual(missing, []);

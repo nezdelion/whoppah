@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createDriver, plain, staged } from '../src/styles/style-driver.js';
 import { crosshatch } from '../src/styles/own/crosshatch.js';
 import { wavesSteps, waves } from '../src/styles/own/waves.js';
+import { engravingSteps, engraving } from '../src/styles/own/engraving.js';
 import { toGray } from '../src/styles/tone.js';
 import './helpers/ru.js';
 
@@ -141,4 +142,66 @@ test('wave lines: a live change equals a fresh run, also when it arrives mid-com
   assert.deepEqual(arr(b.finals()[0].msg.lines), fresh);
   // the progress object of the style
   assert.equal(b.of('progress')[0].msg.text.key, 'styles.progress.waves');
+});
+
+test('a note goes with the final result; a restart with new parameters forgets it', () => {
+  const h = harness({
+    'own:x': staged(function* ({ params }) {
+      if (params.v === 0) yield { note: { key: 'n', params: {} } };
+      yield {};
+      return [];
+    }),
+  });
+  h.driver.onMessage(run(1, 'own:x', rgba(1, 1, () => 0), { v: 0 }));
+  h.drain();
+  assert.deepEqual(h.finals()[0].msg.note, { key: 'n', params: {} });
+  h.driver.onMessage({ type: 'params', runId: 1, params: { v: 1 } });
+  h.drain();
+  assert.equal('note' in h.finals()[1].msg, false);
+});
+
+test('engraving: a chain of live changes (base angle, cross threshold, passes) mid-computation equals a fresh run', () => {
+  const img = rgba(160, 120, (x, y) => (Math.hypot(x - 70, y - 60) < 35 ? 40 : 230 - 150 * (x / 159)));
+  const paper = { mmPerPx: 0.25, penWidthMm: 0.5 };
+  const p3 = { baseAngle: 70, crossThreshold: 60, maxPasses: 5 };
+  const fresh = arr(engraving(toGray(img.data, 160, 120), 160, 120, p3, paper));
+  const h = harness({ 'own:engraving': staged(engravingSteps) }, { sliceMs: 0 });
+  h.driver.onMessage(run(1, 'own:engraving', img, {}, paper));
+  for (let i = 0; i < 15; i++) h.step();
+  h.driver.onMessage({ type: 'params', runId: 1, params: { baseAngle: 70 } });
+  for (let i = 0; i < 15; i++) h.step();
+  h.driver.onMessage({ type: 'params', runId: 1, params: { baseAngle: 70, crossThreshold: 60 } });
+  h.drain();
+  h.driver.onMessage({ type: 'params', runId: 1, params: p3 });
+  h.drain();
+  assert.deepEqual(arr(h.finals().at(-1).msg.lines), fresh);
+  // an intermediate result (the main lines) comes before the final one
+  const results = h.of('result').map((r) => r.msg.final);
+  assert.ok(results.indexOf(false) >= 0 && results.indexOf(false) < results.indexOf(true));
+});
+
+test('engraving progress: phases in order, the percent does not fall within a phase, messages at most every 200 ms', () => {
+  const img = rgba(240, 180, (x, y) => (Math.hypot(x - 120, y - 90) < 60 ? 20 + x / 3 : 255 * (1 - x / 239)));
+  const sent = [], queue = [];
+  let t = 0;
+  const driver = createDriver({
+    impl: { 'own:engraving': staged(engravingSteps) },
+    post: (msg) => sent.push({ msg, at: t }), now: () => (t += 25), defer: (fn) => queue.push(fn), sliceMs: 30, progressMs: 200,
+  });
+  driver.onMessage(run(1, 'own:engraving', img, {}, { mmPerPx: 0.25, penWidthMm: 0.5 }));
+  while (queue.length) queue.shift()();
+  const progress = sent.filter((s) => s.msg.type === 'progress');
+  const order = ['field', 'lines', 'cross', 'finish'].map((k) => `styles.progress.engraving.${k}`);
+  assert.ok(progress.length >= 4, `${progress.length} progress messages`);
+  let phase = 0, last = -1;
+  for (const { msg } of progress) {
+    const i = order.indexOf(msg.text.key);
+    assert.ok(i >= phase, `phase ${msg.text.key} after ${order[phase]}`);
+    if (i > phase) { phase = i; last = -1; }
+    assert.ok(msg.text.params.percent >= last, 'the percent does not fall');
+    last = msg.text.params.percent;
+  }
+  assert.ok(new Set(progress.map((p) => p.msg.text.key)).size >= 3, 'several phases are shown');
+  for (let i = 1; i < progress.length; i++) assert.ok(progress[i].at - progress[i - 1].at >= 200);
+  assert.equal(sent.filter((s) => s.msg.type === 'result' && s.msg.final).length, 1);
 });

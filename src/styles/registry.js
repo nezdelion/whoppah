@@ -7,6 +7,7 @@
 // Parameter description: { key, label, type: 'number'|'bool'|'select', min, max, step, options, optionLabel?(value), default, live }
 import { defaultParams as crosshatchDefaults, PARAMS as CROSSHATCH_PARAMS } from './own/crosshatch.js';
 import { PARAMS as WAVES_PARAMS, PRESETS as WAVES_PRESETS, spacingPx as wavesSpacing } from './own/waves.js';
+import { PARAMS as ENGRAVING_PARAMS, PRESETS as ENGRAVING_PRESETS, spacingPx as engravingSpacing } from './own/engraving.js';
 import { createPlotterfunSession } from './plotterfun-adapter.js';
 import { createNativeSession } from './native-adapter.js';
 import { t } from '../i18n/index.js';
@@ -54,6 +55,12 @@ export const STYLES = Object.freeze([
   pf('longwave', 'Longwave', GROUPS.lines),
   pf('linescan', 'Linescan', GROUPS.lines, { commonTone: true }),
   pf('linedraw', 'Linedraw', GROUPS.contour),
+  {
+    id: 'own:engraving', get name() { return t('style.name.engraving'); }, group: GROUPS.contour, origin: 'own',
+    params: ENGRAVING_PARAMS, adapter: 'native', usesPaper: true, presets: ENGRAVING_PRESETS,
+    createWorker: ownWorker,
+    spacing: (p, img, paper) => engravingSpacing(p, paper),
+  },
   {
     id: 'own:crosshatch', name: 'Crosshatch', group: GROUPS.contour, origin: 'own',
     params: CROSSHATCH_PARAMS, adapter: 'native',

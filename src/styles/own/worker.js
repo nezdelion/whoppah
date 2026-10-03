@@ -4,11 +4,13 @@
 import { createDriver, plain, staged } from '../style-driver.js';
 import { crosshatch } from './crosshatch.js';
 import { wavesSteps } from './waves.js';
+import { engravingSteps } from './engraving.js';
 
 // id -> steps factory: plain(fn) for a function (gray, w, h, params, paper) => lines, staged(steps) for a generator
 const IMPL = {
   'own:crosshatch': plain(crosshatch, 'styles.progress.hatch'),
   'own:waves': staged(wavesSteps),
+  'own:engraving': staged(engravingSteps),
 };
 
 const driver = createDriver({

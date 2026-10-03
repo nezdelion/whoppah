@@ -94,7 +94,7 @@ export function createPhotoSource({ createModel = () => createPhotoModel({ getSt
         if (l.status === 'idle') return m.image().imageData ? t('photo.status.waiting') : t('photo.status.noImage');
         const base = statusLabel(l.status);
         if (l.status === 'error') return `${base}: ${l.message}`;
-        if (l.status === 'done') return base;
+        if (l.status === 'done') return [base, progressText(l.note)].filter(Boolean).join(' · ');
         return [base, progressText(l.progress), l.reason && (l.status === 'running' ? t('photo.status.partialReason', { reason: reasonText(l.reason) }) : reasonText(l.reason))].filter(Boolean).join(' · ');
       }
 

@@ -8,7 +8,8 @@ export const INIT = 'init';       // {type, style, model, base}: for plotterfun-
 
 // worker -> main
 export const PROGRESS = 'progress'; // {type, runId, text}: text — a string (dictionary key or a plotterfun text) or {key, params}
-export const RESULT = 'result';     // {type, runId, lines:[Float64Array|number[]...], final:boolean, reason?, late?}
+export const RESULT = 'result';     // {type, runId, lines:[Float64Array|number[]...], final:boolean, reason?, late?, note?}
+                                    // note — own styles: a remark that stays with the final result (a key or {key, params})
 export const ERROR = 'error';       // {type, runId, message}
 export const SLIDERS = 'sliders';   // {type, controls}: plotterfun style parameters (adapter only)
 

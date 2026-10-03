@@ -221,3 +221,16 @@ test('paper goes into the run message of own styles; live parameters go to the s
   runner.run('b', descriptor(), { image: image(), params: {} }, () => {});
   assert.equal(FakeWorker.all[1].sent[0].msg.paper, null, 'no paper — null');
 });
+
+test('a note of the final result stays in the state; the next result without it clears it', () => {
+  const runner = setup();
+  const seen = [];
+  runner.run('a', descriptor(), { image: image(), params: {} }, (s) => seen.push(s));
+  const w = FakeWorker.all[0], id = w.sent[0].msg.runId;
+  const note = { key: 'styles.progress.engraving.limit', params: {} };
+  w.emit({ type: 'result', runId: id, lines: [line(1)], final: true, note });
+  assert.equal(seen.at(-1).status, STATUS.DONE);
+  assert.deepEqual(seen.at(-1).note, note);
+  w.emit({ type: 'result', runId: id, lines: [line(2)], final: true });
+  assert.equal(seen.at(-1).note, '');
+});

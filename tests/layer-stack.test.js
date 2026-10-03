@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLayerStack, normalizeParams, clampSize, PRESET_VERSION } from '../src/app/photo/layer-stack.js';
+import { createLayerStack, normalizeParams, clampSize, PRESET_VERSION, progressText } from '../src/app/photo/layer-stack.js';
 import { estimateSpacing, densityText, scaleToPaper } from '../src/app/photo/density.js';
 import { fitSize } from '../src/app/photo/image-loader.js';
 import { isPartial, partialReasons } from '../src/core/drawing.js';
@@ -145,4 +145,18 @@ test('density: changing paper format, margin and rotation recomputes the estimat
   assert.equal(estimateSpacing(null, image, { fieldMm: { w: 180, h: 180 }, marginMm: 0, rotate: false, penWidthMm: 0.5 }), null);
   assert.equal(scaleToPaper(image, { fieldMm: { w: 20, h: 20 }, marginMm: 10, rotate: false }), null);
   assert.equal(densityText(null, 0.5), '');
+});
+
+test('a style note stays with the layer result and is cleared by a reset', () => {
+  const s = make();
+  const a = s.add('a');
+  const note = { key: 'styles.progress.engraving.limit', params: {} };
+  s.applyResult(a.uid, { status: 'done', lines: [[0, 0, 1, 1]], note });
+  assert.deepEqual(s.layers[0].note, note);
+  assert.equal(progressText(s.layers[0].note), 'Слишком много линий — увеличьте шаг');
+  s.applyResult(a.uid, { status: 'running', lines: [] });
+  assert.equal(s.layers[0].note, '', 'a new computation clears it');
+  s.applyResult(a.uid, { status: 'done', lines: [[0, 0, 1, 1]], note });
+  s.reset(a.uid);
+  assert.equal(s.layers[0].note, '');
 });

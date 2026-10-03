@@ -3,11 +3,11 @@
 // fake post/now/defer and run it in node).
 //
 // A style for the driver is a factory  ({ gray, w, h, params, paper, cache }) => generator  (see own/kit/stages.js):
-// it yields { progress: text } (text — a dictionary key or { key, params }) and { partial: lines }, and returns the final
-// lines. A plain function (gray, w, h, params, paper) => lines is wrapped by plain().
+// it yields { progress: text } (text — a dictionary key or { key, params }), { partial: lines } and { note: text } (a remark
+// that stays with the final result, e.g. "too many lines"; the last one wins), and returns the final lines. A plain function (gray, w, h, params, paper) => lines is wrapped by plain().
 //
 // Protocol (protocol.js): in  {type:'run', runId, styleId, image, params, paper}, {type:'params', runId, params};
-//                         out {type:'progress', runId, text}, {type:'result', runId, lines, final}, {type:'error', runId, message}.
+//                         out {type:'progress', runId, text}, {type:'result', runId, lines, final, note?}, {type:'error', runId, message}.
 // Live parameters: the latest 'params' wins. They are remembered as pending; at the next slice boundary the current
 // generator is dropped and a new one starts with the latest values and the same stage cache (unchanged stages are reused).
 // Ten messages in a row give one computation and one final result.
@@ -43,6 +43,7 @@ export function createDriver({ impl, post, now = () => Date.now(), defer = (fn) 
 
   function start(j, params) {
     j.params = params;
+    j.note = null;
     j.gen = j.steps({ gray: j.gray, w: j.w, h: j.h, params, paper: j.paper, cache: j.cache });
     j.runs++;
   }
@@ -58,6 +59,7 @@ export function createDriver({ impl, post, now = () => Date.now(), defer = (fn) 
       const t = now();
       if (t - j.lastProgress >= progressMs) { j.lastProgress = t; post({ type: PROGRESS, runId: j.runId, text: y.progress }); }
     }
+    if (y.note !== undefined) j.note = y.note;
     // structured clone copies the arrays: the style may keep (cache) them
     if (y.partial) post({ type: RESULT, runId: j.runId, lines: y.partial, final: false });
   }
@@ -65,7 +67,9 @@ export function createDriver({ impl, post, now = () => Date.now(), defer = (fn) 
   function finish(j, lines) {
     // copies are transferred: the originals may live in the stage cache and must not be detached
     const out = (lines || []).map((l) => Float64Array.from(l));
-    post({ type: RESULT, runId: j.runId, lines: out, final: true }, out.map((l) => l.buffer));
+    const msg = { type: RESULT, runId: j.runId, lines: out, final: true };
+    if (j.note) msg.note = j.note;
+    post(msg, out.map((l) => l.buffer));
   }
 
   function slice() {
@@ -92,7 +96,7 @@ export function createDriver({ impl, post, now = () => Date.now(), defer = (fn) 
       const { runId, styleId, image, params, paper } = msg;
       const steps = impl[styleId];
       const j = { runId, styleId, steps, gray: null, w: image && image.width, h: image && image.height, paper: paper || null,
-        cache: createCache(), params, gen: null, pending: null, lastProgress: -Infinity, runs: 0 };
+        cache: createCache(), params, gen: null, pending: null, note: null, lastProgress: -Infinity, runs: 0 };
       job = j;
       try {
         if (!steps) throw new Error(`unknown style ${styleId}`);
