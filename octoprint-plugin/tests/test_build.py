@@ -53,3 +53,21 @@ def test_zip_contains_current_app_file(tmp_path, monkeypatch):
     target = build.build_zip("9.9.9")
     inside = zipfile.ZipFile(target).read("OctoPrint-Plotter-9.9.9/octoprint_plotter/static/app/src/app/main.js")
     assert inside == (ROOT / "src" / "app" / "main.js").read_bytes()
+
+
+def test_zip_build_bumps_the_patch_version(tmp_path, monkeypatch):
+    build = load_build()
+    version_file = tmp_path / "_version.py"
+    version_file.write_text('__version__ = "0.1.7"\n')
+    monkeypatch.setattr(build, "VERSION_FILE", version_file)
+    monkeypatch.setattr(build, "DIST", tmp_path / "dist")
+    monkeypatch.setattr(build, "copy_app", lambda: [])
+    build.main([])
+    assert build.read_version() == "0.1.8"
+    assert (tmp_path / "dist" / "OctoPrint-Plotter-0.1.8.zip").exists()
+    build.main(["--no-zip"])
+    build.main(["--no-bump"])
+    assert build.read_version() == "0.1.8", "copy-only and --no-bump keep the version"
+    build.main(["--version", "0.2.0"])
+    assert build.read_version() == "0.2.0"
+    assert build.bump_patch("1.2.9.post3") == "1.2.10"
