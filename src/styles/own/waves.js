@@ -2,6 +2,7 @@
 // with the darkness of the band around it; in dark areas the line gets thicker by extra passes (kit/stroke.js), in light
 // areas it breaks. Size parameters are in mm on paper (descriptor usesPaper). A pure deterministic staged generator.
 import { toDarkness, boxBlur, sampleBilinear } from '../tone.js';
+import { applyFade } from '../prep.js';
 import { simplifyLine } from '../../core/optimize.js';
 import { paramFactory, presetFactory } from './kit/params.js';
 import { paperOf } from './kit/paper.js';
@@ -145,14 +146,14 @@ export function waveLine(line, dark, w, h, { s, aMax, lambda, mode, threshold, s
  * The style as a staged generator (see kit/stages.js): stages tone → centres → finish (thickness, minimum length,
  * simplification, serpentine order). Returns Float64Array[] in image px.
  */
-export function* wavesSteps({ gray, w, h, params, paper, cache }) {
+export function* wavesSteps({ gray, w, h, params, paper, cache, fade = null }) {
   const g = geometry(params, paper);
   const { p, s, K, pitchPx, aMax, lambda, mmPerPx } = g;
   const blurR = Math.round(s / 2);
 
   // 1. tone: each line sees the mean tone of its band
-  const dark = stage(cache, 'tone', [!!p.invert, p.brightness, p.contrast, p.gamma, blurR],
-    () => boxBlur(toDarkness(gray, { invert: !!p.invert, brightness: p.brightness, contrast: p.contrast, gamma: p.gamma }), w, h, blurR));
+  const dark = stage(cache, 'tone', [!!p.invert, p.brightness, p.contrast, p.gamma, blurR, fade],
+    () => boxBlur(applyFade(toDarkness(gray, { invert: !!p.invert, brightness: p.brightness, contrast: p.contrast, gamma: p.gamma }), fade), w, h, blurR));
 
   // 2. wave centre lines (grouped by family line, in increasing j)
   const wave = { s, aMax, lambda, mode: p.mode, threshold: p.threshold, stagger: !!p.stagger, freqRange: p.freqRange };
@@ -191,6 +192,6 @@ export function* wavesSteps({ gray, w, h, params, paper, cache }) {
 }
 
 /** Synchronous call (tests): the same result as the driver. */
-export function waves(gray, w, h, params = {}, paper = null) {
-  return runToEnd(wavesSteps({ gray, w, h, params, paper, cache: createCache() }));
+export function waves(gray, w, h, params = {}, paper = null, fade = null) {
+  return runToEnd(wavesSteps({ gray, w, h, params, paper, cache: createCache(), fade }));
 }

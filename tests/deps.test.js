@@ -118,3 +118,18 @@ test('styles/own/kit: in the pure zone — core, i18n, tone.js and each other; a
     }
   } finally { rmSync(dir, { recursive: true }); }
 });
+
+test('styles/prep.js (image preprocessing before styles) is in the pure zone: no DOM, no app', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deps-'));
+  try {
+    for (const d of ['core', 'app', 'styles']) mkdirSync(join(dir, d), { recursive: true });
+    writeFileSync(join(dir, 'app', 'x.js'), 'export const x = 1;\n');
+    writeFileSync(join(dir, 'styles', 'tone.js'), 'export const tone = 1;\n');
+    writeFileSync(join(dir, 'styles', 'prep.js'), "import { tone } from './tone.js';\nexport const p = 1;\n");
+    assert.deepEqual(checkDeps(dir), []);
+    writeFileSync(join(dir, 'styles', 'prep.js'), 'export const c = document.createElement;\n');
+    assert.match(checkDeps(dir).join('\n'), /prep\.js.*DOM/);
+    writeFileSync(join(dir, 'styles', 'prep.js'), "import { x } from '../app/x.js';\n");
+    assert.match(checkDeps(dir).join('\n'), /prep\.js/);
+  } finally { rmSync(dir, { recursive: true }); }
+});

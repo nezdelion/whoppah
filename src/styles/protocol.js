@@ -2,7 +2,8 @@
 // Unpacking plotterfun messages (['svg-path', d], etc.) stays inside plotterfun-host and the adapter.
 
 // main -> worker
-export const RUN = 'run';         // {type, runId, styleId?, image:{width,height,data}, params, paper?:{mmPerPx, penWidthMm}}
+export const RUN = 'run';         // {type, runId, styleId?, image:{width,height,data}, params, paper?:{mmPerPx, penWidthMm},
+                                  //  fade?:{strength,size,softness,cx,cy}} — fade: own styles only, a tone mask (styles/prep.js)
 export const PARAMS = 'params';   // {type, runId, params}: live parameters of a running computation
 export const INIT = 'init';       // {type, style, model, base}: for plotterfun-host only
 

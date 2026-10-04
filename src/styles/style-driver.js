@@ -2,24 +2,27 @@
 // throttles progress, sends intermediate and final results. Not in the pure zone (timers are injected, though: tests pass
 // fake post/now/defer and run it in node).
 //
-// A style for the driver is a factory  ({ gray, w, h, params, paper, cache }) => generator  (see own/kit/stages.js):
+// A style for the driver is a factory  ({ gray, w, h, params, paper, cache, fade }) => generator  (see own/kit/stages.js):
 // it yields { progress: text } (text — a dictionary key or { key, params }), { partial: lines } and { note: text } (a remark
-// that stays with the final result, e.g. "too many lines"; the last one wins), and returns the final lines. A plain function (gray, w, h, params, paper) => lines is wrapped by plain().
+// that stays with the final result, e.g. "too many lines"; the last one wins), and returns the final lines. A plain function (gray, w, h, params, paper, fade) => lines is wrapped by plain().
+// fade — the "Fade background" tone mask (styles/prep.js toneFade: Float32Array w*h of keep factors, or null): the style
+// multiplies its darkness by it after tone mapping (applyFade) and never uses it for geometry.
 //
-// Protocol (protocol.js): in  {type:'run', runId, styleId, image, params, paper}, {type:'params', runId, params};
+// Protocol (protocol.js): in  {type:'run', runId, styleId, image, params, paper, fade}, {type:'params', runId, params};
 //                         out {type:'progress', runId, text}, {type:'result', runId, lines, final, note?}, {type:'error', runId, message}.
 // Live parameters: the latest 'params' wins. They are remembered as pending; at the next slice boundary the current
 // generator is dropped and a new one starts with the latest values and the same stage cache (unchanged stages are reused).
 // Ten messages in a row give one computation and one final result.
 import { RUN, PARAMS, PROGRESS, RESULT, ERROR } from './protocol.js';
 import { toGray } from './tone.js';
+import { toneFade } from './prep.js';
 import { createCache } from './own/kit/stages.js';
 
 /** A plain style function as a one-step generator; progressKey (optional) is reported first. */
 export function plain(fn, progressKey = '') {
-  return function* plainSteps({ gray, w, h, params, paper }) {
+  return function* plainSteps({ gray, w, h, params, paper, fade }) {
     if (progressKey) yield { progress: progressKey };
-    return fn(gray, w, h, params, paper);
+    return fn(gray, w, h, params, paper, fade);
   };
 }
 
@@ -44,7 +47,7 @@ export function createDriver({ impl, post, now = () => Date.now(), defer = (fn) 
   function start(j, params) {
     j.params = params;
     j.note = null;
-    j.gen = j.steps({ gray: j.gray, w: j.w, h: j.h, params, paper: j.paper, cache: j.cache });
+    j.gen = j.steps({ gray: j.gray, w: j.w, h: j.h, params, paper: j.paper, cache: j.cache, fade: j.fade });
     j.runs++;
   }
 
@@ -93,14 +96,15 @@ export function createDriver({ impl, post, now = () => Date.now(), defer = (fn) 
   function onMessage(msg) {
     if (!msg) return;
     if (msg.type === RUN) {
-      const { runId, styleId, image, params, paper } = msg;
+      const { runId, styleId, image, params, paper, fade } = msg;
       const steps = impl[styleId];
-      const j = { runId, styleId, steps, gray: null, w: image && image.width, h: image && image.height, paper: paper || null,
+      const j = { runId, styleId, steps, gray: null, fade: null, w: image && image.width, h: image && image.height, paper: paper || null,
         cache: createCache(), params, gen: null, pending: null, note: null, lastProgress: -Infinity, runs: 0 };
       job = j;
       try {
         if (!steps) throw new Error(`unknown style ${styleId}`);
         j.gray = toGray(image.data, image.width, image.height);
+        j.fade = fade ? toneFade(image.width, image.height, fade) : null;
         start(j, params);
       } catch (err) { fail(j, err); return; }
       schedule();

@@ -1,5 +1,6 @@
 // Crosshatch: parallel hatching layers by darkness thresholds. A pure deterministic function.
 import { toDarkness, boxBlur } from '../tone.js';
+import { applyFade } from '../prep.js';
 import { t } from '../../i18n/index.js';
 
 export const DEFAULT_ANGLES = Object.freeze([45, 135, 0, 90]);
@@ -43,11 +44,11 @@ function clip(px, py, dx, dy, w, h) {
  * @param gray brightness 0..255, length w*h (see toGray)
  * @returns Float64Array[] — segments [x0,y0,x1,y1]; levels go one after another, lines within a level in a zigzag
  */
-export function crosshatch(gray, w, h, params = {}) {
+export function crosshatch(gray, w, h, params = {}, paper = null, fade = null) {
   const p = { ...defaultParams(), ...params };
   const levels = Math.min(4, Math.max(1, Math.round(p.levels)));
   const spacing = Math.max(0.5, +p.spacing);
-  const dark = boxBlur(toDarkness(gray, p), w, h, p.blur);
+  const dark = boxBlur(applyFade(toDarkness(gray, p), fade), w, h, p.blur);
   const cx = w / 2, cy = h / 2, half = Math.hypot(w, h) / 2;
   const lines = [];
 

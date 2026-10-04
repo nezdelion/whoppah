@@ -41,8 +41,9 @@ export function createRunner({ createSession }) {
   /**
    * Run of layer key; the previous run of the same layer is cancelled (the worker is terminated).
    * paper { mmPerPx, penWidthMm } — the paper scale for styles with parameters in mm (descriptor usesPaper); others ignore it.
+   * fade { strength, size, softness, cx, cy } | null — "Fade background" as a tone mask (native styles; plotterfun ignores it).
    */
-  function run(key, descriptor, { image, params, paper = null }, listener) {
+  function run(key, descriptor, { image, params, paper = null, fade = null }, listener) {
     cancel(key);
     const runId = ++counter;
     const session = createSession(descriptor);
@@ -69,7 +70,7 @@ export function createRunner({ createSession }) {
       for (const entry of session.initMessages()) post(worker, entry);
       // a copy of the buffer: each layer has its own, transfer does not break the shared image
       const copy = { width: image.width, height: image.height, data: new Uint8ClampedArray(image.data) };
-      post(worker, session.runMessage({ runId, image: copy, params, paper }));
+      post(worker, session.runMessage({ runId, image: copy, params, paper, fade }));
     } catch (e) {
       onFail(e);
       return;

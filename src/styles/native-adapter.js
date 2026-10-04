@@ -5,8 +5,8 @@ import { RUN, PARAMS } from './protocol.js';
 export function createNativeSession({ id }) {
   return {
     initMessages: () => [],
-    runMessage({ runId, image, params, paper }) {
-      return [{ type: RUN, runId, styleId: id, image, params, paper: paper || null }, [image.data.buffer]];
+    runMessage({ runId, image, params, paper, fade }) {
+      return [{ type: RUN, runId, styleId: id, image, params, paper: paper || null, fade: fade || null }, [image.data.buffer]];
     },
     paramsMessage({ runId, params }) {
       return [{ type: PARAMS, runId, styleId: id, params }];

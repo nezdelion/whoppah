@@ -113,6 +113,13 @@ fieldset.readonly { border: 0; padding: 0; margin: 0; min-width: 0; opacity: .7;
   cursor: grab; touch-action: pan-y; user-select: none;
 }
 .photo-preview:active { cursor: grabbing; }
+/* photo crop controls and "Fade background" */
+.crop-row { align-items: center; }
+.crop-row .crop-lock { flex-direction: row; align-items: center; gap: 6px; }
+.vignette { margin-top: 12px; }
+.vignette h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0; }
+.vignette .note { margin: 2px 0 6px; }
+.vignette .param-grid { grid-template-columns: minmax(0, 1fr); }
 .preview:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (min-width: 821px) {
   .work-col.sticky { position: sticky; top: 8px; }

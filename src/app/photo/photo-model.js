@@ -4,7 +4,9 @@
 import { createLayerStack, normalizeParams, clampSize, SIZE_RANGE } from './layer-stack.js';
 import { defaultsOfParams } from '../../styles/registry.js';
 import { DEFAULT_PAPER, samePaper } from '../../styles/own/kit/paper.js';
-import { presetValues } from '../../styles/own/kit/params.js';
+import { presetValues, paramFactory } from '../../styles/own/kit/params.js';
+import { applyVignette, normalizeVignette, VIGNETTE_RANGES, VIGNETTE_DEFAULTS } from '../../styles/prep.js';
+import { normalizeCrop, fitAspect, fieldAspect } from './crop.js';
 import { scaleToPaper } from './density.js';
 import { stats } from '../../core/drawing.js';
 import { baseName } from '../download.js';
@@ -13,6 +15,15 @@ import { t } from '../../i18n/index.js';
 export const PARAM_DEBOUNCE_MS = 180;
 export const SAVE_DEBOUNCE_MS = 400;
 export const DEFAULT_STYLE = 'own:crosshatch';
+
+/** Crop frame aspect: free or the aspect of the drawing field (field minus margins, rotation). */
+export const CROP_LOCKS = Object.freeze(['free', 'field']);
+
+const vignetteParam = paramFactory('photo.vignette');
+/** "Fade background" sliders (the same description format as style parameters; labels are lazy). */
+export const VIGNETTE_PARAMS = Object.freeze(['strength', 'size', 'softness'].map((key) => vignetteParam({
+  key, type: 'number', min: VIGNETTE_RANGES[key][0], max: VIGNETTE_RANGES[key][1], step: 1, default: VIGNETTE_DEFAULTS[key],
+})));
 
 /**
  * @param getStyle    styleId => style descriptor (registry)
@@ -28,6 +39,14 @@ export const DEFAULT_STYLE = 'own:crosshatch';
  * Paper scale: styles with usesPaper get paper = { mmPerPx, penWidthMm } (mmPerPx = scaleToPaper(working image, print
  * params), the same as the density check). When the print parameters change that scale or the pen width, visible layers of
  * such styles restart (with the parameter delay); hidden ones are reset so that showing them recomputes; others are untouched.
+ *
+ * Crop and "Fade background": the working image is rasterize(decoded, workingSize, crop) (the frame gets the whole working
+ * resolution, so the paper scale and the density follow the frame). The fade changes tone only: own (native) styles get that
+ * un-faded image plus fade = the vignette values, a tone mask their darkness is multiplied by after tone mapping (direction
+ * fields stay natural); plotterfun styles take only an image and get applyVignette(…) baked in, as does the photo underlay
+ * (image().imageData). The crop (source px, null — the whole image) belongs to the image: it is kept across a remount and a
+ * preset, reset by a new file and not saved; the vignette is part of the preset. Event { type: 'crop' } — the frame or the
+ * aspect lock changed, { type: 'vignette' } — the vignette values changed (the image follows after the parameter delay).
  */
 export function createPhotoModel({
   getStyle, loadRunner, decodeImage, rasterize, isLoadError = () => false,
@@ -39,7 +58,8 @@ export function createPhotoModel({
   const pendingRuns = new Map(); // uid -> deferred start timer
   const listeners = new Set();
   const messages = { info: null, warn: null, sendWarn: null };
-  let decoded = null, imageData = null, workingSize = SIZE_RANGE.default, imageName = '';
+  let decoded = null, imageData = null, baseData = null, workingSize = SIZE_RANGE.default, imageName = '';
+  let crop = null, cropLock = 'free', vignette = normalizeVignette(), vignetteTimer = 0;
   let runner = null, runnerReady = null, saveTimer = 0, disposed = false;
   let ctx = null, printParams = null, offPrint = () => {}, lastPaper = null;
 
@@ -92,7 +112,13 @@ export function createPhotoModel({
       const [descs, r] = await Promise.all([descsOf(style), getRunner()]);
       if (disposed || stack.find(uid) !== layer || !layer.visible) return;
       layer.params = normalizeParams(descs, layer.params);
-      r.run(uid, { ...style, params: descs }, { image: imageData, params: layer.params, paper: paperNow() }, (state) => stack.applyResult(uid, state));
+      // "Fade background" changes tone only: own styles get the un-faded image and the fade as a tone mask (their direction
+      // fields stay natural); plotterfun styles take only an image, so they get it baked in
+      const native = style.adapter === 'native';
+      const input = native
+        ? { image: baseData, params: layer.params, paper: paperNow(), fade: vignette.strength > 0 ? { ...vignette } : null }
+        : { image: imageData, params: layer.params, paper: paperNow() };
+      r.run(uid, { ...style, params: descs }, input, (state) => stack.applyResult(uid, state));
     } catch (e) {
       stack.applyResult(uid, { status: 'error', message: e.message, lines: [] });
     }
@@ -108,16 +134,36 @@ export function createPhotoModel({
 
   function applyWorkingSize({ fresh = false } = {}) {
     if (!decoded) return;
-    imageData = rasterize(decoded, workingSize);
+    timers.clearTimeout(vignetteTimer); // the current vignette is applied here; every caller restarts the layers
+    vignetteTimer = 0;
+    baseData = rasterize(decoded, workingSize, crop);
+    imageData = applyVignette(baseData, vignette);
     lastPaper = paperNow();
-    const info = { name: imageName, w: decoded.width, h: decoded.height, ww: imageData.width, wh: imageData.height };
-    messages.info = () => t('photo.imageInfo', info);
+    const info = { name: imageName, w: decoded.width, h: decoded.height, ww: imageData.width, wh: imageData.height, cw: crop ? crop.w : 0, ch: crop ? crop.h : 0 };
+    messages.info = () => t(crop ? 'photo.imageInfoCrop' : 'photo.imageInfo', info);
     emit({ type: 'image', fresh });
   }
 
+  const toPreset = () => ({ ...stack.toPreset(workingSize), vignette: { strength: vignette.strength, size: vignette.size, softness: vignette.softness } });
+
   function persist() {
     timers.clearTimeout(saveTimer);
-    saveTimer = timers.setTimeout(() => { if (ctx) ctx.presets.save(stack.toPreset(workingSize)); }, saveDelay);
+    saveTimer = timers.setTimeout(() => { if (ctx) ctx.presets.save(toPreset()); }, saveDelay);
+  }
+
+  /** The vignette of a preset (a preset without it — the default, off). */
+  const vignetteOf = (preset) => normalizeVignette(preset && preset.vignette);
+
+  /** Applies a new vignette to the working image and restarts the layers (after the parameter delay, like a slider). */
+  function scheduleVignette() {
+    timers.clearTimeout(vignetteTimer);
+    vignetteTimer = timers.setTimeout(() => {
+      vignetteTimer = 0;
+      if (!baseData || disposed) return;
+      imageData = applyVignette(baseData, vignette);
+      emit({ type: 'image', fresh: false });
+      rerunAll();
+    }, paramDelay);
   }
 
   // every stack change except a computation result is part of the preset
@@ -126,6 +172,14 @@ export function createPhotoModel({
   const model = {
     stack,
     image: () => ({ decoded, imageData, name: imageName }),
+    /** The crop frame in source px ({ x, y, w, h }) or null (the whole image). */
+    crop: () => (crop ? { ...crop } : null),
+    /** 'free' | 'field' */
+    cropLock: () => cropLock,
+    /** The frame aspect for dragging: null (free) or width / height of the drawing field. */
+    cropAspect: () => (cropLock === 'field' ? fieldAspect(printParams) : null),
+    /** "Fade background": { strength, size, softness, cx, cy }. */
+    vignette: () => ({ ...vignette }),
     workingSize: () => workingSize,
     printParams: () => printParams,
     /** The current paper scale { mmPerPx, penWidthMm } (defaults without an image or print parameters). */
@@ -152,7 +206,9 @@ export function createPhotoModel({
         try {
           const { workingSize: size } = stack.loadPreset(saved);
           workingSize = size;
+          vignette = vignetteOf(saved);
           emit({ type: 'size' });
+          emit({ type: 'vignette' });
         } catch (e) { /* a corrupted preset is ignored */ }
       });
     },
@@ -186,6 +242,8 @@ export function createPhotoModel({
       }
       if (decoded && decoded.bitmap && decoded.bitmap.close) decoded.bitmap.close();
       decoded = next;
+      crop = null; // the frame belongs to the previous image
+      emit({ type: 'crop' });
       imageName = baseName(file.name, 'photo');
       say('warn', null);
       applyWorkingSize({ fresh: true });
@@ -198,6 +256,41 @@ export function createPhotoModel({
       persist();
       if (decoded) { applyWorkingSize(); rerunAll(); }
       return workingSize;
+    },
+
+    /**
+     * The crop frame (source px; null — the whole image). The frame is clamped to the image and the minimum size; an
+     * unchanged frame does nothing, otherwise the working image is rebuilt and every visible layer restarts once.
+     * Returns the stored frame.
+     */
+    setCrop(rect) {
+      if (!decoded) return null;
+      const next = normalizeCrop(rect, decoded);
+      const same = next === crop || (next && crop && next.x === crop.x && next.y === crop.y && next.w === crop.w && next.h === crop.h);
+      if (same) return model.crop();
+      crop = next;
+      emit({ type: 'crop' });
+      applyWorkingSize();
+      rerunAll();
+      return model.crop();
+    },
+
+    resetCrop() { return model.setCrop(null); },
+
+    /** 'free' | 'field'; 'field' fits the current frame to the field aspect at once (same centre). */
+    setCropLock(lock) {
+      cropLock = CROP_LOCKS.includes(lock) ? lock : 'free';
+      emit({ type: 'crop' });
+      const aspect = model.cropAspect();
+      if (decoded && aspect) model.setCrop(fitAspect(crop, decoded, aspect));
+    },
+
+    /** "Fade background" changes { strength?, size?, softness? }: saved at once, applied after the parameter delay. */
+    setVignette(changes) {
+      vignette = normalizeVignette({ ...vignette, ...changes });
+      emit({ type: 'vignette' });
+      persist();
+      if (baseData) scheduleVignette();
     },
 
     setVisible(uid, visible) {
@@ -259,13 +352,16 @@ export function createPhotoModel({
       return true;
     },
 
-    toPreset: () => stack.toPreset(workingSize),
+    toPreset,
 
     applyPreset(preset) {
       for (const l of stack.layers) cancel(l.uid);
       const { workingSize: size, skipped } = stack.loadPreset(preset);
       workingSize = size;
+      vignette = vignetteOf(preset);
+      timers.clearTimeout(vignetteTimer);
       emit({ type: 'size' });
+      emit({ type: 'vignette' });
       if (skipped.length) say('warn', () => t('photo.unknownStyles', { list: skipped.join(', ') }));
       applyWorkingSize();
       rerunAll();
@@ -281,6 +377,7 @@ export function createPhotoModel({
       disposed = true;
       offPrint();
       timers.clearTimeout(saveTimer);
+      timers.clearTimeout(vignetteTimer);
       for (const id of pendingRuns.values()) timers.clearTimeout(id);
       pendingRuns.clear();
       if (runner) runner.dispose();

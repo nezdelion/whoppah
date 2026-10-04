@@ -9,6 +9,7 @@
 // generator: thickness sliders recompute only the last stage, cross layer sliders do not recompute the direction field and
 // the main lines.
 import { toDarkness, boxBlur, autoLevels, localContrast } from '../tone.js';
+import { applyFade } from '../prep.js';
 import { simplifyLine } from '../../core/optimize.js';
 import { paramFactory, presetFactory } from './kit/params.js';
 import { paperOf } from './kit/paper.js';
@@ -181,12 +182,13 @@ function strokeGroups(lines, tau, minPx, gaps = null) {
  * passes), then the cross layer. maxPoints — the point limit of each placement (tests lower it; the driver never passes it).
  * When it is reached the placement stops with what it has and the style yields the note PROGRESS.limit.
  */
-export function* engravingSteps({ gray, w, h, params, paper, cache, maxPoints = MAX_POINTS }) {
+export function* engravingSteps({ gray, w, h, params, paper, cache, fade = null, maxPoints = MAX_POINTS }) {
   const g = geometry(params, paper);
   const { p, dMin, dMax, tau } = g;
   const fieldProgress = progressOf(PROGRESS.field, 0);
 
   // 0. auto levels (the brightness range stretched by percentiles): the base of the field and the tone
+  // from the un-faded image: "Fade background" is applied to the tone only (stage 2), the field must not follow the fade
   const levels = stage(cache, 'levels', [!!p.autoLevels, p.levelsClip], () => (p.autoLevels ? autoLevels(gray, p.levelsClip) : gray));
 
   // 1. the structure tensor (does not depend on tone parameters) and the direction field
@@ -202,11 +204,11 @@ export function* engravingSteps({ gray, w, h, params, paper, cache, maxPoints = 
   const field = stage(cache, 'field', [tensor, p.baseAngle, p.fieldRotation, p.followForm, p.flatThreshold, p.detail, p.simplify],
     () => directionField(tensor, p));
 
-  // 2. tone: local contrast, darkness with gamma, blurred twice by dMin/2
+  // 2. tone: local contrast, darkness with gamma, "Fade background" (tone only: the field above never sees it), blurred twice by dMin/2
   const blurR = Math.round(dMin / 2);
-  const tone = stage(cache, 'tone', [levels, p.localContrast, !!p.invert, p.brightness, p.contrast, p.gamma, blurR], () => {
+  const tone = stage(cache, 'tone', [levels, p.localContrast, !!p.invert, p.brightness, p.contrast, p.gamma, blurR, fade], () => {
     const lc = p.localContrast > 0 ? localContrast(levels, w, h, { amount: p.localContrast / 100, tiles: LOCAL_TILES }) : levels;
-    const d = toDarkness(lc, { invert: !!p.invert, brightness: p.brightness, contrast: p.contrast, gamma: p.gamma });
+    const d = applyFade(toDarkness(lc, { invert: !!p.invert, brightness: p.brightness, contrast: p.contrast, gamma: p.gamma }), fade);
     return boxBlur(boxBlur(d, w, h, blurR), w, h, blurR);
   });
 
@@ -278,6 +280,6 @@ export function* engravingSteps({ gray, w, h, params, paper, cache, maxPoints = 
 }
 
 /** Synchronous call (tests): the same result as the driver. */
-export function engraving(gray, w, h, params = {}, paper = null) {
-  return runToEnd(engravingSteps({ gray, w, h, params, paper, cache: createCache() }));
+export function engraving(gray, w, h, params = {}, paper = null, fade = null) {
+  return runToEnd(engravingSteps({ gray, w, h, params, paper, cache: createCache(), fade }));
 }

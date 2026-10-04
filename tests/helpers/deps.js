@@ -1,5 +1,5 @@
 // Dependency boundary check: core, transport, storage — only within their own layer; app — anywhere.
-// styles: styles/tone.js and styles/own/* (including own/kit/*, except own/worker.js) — only core and each other (pure functions, no DOM);
+// styles: styles/tone.js, styles/prep.js and styles/own/* (including own/kit/*, except own/worker.js) — only core and each other (pure functions, no DOM);
 // the rest of styles — core and styles; core, transport and storage do not know about styles.
 // i18n is a leaf layer: it imports nothing outside i18n and does not touch the DOM; it can be imported from any layer
 // (core returns ready-made error and warning texts, so it needs t()).
@@ -29,8 +29,9 @@ export function importsOf(source) {
 
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-const isPureStyle = (rel) => rel[0] === 'styles' && (rel[1] === 'tone.js' || (rel[1] === 'own' && rel[2] !== 'worker.js'));
-const isInPureStyleZone = (rel) => rel[0] === 'styles' && (rel[1] === 'tone.js' || rel[1] === 'own');
+const PURE_STYLE_FILES = new Set(['tone.js', 'prep.js']);
+const isPureStyle = (rel) => rel[0] === 'styles' && (PURE_STYLE_FILES.has(rel[1]) || (rel[1] === 'own' && rel[2] !== 'worker.js'));
+const isInPureStyleZone = (rel) => rel[0] === 'styles' && (PURE_STYLE_FILES.has(rel[1]) || rel[1] === 'own');
 
 /** @returns violation lines; an empty array — all fine */
 export function checkDeps(srcDir) {
