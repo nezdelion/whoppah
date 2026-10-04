@@ -166,10 +166,19 @@ button.small { padding: 4px 8px; font-size: 12px; }
 .wizard-step-of { color: var(--muted); font-size: 13px; flex: 1; }
 .wizard-tabs { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 6px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
 .wizard-tab[data-active="1"] { color: var(--accent); font-weight: 600; }
-.wizard-body { padding: 10px 12px; overflow: auto; flex: 1; min-height: 0; }
+.wizard-body { padding: 10px 12px; overflow: auto; flex: 1 1 auto; min-height: 0; }
 .wizard-body p.note { margin: 0 0 8px; }
 .wizard-foot { padding: 10px 12px; border-top: 1px solid var(--line); margin-top: 0; justify-content: flex-end; }
 .wizard-foot .btn-wrap:first-child { margin-right: auto; }
+/* a short window (a small laptop screen, a pane, a phone in landscape): head, steps and buttons would leave the body a sliver,
+   so the whole dialog scrolls instead of only its body */
+@media (max-height: 600px) {
+  .wizard { max-height: calc(100vh - 8px); overflow: auto; }
+  .wizard-body { flex: none; overflow: visible; }
+  .wizard-head, .wizard-foot { position: sticky; z-index: 1; background: var(--panel); }
+  .wizard-head { top: 0; }
+  .wizard-foot { bottom: 0; }
+}
 .area-editor { container-type: inline-size; }
 .area-body { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 10px; align-items: start; margin-top: 8px; }
 /* narrow container (the side panel, a phone): the map goes under the fields */
