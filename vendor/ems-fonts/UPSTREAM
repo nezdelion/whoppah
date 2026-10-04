@@ -1,0 +1,11 @@
+3996dfd3c37139b97d7dfab3c12aea1c9ae13465
+repo: https://gitlab.com/oskay/hershey-text (Hershey Text extension for Inkscape, hershey-text/svg_fonts/)
+license: SIL Open Font License 1.1 (LICENSE = svg_fonts/OFL.txt). EMS fonts created by Sheldon B. Michaels, SVG font
+  conversion by Windell H. Oskay; EMS Allure is a derivative of Allura (Rob Leuschke, TypeSETit), EMS Felix of Felipa
+  (Fontstage). The generated JSON fonts are modified versions under the same license and keep the EMS names (no Reserved
+  Font Name is used).
+files (verbatim copies, not edited):
+  EMSAllure.svg   svg_fonts/EMSAllure.svg
+  EMSFelix.svg    svg_fonts/EMSFelix.svg
+  LICENSE         svg_fonts/OFL.txt
+generated from it: src/app/text/fonts/allure.json, src/app/text/fonts/felix.json (tools/build_fonts.js)

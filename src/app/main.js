@@ -18,6 +18,9 @@ import * as marlinReplies from '../core/marlin-replies.js';
 import { setupCalibration } from './calibration/setup.js';
 import { createSvgSource } from './tabs/svg-tab.js';
 import { createPhotoSource } from './tabs/photo-tab.js';
+import { createTextSource } from './tabs/text-tab.js';
+import { createTextModel } from './text/text-model.js';
+import { createUserFonts, safeLocalStorage } from './text/user-fonts.js';
 import { createPrintTab } from './tabs/print-tab.js';
 import { h } from './ui/dom.js';
 import { createTabHost } from './ui/tab-host.js';
@@ -157,12 +160,18 @@ async function start() {
     const ctx = createSourceContext({ state, store, sourceId: source.id });
     return { id: source.id, get title() { return source.title; }, mount: (view) => source.mount(view, ctx), unmount: () => source.unmount() };
   };
+  // the user's fonts of the "Text" tab: plugin — the user's server section (a font too big for it stays in this browser),
+  // standalone — this browser
+  const userFonts = createUserFonts(plugin
+    ? { server: store, storage: safeLocalStorage(), localKey: `neptune-plotter.plugin-fonts.${env.user || ''}` }
+    : { storage: safeLocalStorage() });
   const printTab = createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : { feed, firmware, limits } });
   const tabs = createTabHost({
     nav: document.getElementById('tabs'),
     panels: document.getElementById('panels'),
     tabs: [
       sourceTab(createSvgSource()), sourceTab(createPhotoSource()),
+      sourceTab(createTextSource({ createModel: () => createTextModel({ userFonts }) })),
       { id: 'print', get title() { return printTab.title; }, mount: (view) => printTab.mount(view), unmount: () => printTab.unmount() },
     ],
   });

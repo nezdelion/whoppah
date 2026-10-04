@@ -1,0 +1,8 @@
+1356bf2f83d380fcef68c887e88675eb9d445d86
+repo: https://github.com/kamalmostafa/hershey-fonts (data from http://emergent.unpythonic.net/software/hershey)
+license: Hershey Fonts use restriction (LICENSE: the font data part of the upstream COPYING, verbatim) — free for any use with the acknowledgement: the Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. National Bureau of Standards; the format of the font data was originally created by James Hurt, Cognition, Inc.
+files (verbatim copies, not edited):
+  scripts.jhf      hershey-fonts/scripts.jhf (Script simplex: the Latin part of the built-in font "Hershey Script")
+  hershey.txt      hershey-fonts/hershey.txt (the original Usenet distribution notes with the use restriction)
+  LICENSE          COPYING, from " Hershey fonts (hershey-fonts/*.jhf) license" to the end
+generated from it: src/app/text/fonts/script.json (tools/build_fonts.js)

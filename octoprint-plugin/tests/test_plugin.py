@@ -252,6 +252,17 @@ def test_job_and_presets_are_per_user(env):
     assert env.client.get("/plugin/plotter/api/settings/job").get_json() == {"marginMm": 3}
 
 
+def test_fonts_are_per_user_and_limited_to_1mb(env):
+    env.who.user = "alice"
+    doc = {"version": 1, "fonts": [{"id": "u1", "name": "Mine", "font": {"format": "plotter-stroke-font/1", "glyphs": {}}}]}
+    assert put(env, "fonts", doc).status_code == 200
+    env.who.user = "bob"
+    assert env.client.get("/plugin/plotter/api/settings/fonts").get_json() is None
+    env.who.user = "alice"
+    assert env.client.get("/plugin/plotter/api/settings/fonts").get_json() == doc
+    assert put(env, "fonts", {"blob": "x" * (1024 * 1024 + 10)}).status_code == 413
+
+
 def test_profile_needs_permission_but_anyone_reads(env):
     assert put(env, "profile", {"fDraw": 1}).status_code == 403
     assert env.plugin._settings.data["profile"] is None

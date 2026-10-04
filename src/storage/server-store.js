@@ -17,8 +17,9 @@ export const SECTION_NEEDS = Object.freeze({
   profile: 'perm.profile', profiles: 'perm.profile', calibration: 'perm.control',
 });
 
-// the single profile of earlier versions: the server still serves it (the values of the active profile) for a cached old page
-const READABLE = [...SECTIONS, 'profile'];
+// the single profile of earlier versions: the server still serves it (the values of the active profile) for a cached old page;
+// "fonts" — the user's own fonts of the "Text" tab (per user on the server, not part of the settings file)
+const READABLE = [...SECTIONS, 'profile', 'fonts'];
 
 export class ServerStore {
   #slots = new Map();

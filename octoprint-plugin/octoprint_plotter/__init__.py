@@ -27,8 +27,9 @@ __plugin_pythoncompat__ = ">=3.9,<4"
 __plugin_description__ = "Pen plotter web app (SVG to G-code) as a full-screen page"
 __plugin_url__ = "https://github.com/"
 
-SECTIONS = ("profile", "calibration", "job", "presets")
-USER_SECTIONS = ("job", "presets")  # per-user; profile and calibration are shared by everyone
+SECTIONS = ("profile", "calibration", "job", "presets", "fonts")
+# per-user; profile and calibration are shared by everyone; "fonts" — the user's own fonts of the "Text" tab
+USER_SECTIONS = ("job", "presets", "fonts")
 MAX_SECTION_BYTES = 1024 * 1024
 APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "app")
 

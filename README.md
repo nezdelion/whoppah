@@ -123,8 +123,9 @@ src/storage/              SettingsStore (localStorage, OctoPrint server), settin
 src/i18n/                 localization: t(key, params), dictionaries en.js / ru.js, language choice (detect.js); imports nothing
 src/styles/               "image → lines" styles: registry, runner (workers), style driver, plotterfun adapter, own styles (own/, helpers own/kit/)
 vendor/plotterfun/        third-party plotterfun code (unmodified copy), version in vendor/plotterfun/UPSTREAM
+vendor/hershey/, vendor/newstroke/, vendor/ems-fonts/   single-line fonts of the "Text" tab (unmodified originals, LICENSE, UPSTREAM)
 octoprint-plugin/         OctoPrint Python plugin (page, env.json, settings API, permission)
-tools/                    build_plugin.py (zip build), dev_octoprint.sh (local OctoPrint)
+tools/                    build_plugin.py (zip build), dev_octoprint.sh (local OctoPrint), build_fonts.js (built-in fonts of the "Text" tab)
 src/app/                  shell: state, tabs, forms, preview, print service
 tests/                    node --test
 ```
@@ -207,10 +208,28 @@ All parameters are live: thickness sliders and "Max. ink in shadows" recompute o
 
 For engraving start with "Join ends with a stroke up to" (`linkTolMm`) 0: line ends are not on one edge as with wave lines, so joining them draws visible strokes across the picture.
 
+### "Text" tab
+
+The "Text" tab (`src/app/tabs/text-tab.js`, model `src/app/text/text-model.js`) writes a phrase with a **single-line font**: every letter is a few open strokes along its centre line, drawn once by the pen, like handwriting with a pen or fineliner (no outlines, no pressure). Type the text (several lines), choose a font (a sample is shown under the list) and set: capital letter height in mm, letter spacing (% of the height), line spacing (× height, baseline to baseline), slant, alignment (left / centre / right against the widest line or the wrap width), line width for word wrapping (0 — no wrapping; a word longer than a line is broken between letters) and "Like by hand". The preview follows every change; the drawing goes to the "Print" tab only on "To print". The drawing is in millimetres (`unitMm: 1`), so the job option "As is in mm" prints the capitals exactly at the set height; fitting into the field works as for any drawing.
+
+**"Like by hand"** (0–100 %) gives every letter a small random size, slant, rotation, offset and step, and each line a gentle baseline wave and tilt. It is seeded: the same text, parameters and seed give the same lines (after a reload too); "New variation" picks another seed. The strength scales one fixed pattern, so the slider changes it smoothly; 0 % is the font exactly. The handwriting presets (neat, natural, hasty) set only the letter spacing, slant and "Like by hand". The text, font, parameters and seed are saved in the tab preset.
+
+**Built-in fonts** (`src/app/text/fonts/*.json`, all with Latin, digits, Russian with Ё, «», —, …): Hershey Script, EMS Felix, EMS Allure (handwriting) and NewStroke (technical sans). No free single-line *handwriting* font with Cyrillic was found, so the Cyrillic, Latin-1 letters and typographic punctuation of the handwriting fonts are taken from NewStroke at build time: scaled to the font's capital height, lowercase fitted to its x-height, slanted like the font. Their Cyrillic is therefore italic print, not cursive. A character the font lacks is taken from NewStroke (with a note under the preview), typographic characters fall back to plain ones (« » → ", — → -, … → ..., № → No, ё → е), anything else is drawn as "?" with a warning.
+
+**Your fonts.** "Add font…" accepts single-line SVG fonts (`<font>` with `<glyph unicode d>`, as used by Inkscape's Hershey Text extension) and Hershey `.jhf` files (code points from 32 in file order). Outline fonts are refused: TTF/OTF/WOFF at once, and an SVG font whose glyphs are closed contours with "this looks like an outline font; single-line fonts only for now". The parsed font (the same JSON form as the built-in ones, usually tens of KB) is kept per user: in plugin mode in the user's server section `fonts` (at most 1 MB with all their fonts; a font that does not fit, or that the server refuses, stays only in this browser and the message says so), standalone in the browser's localStorage. "Remove font" removes the chosen font of yours. The fonts are not part of the settings file.
+
+Font interface: the layout (`src/core/text-layout.js`) knows only a `StrokeFont` — `{ id, name, capHeight, xHeight, glyphs: Map<code point, { advance, lines }> }` in font units, baseline at y = 0, Y down (`src/core/stroke-font.js`, where the SVG-font and JHF parsers, the outline check and the compact JSON live). A future TTF/OTF centre-line extractor only has to produce the same object.
+
+**Rebuilding the built-in fonts** (after updating `vendor/hershey/`, `vendor/newstroke/` or `vendor/ems-fonts/`): `node tools/build_fonts.js` writes `src/app/text/fonts/*.json` with the same core parsers; `node tools/build_fonts.js --check` only compares (a test runs it, so a forgotten rebuild fails the suite).
+
 ## Third-party code
 
 - **plotterfun** — Tim Alex Jacobs (mitxela), MIT license, <https://github.com/mitxela/plotterfun>. The style files and `helpers.js` are in `vendor/plotterfun/` unmodified together with `LICENSE`; the upstream commit is in `vendor/plotterfun/UPSTREAM`. Update = replace the directory + `tools/audit_plotterfun.py` + recheck the styles with asynchronous code.
 - `vendor/plotterfun/external/` holds `rhill-voronoi-core.min.js` (Raymond Hill, MIT, <https://github.com/gorhill/Javascript-Voronoi>) and `stackblur.min.js` (StackBlur, <https://github.com/flozz/StackBlur>), as in upstream; their copyright stays in the file headers.
+- **Fonts of the "Text" tab** (originals unmodified in `vendor/<font>/` with `LICENSE` and `UPSTREAM`; the JSON in `src/app/text/fonts/` is generated by `tools/build_fonts.js`):
+  - **Hershey Script** (`vendor/hershey/scripts.jhf`, <https://github.com/kamalmostafa/hershey-fonts>): the Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. National Bureau of Standards; the format of the font data was originally created by James Hurt, Cognition, Inc. Free for any use with this acknowledgement (`vendor/hershey/LICENSE`).
+  - **NewStroke** (`vendor/newstroke/`, Vladimir Uryvaev, <http://vovanium.ru/sledy/newstroke/en>), CC0 1.0 — also the Cyrillic and punctuation of the other built-in fonts.
+  - **EMS Allure**, **EMS Felix** (`vendor/ems-fonts/`, <https://gitlab.com/oskay/hershey-text>): Sheldon B. Michaels, SVG fonts by Windell H. Oskay, derivatives of Allura (Rob Leuschke) and Felipa (Fontstage); SIL Open Font License 1.1. `allure.json` and `felix.json` are modified versions under the same license.
 
 ## How to add a transport, auth, storage
 

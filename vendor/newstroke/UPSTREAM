@@ -1,0 +1,11 @@
+newstroke-font.tgz of 2015-11-18 (archive timestamp), glyph data of 2010-05-26
+source: http://vovanium.ru/sledy/newstroke/en -> http://vovanium.ru/_media/sledy/newstroke/newstroke-font.tgz
+author: Vladimir Uryvaev (vovanium)
+license: CC0 1.0 Universal (README.txt: "Now released under CC0 licence, to give it right to be used in any project.";
+  LICENSE is the CC0 legal code from https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt). The GPL header in
+  newstroke_font.cpp is the boilerplate the author's fontconv.awk prints for KiCad; the author's 2015 README releases the
+  font under CC0.
+files (verbatim copies, not edited):
+  newstroke_font.cpp   the generated glyph table (one Hershey-encoded string per code point from U+0020)
+  README.txt           the archive readme with the license statement
+generated from it: src/app/text/fonts/newstroke.json; Cyrillic and punctuation of script.json, allure.json, felix.json
