@@ -8,6 +8,7 @@ import { wavesSteps, waves } from '../src/styles/own/waves.js';
 import { engravingSteps, engraving } from '../src/styles/own/engraving.js';
 import { toGray } from '../src/styles/tone.js';
 import './helpers/ru.js';
+import { sameData } from './helpers/same.js';
 
 /** A driver with a manual clock and a manual slice queue. */
 function harness(impl, opts = {}) {
@@ -129,7 +130,7 @@ test('wave lines: a live change equals a fresh run, also when it arrives mid-com
   a.driver.onMessage({ type: 'params', runId: 1, params: p2 });
   a.drain();
   assert.equal(a.finals().length, 2);
-  assert.deepEqual(arr(a.finals()[1].msg.lines), fresh);
+  sameData(arr(a.finals()[1].msg.lines), fresh);
 
   // live p2 in the middle of p1 (slices of one step, the clock advances on every now())
   const b = harness({ 'own:waves': staged(wavesSteps) }, { sliceMs: 0 });
@@ -139,7 +140,7 @@ test('wave lines: a live change equals a fresh run, also when it arrives mid-com
   b.driver.onMessage({ type: 'params', runId: 1, params: p2 });
   b.drain();
   assert.equal(b.finals().length, 1, 'one final, for the last value');
-  assert.deepEqual(arr(b.finals()[0].msg.lines), fresh);
+  sameData(arr(b.finals()[0].msg.lines), fresh);
   // the progress object of the style
   assert.equal(b.of('progress')[0].msg.text.key, 'styles.progress.waves');
 });
@@ -174,7 +175,7 @@ test('engraving: a chain of live changes (base angle, cross threshold, passes) m
   h.drain();
   h.driver.onMessage({ type: 'params', runId: 1, params: p3 });
   h.drain();
-  assert.deepEqual(arr(h.finals().at(-1).msg.lines), fresh);
+  sameData(arr(h.finals().at(-1).msg.lines), fresh);
   // an intermediate result (the main lines) comes before the final one
   const results = h.of('result').map((r) => r.msg.final);
   assert.ok(results.indexOf(false) >= 0 && results.indexOf(false) < results.indexOf(true));

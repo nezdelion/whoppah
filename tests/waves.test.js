@@ -8,6 +8,7 @@ import { presetValues, matchPreset } from '../src/styles/own/kit/params.js';
 import { normalizeParams } from '../src/app/photo/layer-stack.js';
 import { pointSegmentDistance } from '../src/core/geometry.js';
 import './helpers/ru.js';
+import { sameData } from './helpers/same.js';
 
 const PAPER = { mmPerPx: 0.25, penWidthMm: 0.5 }; // pen 2 px
 const field = (w, h, f) => { const g = new Float32Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) g[y * w + x] = f(x, y); return g; };
@@ -344,7 +345,7 @@ test('determinism: two runs with the same parameters are identical', () => {
   const p = { ...defaultParams(), mode: 'both', maxPasses: 5, stagger: true, gamma: 1.4 };
   const a = waves(g, w, h, p, PAPER).map((l) => Array.from(l)), b = waves(g, w, h, p, PAPER).map((l) => Array.from(l));
   assert.ok(a.length > 0);
-  assert.deepEqual(a, b);
+  sameData(a, b);
 });
 
 test('parameters and presets: odd pass counts, valid preset values, classic = defaults, all live', () => {

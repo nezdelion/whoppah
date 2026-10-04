@@ -15,6 +15,7 @@ import { normalizeParams } from '../src/app/photo/layer-stack.js';
 import { getStyle, GROUPS } from '../src/styles/registry.js';
 import { pointSegmentDistance } from '../src/core/geometry.js';
 import './helpers/ru.js';
+import { sameData } from './helpers/same.js';
 
 const PAPER = { mmPerPx: 0.25, penWidthMm: 0.5 }; // pen 2 px
 const RAD = Math.PI / 180;
@@ -87,8 +88,8 @@ test('field: does not depend on contrast, gamma and inversion (the stage is reus
   assert.equal(stageOf(cache, 'field'), f1, 'not recomputed');
   const fresh = createCache();
   run(gray, w, h, { contrast: 40, gamma: 1.8, invert: true }, PAPER, fresh);
-  assert.deepEqual(Array.from(stageOf(fresh, 'field').c2), Array.from(f1.c2));
-  assert.deepEqual(Array.from(stageOf(fresh, 'field').s2), Array.from(f1.s2));
+  sameData(Array.from(stageOf(fresh, 'field').c2), Array.from(f1.c2));
+  sameData(Array.from(stageOf(fresh, 'field').s2), Array.from(f1.s2));
   assert.equal(boxRadiusForSigma(16), 16);
 });
 
@@ -271,7 +272,7 @@ test('cross layer: only in the darkest tones, at crossAngle to the main lines; o
   const withCross = run(gray, w, h, { ...base, cross: true });
   assert.ok(withCross.length > mainOnly.length);
   const n = mainOnly.length;
-  assert.deepEqual(withCross.slice(0, n).map((l) => Array.from(l)), mainOnly.map((l) => Array.from(l)), 'the main lines come first, unchanged');
+  sameData(withCross.slice(0, n).map((l) => Array.from(l)), mainOnly.map((l) => Array.from(l)), 'the main lines come first, unchanged');
   const crossLines = withCross.slice(n);
   const g = geometry(base, PAPER);
   for (const l of crossLines) {
@@ -280,7 +281,7 @@ test('cross layer: only in the darkest tones, at crossAngle to the main lines; o
   }
   // another threshold: the main lines are bit-identical
   const other = run(gray, w, h, { ...base, cross: true, crossThreshold: 85 });
-  assert.deepEqual(other.slice(0, n).map((l) => Array.from(l)), mainOnly.map((l) => Array.from(l)));
+  sameData(other.slice(0, n).map((l) => Array.from(l)), mainOnly.map((l) => Array.from(l)));
   assert.ok(other.length - n < crossLines.length, 'a higher threshold — fewer cross lines');
 });
 
@@ -357,7 +358,7 @@ test('stage cache: each parameter recomputes only its stages', () => {
     p = { ...p, ...change };
     const lines = run(gray, w, h, p, PAPER, cache);
     assert.deepEqual(cache.log, want, JSON.stringify(change));
-    assert.deepEqual(lines.map((l) => Array.from(l)), engraving(gray, w, h, p, PAPER).map((l) => Array.from(l)), 'equals a fresh run');
+    sameData(lines.map((l) => Array.from(l)), engraving(gray, w, h, p, PAPER).map((l) => Array.from(l)), 'equals a fresh run');
   };
   step({ maxPasses: 5 }, ['finish']);
   step({ thinEnds: false, thickStart: 40, passPitch: 0.6 }, ['finish']);
@@ -384,7 +385,7 @@ test('determinism: identical runs; a chain of live changes equals a fresh run; a
   const cache = createCache();
   const p1 = {}, p2 = { baseAngle: 70 }, p3 = { baseAngle: 70, crossThreshold: 60, maxPasses: 5 };
   for (const p of [p1, p2, p3]) run(gray, w, h, p, PAPER, cache);
-  assert.deepEqual(arr(run(gray, w, h, p3, PAPER, cache)), arr(engraving(gray, w, h, p3, PAPER)));
+  sameData(arr(run(gray, w, h, p3, PAPER, cache)), arr(engraving(gray, w, h, p3, PAPER)));
   // the snapshot: any change of the seeding order shows up here (update deliberately)
   let len = 0;
   for (const l of a) len += polylineLength(l);

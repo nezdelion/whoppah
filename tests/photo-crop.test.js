@@ -14,6 +14,7 @@ import { fitSize } from '../src/app/photo/image-loader.js';
 import { getStyle } from '../src/styles/registry.js';
 import { setLocale } from '../src/i18n/index.js';
 import { installFakeDom } from './helpers/fake-dom.js';
+import { sameData } from './helpers/same.js';
 
 const IMG = { width: 400, height: 300 };
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
@@ -333,7 +334,7 @@ test('vignette is tone only: the engraving direction field is bit-identical with
     return { lines, field: cache.get('field').value, tone: cache.get('tone').value };
   };
   const plain = run(null), faded = run(fade);
-  assert.deepEqual(faded.field, plain.field, 'the direction field ignores the fade');
+  sameData(faded.field, plain.field, 'the direction field ignores the fade');
   const at = (a, x, y) => a[y * w + x];
   assert.ok(at(faded.tone, 3, 3) < 0.45 * at(plain.tone, 3, 3), 'a corner is ~70 % lighter');
   assert.ok(Math.abs(at(faded.tone, 80, 90) - at(plain.tone, 80, 90)) < 1e-6, 'the centre tone is unchanged');

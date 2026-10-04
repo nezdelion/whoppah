@@ -10,6 +10,7 @@ import { createCache, stage, stageGen, runToEnd, progressOf } from '../src/style
 import { paramFactory, presetFactory, optionText, presetValues, matchPreset } from '../src/styles/own/kit/params.js';
 import { setLocale } from '../src/i18n/index.js';
 import { dictionaries } from '../src/i18n/index.js';
+import { sameData } from './helpers/same.js';
 
 const near = (a, b, eps = 1e-6, msg = '') => assert.ok(Math.abs(a - b) <= eps, `${msg} ${a} != ${b}`);
 
@@ -137,7 +138,7 @@ test('thicken: level 2 — 5 passes, the level-2 lens is nested in the level-1 l
 test('thicken: a run shorter than 2·taper makes no lens; endTaper thins the stroke ends', () => {
   const c = straight(100, 0.5), n = c.length / 2;
   const out = thicken(c, step(n, 100, 115, 1), { pitchPx: 1, taperPx: 5 }); // 7.5 px < 10
-  assert.deepEqual(Array.from(out), Array.from(c));
+  sameData(Array.from(out), Array.from(c));
   const full = thicken(c, new Float64Array(n).fill(2), { pitchPx: 1, taperPx: 2, endTaperPx: 30 });
   // near the ends the level is scaled down: only 1 pass at x=5 (level 2·5/30 < 0.5), 5 in the middle
   assert.equal(crossings(full, 5.25).length, 1);

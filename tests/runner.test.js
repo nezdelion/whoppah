@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createRunner, STATUS } from '../src/styles/runner.js';
 import { createNativeSession } from '../src/styles/native-adapter.js';
 import './helpers/ru.js';
+import { sameData } from './helpers/same.js';
 
 class FakeWorker {
   constructor() { this.sent = []; this.terminated = false; FakeWorker.all.push(this); }
@@ -25,7 +26,7 @@ test('start: a copy of the image goes to the worker, the layer is computing', ()
   const w = FakeWorker.all[0];
   assert.equal(w.sent[0].msg.type, 'run');
   assert.equal(w.sent[0].msg.image.data.buffer === img.data.buffer, false, 'buffer is not shared');
-  assert.deepEqual(Array.from(w.sent[0].msg.image.data), Array.from(img.data));
+  sameData(Array.from(w.sent[0].msg.image.data), Array.from(img.data));
   assert.equal(seen.at(-1).status, STATUS.RUNNING);
 });
 

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { crosshatch, thresholdOf, DEFAULT_ANGLES, defaultParams } from '../src/styles/own/crosshatch.js';
 import './helpers/ru.js';
+import { sameData } from './helpers/same.js';
 
 // horizontal gradient: white (255) on the left, black (0) on the right
 const gradient = (w, h) => {
@@ -71,7 +72,7 @@ test('determinism: two runs give the same result', () => {
   const w = 90, h = 70;
   const img = new Float32Array(w * h).map((_, i) => (i * 7919) % 256);
   const p = { ...defaultParams(), levels: 4, blur: 2 };
-  assert.deepEqual(crosshatch(img, w, h, p).map((l) => Array.from(l)), crosshatch(img, w, h, p).map((l) => Array.from(l)));
+  sameData(crosshatch(img, w, h, p).map((l) => Array.from(l)), crosshatch(img, w, h, p).map((l) => Array.from(l)));
 });
 
 test('lines do not go outside the image', () => {

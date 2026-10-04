@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { toGray, toDarkness, boxBlur, sampleBilinear, levelsRange, autoLevels, localContrast, LEVELS_MIN_RANGE } from '../src/styles/tone.js';
 import './helpers/ru.js';
+import { sameData } from './helpers/same.js';
 
 const near = (a, b, eps = 1e-5) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 
@@ -39,7 +40,7 @@ test('toDarkness: minimum and maximum brightness clamp the range', () => {
 test('boxBlur: radius 0 — a copy, a constant field does not change, a peak spreads preserving the sum', () => {
   const src = Float32Array.of(0, 0, 0, 9, 0, 0, 0);
   const copy = boxBlur(src, 7, 1, 0);
-  assert.deepEqual(Array.from(copy), Array.from(src));
+  sameData(Array.from(copy), Array.from(src));
   assert.notEqual(copy, src);
   const flat = boxBlur(new Float32Array(25).fill(0.4), 5, 5, 2);
   for (const v of flat) near(v, 0.4);
@@ -73,7 +74,7 @@ test('toDarkness: gamma 1 (and no gamma) is bit for bit the old computation', ()
   const gray = Float32Array.from({ length: 256 }, (_, i) => i);
   for (const opts of [{}, { invert: true }, { brightness: 30, contrast: -40 }, { contrast: 70, min: 20, max: 230 }]) {
     assert.deepEqual(Array.from(toDarkness(gray, { ...opts, gamma: 1 })), Array.from(oldDarkness(gray, opts)));
-    assert.deepEqual(Array.from(toDarkness(gray, opts)), Array.from(oldDarkness(gray, opts)));
+    sameData(Array.from(toDarkness(gray, opts)), Array.from(oldDarkness(gray, opts)));
   }
 });
 
@@ -120,7 +121,7 @@ test('auto levels: the percentile range is stretched to 0..255, the clipped tail
   flat[3] = 128 + LEVELS_MIN_RANGE - 1;
   const same = autoLevels(flat, 0);
   assert.notEqual(same, flat);
-  assert.deepEqual(Array.from(same), Array.from(flat));
+  sameData(Array.from(same), Array.from(flat));
 });
 
 test('local contrast: amount 0 and a flat image are unchanged; a dim face beside a bright background gets its range back', () => {
