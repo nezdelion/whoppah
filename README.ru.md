@@ -86,7 +86,7 @@ python3 -m http.server 8000
 python3 tools/build_plugin.py        # копирует index.html, src/, vendor/ в пакет плагина и собирает dist/OctoPrint-Plotter-<версия>.zip
 ```
 
-OctoPrint → Settings → Plugin Manager → «Get More…» → «… from an uploaded file» → выбрать zip → перезапустить OctoPrint. В верхней панели появится ссылка «Plotter». Каждая сборка zip поднимает патч-версию (`0.1.0` → `0.1.1`) в `octoprint-plugin/octoprint_plotter/_version.py`, поэтому новый zip ставится поверх старого — этот файл коммитится вместе со сборкой (`--no-bump` оставляет версию, `--version X.Y.Z` задаёт свою). Обновление — тем же способом с новым zip (после перезапуска браузер сам перепроверяет файлы: страница и статика отдаются с `Cache-Control: no-cache` и ETag). Удаление — в Plugin Manager. Версия — `octoprint-plugin/octoprint_plotter/_version.py` (или `--version X.Y.Z` при сборке).
+OctoPrint → Settings → Plugin Manager → «Get More…» → «… from an uploaded file» → выбрать zip → перезапустить OctoPrint. В верхней панели появится ссылка «Plotter». Версия zip берётся из git: MAJOR.MINOR — из `octoprint-plugin/octoprint_plotter/_version.py`, PATCH — число коммитов, поэтому каждый коммит даёт версию выше и новый zip ставится поверх старого; при незакоммиченных правках добавляется `.post<время UTC>`. Сборка не меняет файлы в репозитории; `--version X.Y.Z` задаёт версию явно. Обновление — тем же способом с новым zip (после перезапуска браузер сам перепроверяет файлы: страница и статика отдаются с `Cache-Control: no-cache` и ETag). Удаление — в Plugin Manager. Версия — `octoprint-plugin/octoprint_plotter/_version.py` (или `--version X.Y.Z` при сборке).
 
 **Права и хранение настроек.**
 

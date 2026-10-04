@@ -55,19 +55,16 @@ def test_zip_contains_current_app_file(tmp_path, monkeypatch):
     assert inside == (ROOT / "src" / "app" / "main.js").read_bytes()
 
 
-def test_zip_build_bumps_the_patch_version(tmp_path, monkeypatch):
+def test_zip_version_comes_from_git_and_tracked_files_stay(tmp_path, monkeypatch):
     build = load_build()
-    version_file = tmp_path / "_version.py"
-    version_file.write_text('__version__ = "0.1.7"\n')
-    monkeypatch.setattr(build, "VERSION_FILE", version_file)
-    monkeypatch.setattr(build, "DIST", tmp_path / "dist")
-    monkeypatch.setattr(build, "copy_app", lambda: [])
-    build.main([])
-    assert build.read_version() == "0.1.8"
-    assert (tmp_path / "dist" / "OctoPrint-Plotter-0.1.8.zip").exists()
-    build.main(["--no-zip"])
-    build.main(["--no-bump"])
-    assert build.read_version() == "0.1.8", "copy-only and --no-bump keep the version"
-    build.main(["--version", "0.2.0"])
-    assert build.read_version() == "0.2.0"
-    assert build.bump_patch("1.2.9.post3") == "1.2.10"
+    monkeypatch.setattr(build, "DIST", tmp_path)
+    before = build.VERSION_FILE.read_text()
+    build.copy_app()
+    target = build.build_zip("0.1.42")
+    inside = zipfile.ZipFile(target).read("OctoPrint-Plotter-0.1.42/octoprint_plotter/_version.py").decode()
+    assert '__version__ = "0.1.42"' in inside
+    assert build.VERSION_FILE.read_text() == before, "the tracked _version.py is not changed"
+    from datetime import datetime, timezone
+    assert build.git_version("0.1.0", count=37, dirty=False) == "0.1.37"
+    assert build.git_version("2.3.9", count=5, dirty=True, now=datetime(2026, 10, 5, 7, 9, tzinfo=timezone.utc)) == "2.3.5.post202610050709"
+    assert build.git_version(build.read_version()).startswith("0.1."), "real git works"

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Copy the app (index.html, src/, vendor/) into the OctoPrint plugin package and build a zip for Plugin Manager.
 
-    python3 tools/build_plugin.py [--version X.Y.Z | --no-bump] [--no-zip]
+    python3 tools/build_plugin.py [--version X.Y.Z] [--no-zip]
 
-Every zip build bumps the patch version in octoprint_plotter/_version.py (0.1.0 -> 0.1.1), so Plugin Manager installs the
-new zip over the old one; commit the changed _version.py with the build. --version sets an exact version instead,
---no-bump keeps the current one; --no-zip (copy only) never changes the version.
+The zip's version comes from git, the tracked files are not changed: MAJOR.MINOR from octoprint_plotter/_version.py,
+PATCH = the number of commits (`git rev-list --count HEAD`), so every commit gives a new, higher version and Plugin
+Manager installs the zip over the old one. Uncommitted changes add `.post<UTC yyyymmddHHMM>` (still higher than the clean
+build of the same commit). --version sets an exact version instead. Only the copy inside the zip gets the version.
 
 The app sources are never duplicated in git: octoprint_plotter/static/app/ is generated and git-ignored.
 Standard library only.
@@ -14,6 +15,8 @@ Standard library only.
 import argparse
 import re
 import shutil
+import subprocess
+from datetime import datetime, timezone
 import sys
 import zipfile
 from pathlib import Path
@@ -45,19 +48,27 @@ def read_version():
     return m.group(1)
 
 
-def write_version(version):
+def check_version(version):
     if not re.fullmatch(r"\d+\.\d+\.\d+([.\-+][0-9A-Za-z.\-+]*)?", version):
         raise SystemExit(f"bad version: {version}")
-    VERSION_FILE.write_text(f'__version__ = "{version}"\n', encoding="utf-8")
+    return version
 
 
-def bump_patch(version):
-    """0.1.7 -> 0.1.8; a suffix after the patch (0.1.7.post1, 0.1.7-rc1) is dropped."""
-    m = re.match(r"(\d+)\.(\d+)\.(\d+)", version)
+def git(*args):
+    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def git_version(base, *, count=None, dirty=None, now=None):
+    """MAJOR.MINOR of base + commit count; uncommitted changes add .post<UTC minute>."""
+    m = re.match(r"(\d+)\.(\d+)", base)
     if not m:
-        raise SystemExit(f"cannot bump the version: {version}")
-    major, minor, patch = (int(g) for g in m.groups())
-    return f"{major}.{minor}.{patch + 1}"
+        raise SystemExit(f"cannot read MAJOR.MINOR from {base}")
+    count = int(git("rev-list", "--count", "HEAD")) if count is None else count
+    dirty = bool(git("status", "--porcelain")) if dirty is None else dirty
+    version = f"{m.group(1)}.{m.group(2)}.{count}"
+    if dirty:
+        version += ".post" + (now or datetime.now(timezone.utc)).strftime("%Y%m%d%H%M")
+    return version
 
 
 def copy_app():
@@ -90,27 +101,24 @@ def build_zip(version):
                 continue
             if parts[0] in ("tests", ".pytest_cache") or path.suffix == ".pyc":
                 continue
-            z.write(path, f"{name}/{rel.as_posix()}")
+            if path == VERSION_FILE:
+                z.writestr(f"{name}/{rel.as_posix()}", f'__version__ = "{version}"\n')
+            else:
+                z.write(path, f"{name}/{rel.as_posix()}")
     return target
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--version", help="set the plugin version before building (instead of the patch bump)")
-    ap.add_argument("--no-bump", action="store_true", help="build the zip with the current version")
+    ap.add_argument("--version", help="an exact zip version instead of the one from git")
     ap.add_argument("--no-zip", action="store_true", help="only copy the app into the package")
     args = ap.parse_args(argv)
-    if args.version:
-        write_version(args.version)
-    elif not args.no_zip and not args.no_bump:
-        old = read_version()
-        write_version(bump_patch(old))
-        print(f"version: {old} -> {read_version()} (commit {rel(VERSION_FILE)})")
-    version = read_version()
+    version = check_version(args.version) if args.version else None
     copied = copy_app()
     print(f"app copied to {rel(STATIC_APP)}: {', '.join(copied)}")
     if not args.no_zip:
-        print(f"zip: {rel(build_zip(version))}")
+        version = version or git_version(read_version())
+        print(f"zip: {rel(build_zip(version))} (version {version})")
     return 0
 
 
