@@ -234,7 +234,7 @@ class PlotterPlugin(
             "user": user,
             "canEditProfile": self.can_edit_profile(),
             "canEditCalibration": self.can_edit_calibration(),
-            "language": self.ui_language(user),  # the app picks its own language from it (en/ru), else from the browser
+            "language": self.ui_language(user),  # the app picks its own language from it (en/ru/es/de/fr), else from the browser
         }
         return _add_csrf_cookie(self._no_cache(self._json(payload)))
 

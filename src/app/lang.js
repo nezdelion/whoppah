@@ -3,24 +3,27 @@
 // Changing the language (the header switch) saves the choice and rebuilds the UI in place, without a page reload:
 // the drawing, loaded files, settings and running computations stay (createLanguageControl).
 import { setLocale, getLocale, t } from '../i18n/index.js';
-import { detectLanguage } from '../i18n/detect.js';
+import { detectLanguage, SUPPORTED } from '../i18n/detect.js';
 
 export const LANG_KEY = 'neptune-plotter.lang';
 
+/** An explicit choice: a supported language code; anything else means 'auto'. */
+const asChoice = (v) => (SUPPORTED.includes(v) ? v : 'auto');
+
 const storageOf = () => { try { return globalThis.localStorage || null; } catch (e) { return null; } };
 
-/** 'en' | 'ru' | 'auto' — the user's explicit choice; unavailable storage or a foreign value — 'auto'. */
+/** a supported code ('en', 'ru', 'es', 'de', 'fr') or 'auto' — the user's explicit choice; unavailable storage or a foreign value — 'auto'. */
 export function readLanguageChoice(storage = storageOf()) {
   try {
     const v = storage && storage.getItem(LANG_KEY);
-    return v === 'en' || v === 'ru' ? v : 'auto';
+    return asChoice(v);
   } catch (e) { return 'auto'; }
 }
 
 export function saveLanguageChoice(choice, storage = storageOf()) {
   try {
     if (!storage) return;
-    if (choice === 'en' || choice === 'ru') storage.setItem(LANG_KEY, choice);
+    if (asChoice(choice) !== 'auto') storage.setItem(LANG_KEY, choice);
     else storage.removeItem(LANG_KEY);
   } catch (e) { /* storage unavailable: the choice will not be saved, auto-detection remains */ }
 }
@@ -35,7 +38,7 @@ export function translateStatic(root = globalThis.document) {
 /**
  * Detects the language, enables it and translates the static markup.
  * @param env  the loadEnv result (in the plugin — env.language from OctoPrint)
- * @returns { locale, choice } choice — the saved choice ('auto' | 'en' | 'ru')
+ * @returns { locale, choice } choice — the saved choice ('auto' or a supported code)
  */
 export function applyLanguage({ env = {}, storage = storageOf(), nav = globalThis.navigator, root = globalThis.document } = {}) {
   const choice = readLanguageChoice(storage);
@@ -61,7 +64,7 @@ export function createLanguageControl({ env = {}, storage = storageOf(), nav = g
   return {
     get: () => current,
     set(next) {
-      current = next === 'en' || next === 'ru' ? next : 'auto';
+      current = asChoice(next);
       saveLanguageChoice(current, storage);
       const before = getLocale();
       const locale = enable(current, { env, nav, root });

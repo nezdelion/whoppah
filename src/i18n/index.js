@@ -1,13 +1,17 @@
 // Minimal localization with no dependencies: t(key, params), {name} interpolation, plurals via Intl.PluralRules.
 // The i18n layer imports nothing (except its own dictionaries), so it can be used from any layer.
-// A dictionary entry is a flat object "key → string" or "key → { one, few, many, other }" (the form is chosen by params.count).
+// A dictionary entry is a flat object "key → string" or "key → { one, few, many, other }" (the form is chosen by params.count;
+// each locale lists the categories Intl.PluralRules returns for it: en/de one/other, es/fr one/many/other, ru one/few/many/other).
 import en from './en.js';
 import ru from './ru.js';
+import es from './es.js';
+import de from './de.js';
+import fr from './fr.js';
 
-export const LOCALES = Object.freeze(['en', 'ru']);
+export const LOCALES = Object.freeze(['en', 'ru', 'es', 'de', 'fr']);
 export const DEFAULT_LOCALE = 'en';
 
-const DICTS = { en, ru };
+const DICTS = { en, ru, es, de, fr };
 let current = DEFAULT_LOCALE;
 const rules = new Map();
 

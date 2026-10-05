@@ -98,12 +98,41 @@ test('language control: auto follows the OctoPrint language; unavailable storage
   assert.equal(lang.get(), 'auto');
 });
 
-test('header language switch: Auto / English / Русский, the hint, set on change', () => {
+test('language control: live switch to German, French and Spanish — markup, storage, rebuild', () => {
+  const storage = memStorage(), root = fakeRoot();
+  let rebuilds = 0;
+  const lang = createLanguageControl({ env: {}, storage, nav: { languages: ['en-US'] }, root, choice: 'auto', rebuild: () => rebuilds++ });
+  assert.equal(lang.set('de'), 'de');
+  assert.deepEqual([getLocale(), storage.data[LANG_KEY], root.documentElement.lang, root.el.textContent, rebuilds], ['de', 'de', 'de', 'Zeichnung → G-code → OctoPrint', 1]);
+  assert.equal(t('tab.print'), 'Drucken');
+  assert.equal(lang.set('fr'), 'fr');
+  assert.deepEqual([root.documentElement.lang, root.el.textContent, rebuilds], ['fr', 'dessin → G-code → OctoPrint', 2]);
+  assert.equal(lang.set('es'), 'es');
+  assert.equal(t('tab.print'), 'Imprimir');
+  assert.equal(rebuilds, 3);
+  // auto with an Austrian browser: German without a stored choice
+  const auto = createLanguageControl({ env: {}, storage, nav: { languages: ['de-AT'] }, root, choice: 'es', rebuild: () => rebuilds++ });
+  assert.equal(auto.set('auto'), 'de');
+  assert.equal(LANG_KEY in storage.data, false);
+});
+
+test('tab host: a live switch to German retitles the tabs', () => {
+  const doc = installFakeDom();
+  const nav = doc.createElement('nav'), panels = doc.createElement('main');
+  const host = createTabHost({ nav, panels, tabs: [{ id: 'p', get title() { return t('tab.print'); }, mount() {}, unmount() {} }] });
+  host.mount();
+  assert.equal(nav.children[0].button.textContent, 'Print');
+  setLocale('de');
+  host.rebuild();
+  assert.equal(nav.children[0].button.textContent, 'Drucken');
+});
+
+test('header language switch: Auto / English / Русский / Español / Deutsch / Français, the hint, set on change', () => {
   const chosen = [];
   const { element, select } = createLanguageSwitch({ get: () => 'ru', set: (v) => chosen.push(v) });
   const options = select.findAll((n) => n.tagName === 'OPTION');
-  assert.deepEqual(options.map((o) => o.value), ['auto', 'en', 'ru']);
-  assert.deepEqual(options.map((o) => o.textContent), [t('lang.auto'), 'English', 'Русский']);
+  assert.deepEqual(options.map((o) => o.value), ['auto', 'en', 'ru', 'es', 'de', 'fr']);
+  assert.deepEqual(options.map((o) => o.textContent), [t('lang.auto'), 'English', 'Русский', 'Español', 'Deutsch', 'Français']);
   assert.equal(options[2].getAttribute('selected'), '');
   assert.equal(select.title, t('lang.hint'));
   assert.equal(select.getAttribute('aria-label'), t('lang.label'));

@@ -1,13 +1,20 @@
-// The interface language switch in the page header (all tabs, both modes): Auto / English / Русский.
+// The interface language switch in the page header (all tabs, both modes): Auto / English / Русский / Español / Deutsch / Français.
 // The hint follows the button convention: the hover title, and a "?" on touch screens that shows the text under the control.
 import { h, disclosure } from './dom.js';
 import { t } from '../../i18n/index.js';
 
 // language names are not translated: each one is written in its own language
-export const LANG_CHOICES = Object.freeze([['auto', () => t('lang.auto')], ['en', () => 'English'], ['ru', () => 'Русский']]);
+export const LANG_CHOICES = Object.freeze([
+  ['auto', () => t('lang.auto')],
+  ['en', () => 'English'],
+  ['ru', () => 'Русский'],
+  ['es', () => 'Español'],
+  ['de', () => 'Deutsch'],
+  ['fr', () => 'Français'],
+]);
 
 /**
- * @param language { get(): 'auto'|'en'|'ru', set(choice) } — set switches the language live (lang.js createLanguageControl)
+ * @param language { get(): 'auto' | a language code, set(choice) } — set switches the language live (lang.js createLanguageControl)
  * @returns {{ element, select }}
  */
 export function createLanguageSwitch(language) {
