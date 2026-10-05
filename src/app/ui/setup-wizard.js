@@ -13,7 +13,7 @@ import { printArea } from '../../core/bed.js';
 import { t } from '../../i18n/index.js';
 
 /** The pen offset from the sheet corner for "Sheet corner here" when the pen cannot stand at the corner (kept in the browser). */
-export const OFFSET_KEY = 'neptune-plotter.capture-offset';
+export const OFFSET_KEY = 'whoppah.capture-offset';
 export const readCornerOffset = () => {
   try { const o = JSON.parse(localStorage.getItem(OFFSET_KEY)); if (Number.isFinite(o.x) && Number.isFinite(o.y)) return o; } catch (e) { /* nothing saved */ }
   return { x: 0, y: 0 };

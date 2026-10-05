@@ -23,7 +23,7 @@ test('LocalStorageStore: save and load, absence and corruption', async () => {
   assert.equal(await store.load('job'), null);
   await store.save('job', { a: 1 });
   assert.deepEqual(await store.load('job'), { a: 1 });
-  st.setItem('neptune-plotter.v2.bad', '{oops');
+  st.setItem('whoppah.v2.bad', '{oops');
   assert.equal(await store.load('bad'), null);
 });
 

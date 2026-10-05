@@ -1,5 +1,5 @@
 {
-  "name": "neptune-plotter",
+  "name": "whoppah",
   "private": true,
   "type": "module",
   "description": "Pen plotter for Elegoo Neptune 3 Pro controlled by OctoPrint",

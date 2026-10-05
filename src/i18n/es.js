@@ -453,7 +453,7 @@ export default {
   'file.section.job': 'Ajustes del trabajo',
   'file.section.presets': 'Preajustes de las fuentes',
   'file.err.notJson': 'el archivo de ajustes está dañado: no es JSON',
-  'file.err.notOurs': 'no es un archivo de ajustes de Neptune Plotter',
+  'file.err.notOurs': 'no es un archivo de ajustes de Whoppah',
   'file.err.noVersion': 'el archivo no tiene versión de formato',
   'file.err.newer': 'la versión de formato {version} es más reciente que la admitida ({supported})',
   'file.err.noSections': 'el archivo no tiene secciones de ajustes',

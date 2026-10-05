@@ -5,7 +5,7 @@
 import { setLocale, getLocale, t } from '../i18n/index.js';
 import { detectLanguage, SUPPORTED } from '../i18n/detect.js';
 
-export const LANG_KEY = 'neptune-plotter.lang';
+export const LANG_KEY = 'whoppah.lang';
 
 /** An explicit choice: a supported language code; anything else means 'auto'. */
 const asChoice = (v) => (SUPPORTED.includes(v) ? v : 'auto');

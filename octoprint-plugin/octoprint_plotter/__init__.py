@@ -21,10 +21,10 @@ from octoprint.access.permissions import Permissions
 from ._version import __version__
 from .position import PositionReader, epoch_parts
 
-__plugin_name__ = "Plotter"
+__plugin_name__ = "Whoppah"
 __plugin_version__ = __version__
 __plugin_pythoncompat__ = ">=3.9,<4"
-__plugin_description__ = "Pen plotter web app (SVG to G-code) as a full-screen page"
+__plugin_description__ = "Whoppah: pen plotter web app for a 3D printer (SVG, photo, text to G-code) as a full-screen page"
 __plugin_url__ = "https://github.com/"
 
 SECTIONS = ("profile", "calibration", "job", "presets", "fonts")

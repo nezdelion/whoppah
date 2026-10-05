@@ -453,7 +453,7 @@ export default {
   'file.section.job': 'Réglages de la tâche',
   'file.section.presets': 'Préréglages des sources',
   'file.err.notJson': 'le fichier de réglages est endommagé : ce n’est pas du JSON',
-  'file.err.notOurs': 'ce n’est pas un fichier de réglages Neptune Plotter',
+  'file.err.notOurs': 'ce n’est pas un fichier de réglages Whoppah',
   'file.err.noVersion': 'le fichier n’a pas de version de format',
   'file.err.newer': 'la version de format {version} est plus récente que celle prise en charge ({supported})',
   'file.err.noSections': 'le fichier ne contient aucune section de réglages',

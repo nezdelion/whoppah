@@ -3,7 +3,9 @@
 import { SECTIONS } from './settings-store.js';
 import { t } from '../i18n/index.js';
 
-export const FILE_FORMAT = 'neptune-plotter-settings';
+export const FILE_FORMAT = 'whoppah-settings';
+/** Files exported before the rename are still accepted. */
+export const OLD_FILE_FORMATS = Object.freeze(['neptune-plotter-settings']);
 export const FILE_VERSION = 2;
 const MAX_PROFILES = 20;
 
@@ -38,7 +40,7 @@ function profilesShape(v) {
 export function parseSettings(text) {
   let data;
   try { data = JSON.parse(text); } catch (e) { throw new SettingsFileError(t('file.err.notJson')); }
-  if (!data || data.format !== FILE_FORMAT) throw new SettingsFileError(t('file.err.notOurs'));
+  if (!data || (data.format !== FILE_FORMAT && !OLD_FILE_FORMATS.includes(data.format))) throw new SettingsFileError(t('file.err.notOurs'));
   if (!Number.isInteger(data.version) || data.version < 1) throw new SettingsFileError(t('file.err.noVersion'));
   if (data.version < FILE_VERSION) throw new SettingsFileError(t('file.err.oldVersion'));
   if (data.version > FILE_VERSION) throw new SettingsFileError(t('file.err.newer', { version: data.version, supported: FILE_VERSION }));

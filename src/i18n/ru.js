@@ -453,7 +453,7 @@ export default {
   'file.section.job': 'Параметры задания',
   'file.section.presets': 'Пресеты источников',
   'file.err.notJson': 'файл настроек повреждён: это не JSON',
-  'file.err.notOurs': 'это не файл настроек Neptune Plotter',
+  'file.err.notOurs': 'это не файл настроек Whoppah',
   'file.err.noVersion': 'в файле нет версии формата',
   'file.err.newer': 'версия формата {version} новее поддерживаемой ({supported})',
   'file.err.noSections': 'в файле нет разделов настроек',

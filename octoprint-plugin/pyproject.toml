@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "OctoPrint-Plotter"
 dynamic = ["version"]
-description = "Pen plotter web app (SVG to G-code) served as a full-screen page by OctoPrint"
+description = "Whoppah: pen plotter web app for a 3D printer (SVG, photo, text to G-code) served as a full-screen page by OctoPrint"
 readme = "README.md"
 requires-python = ">=3.9,<4"
 license = { text = "MIT" }

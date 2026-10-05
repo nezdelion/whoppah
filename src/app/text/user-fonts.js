@@ -38,7 +38,7 @@ function localDoc(storage, key) {
  * @param makeId   () => unique id; now () => ISO time
  */
 export function createUserFonts({
-  server = null, storage = null, localKey = 'neptune-plotter.v2.fonts', budget = SERVER_FONT_BUDGET,
+  server = null, storage = null, localKey = 'whoppah.v2.fonts', budget = SERVER_FONT_BUDGET,
   makeId = () => `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, now = () => new Date().toISOString(),
 } = {}) {
   const local = localDoc(storage, localKey);

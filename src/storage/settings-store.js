@@ -6,7 +6,7 @@ export const SECTIONS = Object.freeze(['profiles', 'calibration', 'job', 'preset
 export const LEGACY_KEY = 'neptune-plotter.settings';
 
 export class LocalStorageStore {
-  constructor(storage = globalThis.localStorage, prefix = 'neptune-plotter.v2.') {
+  constructor(storage = globalThis.localStorage, prefix = 'whoppah.v2.') {
     this.storage = storage;
     this.prefix = prefix;
   }

@@ -1,9 +1,14 @@
-# Neptune Plotter
+# Whoppah — OctoPrint pen plotter plugin
 
 [Русская версия](README.ru.md)
 
-Web app for a pen plotter on an Elegoo Neptune 3 Pro (Marlin) controlled by OctoPrint 1.11:
-drawing (SVG, a photo in one of the line styles, or text) → layout on the sheet → pen G-code → download or send to OctoPrint.
+> — Dad, can we have a pen plotter at home?<br>
+> — **W**e **H**ave **O**ur **P**en **P**lotter **A**t **H**ome (WHOPPAH)
+
+Web app for a pen plotter built on a 3D printer controlled by OctoPrint.
+Tested on Elegoo Neptune 3 Pro (Marlin) and OctoPrint 1.11.
+
+Drawing (SVG, a photo in one of the line styles, or text) → layout on the sheet → pen G-code → download or send to OctoPrint.
 
 Plain JavaScript (ES modules), no build step and no npm dependencies.
 
@@ -170,7 +175,7 @@ Languages: English (`en`, fallback), Russian (`ru`), Spanish (`es`), German (`de
 
 Which language to enable (`src/i18n/detect.js`, `src/app/lang.js`), in descending priority:
 
-1. an explicit choice in the language switch in the page header (Auto / English / Русский / Español / Deutsch / Français, on every tab, standalone and plugin), stored in `localStorage` (`neptune-plotter.lang`);
+1. an explicit choice in the language switch in the page header (Auto / English / Русский / Español / Deutsch / Français, on every tab, standalone and plugin), stored in `localStorage` (`whoppah.lang`);
 2. plugin: the interface language of the current OctoPrint user — `language` in the dynamic `env.json` (user setting `interface.language`, otherwise the global `appearance.defaultLanguage`; "_default" means "not chosen");
 3. `navigator.languages`: the first supported one by the primary subtag (`ru*` → Russian, `de-AT` → German, `es-MX` → Spanish, `fr-CA` → French, `en*` → English);
 4. otherwise English (including for an unsupported OctoPrint language, e.g. `it`, in which case the browser language is checked).

@@ -74,7 +74,7 @@ test('every locale: plural entries have every form Intl.PluralRules can return, 
 
 // Heuristic for forgotten translations: a sentence-like value (3+ words of 3+ letters, beyond units, G-code and product names)
 // left identical to English. Short labels that are the same word in the language (Photo, Gamma, Standard) do not count.
-const KEEP = /\b(?:OctoPrint|Neptune|Plotter|plotterfun|Hershey|G-code|SVG|JSON|CORS|API|WebSocket|TTF|OTF|WOFF|mm|min|max)\b|\b[GM]\d+\b/g;
+const KEEP = /\b(?:OctoPrint|Neptune|Plotter|Whoppah|plotterfun|Hershey|G-code|SVG|JSON|CORS|API|WebSocket|TTF|OTF|WOFF|mm|min|max)\b|\b[GM]\d+\b/g;
 const sentenceLike = (text) => (text.replace(/\{\w+\}/g, ' ').replace(KEEP, ' ').match(/\p{L}{3,}/gu) || []).length >= 3;
 
 test('non-English dictionaries: no sentence left in English', () => {

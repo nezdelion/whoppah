@@ -223,7 +223,7 @@ function mountTransfer({ state, store, notify, needs }) {
   async function onExport() {
     const presets = await store.load('presets');
     const s = state.settings();
-    downloadText('neptune-plotter-settings.json', serializeSettings({ profiles: state.profiles(), calibration: s.calibration, job: s.job, presets }), 'application/json');
+    downloadText('whoppah-settings.json', serializeSettings({ profiles: state.profiles(), calibration: s.calibration, job: s.job, presets }), 'application/json');
   }
 
   return h('section', { class: 'settings-section' },

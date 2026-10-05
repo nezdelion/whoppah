@@ -1,7 +1,7 @@
 // A folded section: <details> with a summary; the open state is remembered per id in the browser (localStorage).
 import { h } from './dom.js';
 
-export const FOLD_KEY = (id) => `neptune-plotter.fold.${id}`;
+export const FOLD_KEY = (id) => `whoppah.fold.${id}`;
 
 const readOpen = (id, fallback) => {
   try { const v = localStorage.getItem(FOLD_KEY(id)); return v === null ? fallback : v === '1'; } catch (e) { return fallback; }

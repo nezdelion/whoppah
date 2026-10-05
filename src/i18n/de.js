@@ -453,7 +453,7 @@ export default {
   'file.section.job': 'Auftragseinstellungen',
   'file.section.presets': 'Presets der Quellen',
   'file.err.notJson': 'die Einstellungsdatei ist beschädigt: Sie ist kein JSON',
-  'file.err.notOurs': 'dies ist keine Einstellungsdatei von Neptune Plotter',
+  'file.err.notOurs': 'dies ist keine Einstellungsdatei von Whoppah',
   'file.err.noVersion': 'die Datei hat keine Formatversion',
   'file.err.newer': 'Formatversion {version} ist neuer als die unterstützte ({supported})',
   'file.err.noSections': 'die Datei enthält keine Einstellungsabschnitte',

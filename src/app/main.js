@@ -109,7 +109,7 @@ async function start() {
   if (plugin) {
     const message = await offerLocalImport({
       serverStore: store, localStore: new LocalStorageStore(localStorage), flags: localStorage,
-      flagKey: `neptune-plotter.plugin-import-offered.${env.user || ''}`,
+      flagKey: `whoppah.plugin-import-offered.${env.user || ''}`,
       confirm: (m) => window.confirm(m), needs: plugin.needs,
     }).catch((e) => t('notice.importFailed', { message: e.message }));
     if (message) { await state.load(); notice.show(message); }
@@ -164,7 +164,7 @@ async function start() {
   // the user's fonts of the "Text" tab: plugin — the user's server section (a font too big for it stays in this browser),
   // standalone — this browser
   const userFonts = createUserFonts(plugin
-    ? { server: store, storage: safeLocalStorage(), localKey: `neptune-plotter.plugin-fonts.${env.user || ''}` }
+    ? { server: store, storage: safeLocalStorage(), localKey: `whoppah.plugin-fonts.${env.user || ''}` }
     : { storage: safeLocalStorage() });
   const printTab = createPrintTab({ state, store, service, transport, connection, calibrator, ui: plugin ? plugin.ui : { feed, firmware, limits } });
   const tabs = createTabHost({
