@@ -224,6 +224,10 @@ export const myStyle = (gray, w, h, params, paper) => runToEnd(mySteps({ gray, w
 
 **Пересборка встроенных шрифтов** (после обновления `vendor/hershey/`, `vendor/newstroke/` или `vendor/ems-fonts/`): `node tools/build_fonts.js` пишет `src/app/text/fonts/*.json` теми же разборщиками ядра; `node tools/build_fonts.js --check` только сравнивает (его запускает тест, забытая пересборка роняет набор).
 
+## Лицензия
+
+MIT (`LICENSE`), © 2026 nezdelion. Сторонний код и шрифты — под своими лицензиями (ниже): MIT (plotterfun и файлы `external/`), упоминание авторов шрифтов Hershey, CC0 (NewStroke), SIL OFL 1.1 (шрифты EMS — лицензия действует только на файлы шрифтов). Плагин OctoPrint импортирует OctoPrint (AGPLv3), но не содержит его; MIT с ней совместима.
+
 ## Сторонний код
 
 - **plotterfun** — Tim Alex Jacobs (mitxela), лицензия MIT, <https://github.com/mitxela/plotterfun>. Файлы стилей и `helpers.js` лежат в `vendor/plotterfun/` без изменений вместе с `LICENSE`; коммит upstream — в `vendor/plotterfun/UPSTREAM`. Обновление = замена каталога + `tools/audit_plotterfun.py` + повторная проверка стилей с асинхронным кодом.

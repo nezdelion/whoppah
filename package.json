@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "description": "Pen plotter for Elegoo Neptune 3 Pro controlled by OctoPrint",
+  "license": "MIT",
   "scripts": {
     "test": "NODE_OPTIONS=--max-old-space-size=1024 node --test"
   }

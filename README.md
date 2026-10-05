@@ -224,6 +224,10 @@ Font interface: the layout (`src/core/text-layout.js`) knows only a `StrokeFont`
 
 **Rebuilding the built-in fonts** (after updating `vendor/hershey/`, `vendor/newstroke/` or `vendor/ems-fonts/`): `node tools/build_fonts.js` writes `src/app/text/fonts/*.json` with the same core parsers; `node tools/build_fonts.js --check` only compares (a test runs it, so a forgotten rebuild fails the suite).
 
+## License
+
+MIT (`LICENSE`), © 2026 nezdelion. Third-party code and fonts keep their own licenses (below): MIT (plotterfun and its `external/` files), the Hershey Fonts acknowledgement, CC0 (NewStroke), SIL OFL 1.1 (EMS fonts — the license covers the font files only). The OctoPrint plugin imports OctoPrint (AGPLv3) but does not include it; MIT is compatible.
+
 ## Third-party code
 
 - **plotterfun** — Tim Alex Jacobs (mitxela), MIT license, <https://github.com/mitxela/plotterfun>. The style files and `helpers.js` are in `vendor/plotterfun/` unmodified together with `LICENSE`; the upstream commit is in `vendor/plotterfun/UPSTREAM`. Update = replace the directory + `tools/audit_plotterfun.py` + recheck the styles with asynchronous code.
