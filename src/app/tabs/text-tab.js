@@ -55,7 +55,7 @@ export function createTextSource({ createModel = () => createTextModel() } = {})
       const $ = {};
       $.text = h('textarea', { rows: 4, placeholder: t('texttab.placeholder'), 'aria-label': t('texttab.text'), value: m.text() });
       $.font = h('select', { 'aria-label': t('texttab.font') });
-      $.sample = h('canvas', { class: 'text-sample', width: 600, height: 60, 'aria-label': t('texttab.sampleAria') });
+      $.sample = h('canvas', { class: 'text-sample', width: 600, height: 80, 'aria-label': t('texttab.sampleAria') });
       $.fileInput = h('input', { type: 'file', accept: '.svg,.jhf,image/svg+xml', hidden: true });
       $.addFont = button({ label: t('texttab.addFont'), hint: 'texttab.addFont.hint', onclick: () => $.fileInput.click() });
       $.removeFont = button({ label: t('texttab.removeFont'), hint: 'texttab.removeFont.hint', class: 'danger', onclick: removeFont });
