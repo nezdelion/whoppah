@@ -16,7 +16,7 @@ import { normalizeTextParams, defaultTextParams, handPresetValues } from './text
 import { fmtNumber, t } from '../../i18n/index.js';
 
 export const SAVE_DEBOUNCE_MS = 400;
-export const SAMPLE_TEXT = 'Aa Bb \u0410\u0430 \u0411\u0431 \u042f\u044f 123';
+export const SAMPLE_TEXT = 'Hamburgefonstiv';
 
 const randomSeed = () => 1 + Math.floor(Math.random() * 0x7ffffffe);
 const mm = (v) => fmtNumber(v, { maxFrac: 1 });
