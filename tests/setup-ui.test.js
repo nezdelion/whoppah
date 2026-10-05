@@ -68,6 +68,8 @@ function fakeCalibrator({ state, server, link = OK_LINK, profileNeed = () => nul
     moves: [], gone: [], gate: null,
     async move(axis, dir, step) { jog.moves.push([axis, dir, step]); if (jog.gate) await jog.gate; return { ok: true, message: 'готово' }; },
     async goTo(v) { jog.gone.push(v); return { ok: true, message: '' }; },
+    homes: 0,
+    async home() { jog.homes++; return { ok: true, message: 'G28 отправлен: парковка' }; },
   };
   const cal = {
     linkValue: link, homed: 0, linkSubs, monSubs,
@@ -162,6 +164,29 @@ test('jog pad: XY cross and Z column in OctoPrint order; two pads use separate r
   assert.deepEqual(areas, { 'X−': 'xm', 'X+': 'xp', 'Y−': 'ym', 'Y+': 'yp', 'Z−': 'zm', 'Z+': 'zp' });
   const name = (pad) => { const r = pad.element.findAll((e) => e.type === 'radio')[0]; return r.name ?? r.getAttribute('name'); };
   assert.notEqual(name(a), name(b));
+});
+
+test('jog pad: "Home (G28)" next to "Already homed" when not homed; sends G28 only after the pen confirmation', async () => {
+  const cal = fakeCalibrator({ link: NO_HOME });
+  const log = [];
+  const pad = createJogPad({ calibrator: cal, step: { get: () => 1, set() {} }, log: (m) => log.push(m) });
+  const homeBtn = btn(pad.element, t('jogpad.home'));
+  const wrap = all(pad.element, 'SPAN').find((s) => s.button === homeBtn);
+  assert.equal(wrap.hidden, false, 'shown while Home is missing');
+  let asked = '';
+  setGlobal('confirm', (q) => { asked = q; return false; });
+  homeBtn.click();
+  await tick();
+  assert.equal(cal.jog.homes, 0, 'cancelled: no G28');
+  assert.match(asked, /перо|Перо/i);
+  setGlobal('confirm', () => true);
+  homeBtn.click();
+  await tick(); await tick();
+  assert.equal(cal.jog.homes, 1);
+  assert.equal(cal.homed, 1, 'the guard is lifted');
+  assert.deepEqual(log, ['G28: G28 отправлен: парковка']);
+  assert.equal(wrap.hidden, true, 'hidden once homed');
+  pad.destroy();
 });
 
 test('jog pad: without permission (allowed false) everything is disabled', () => {

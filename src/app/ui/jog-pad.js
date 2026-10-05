@@ -23,6 +23,17 @@ export function createJogPad({ calibrator, allowed = () => true, log = () => {},
     try { const r = await fn(); log(`${text}: ${r.message}`); } finally { busy = false; onBusy(false); sync(); }
   };
   $.homeHint = h('div', { class: 'warn', role: 'status' });
+  $.home = button({
+    label: t('jogpad.home'), hint: 'jogpad.home.hint', hidden: true,
+    onclick: () => {
+      if (!calibrator.jog.home || !confirm(t('jogpad.homeConfirm'))) return;
+      act('G28', async () => {
+        const r = await calibrator.jog.home();
+        if (r.ok && calibrator.markHomed) calibrator.markHomed();
+        return r;
+      })();
+    },
+  });
   $.homeDone = button({
     label: t('print.homeDone'), hint: 'print.homeDone.hint', hidden: true,
     onclick: () => { if (confirm(t('print.homeConfirm'))) { calibrator.markHomed(); log(t('print.homeAccepted')); sync(); } },
@@ -43,7 +54,7 @@ export function createJogPad({ calibrator, allowed = () => true, log = () => {},
   const keys = ['x', 'y', 'z'].flatMap((a) => [`jog${a}-1`, `jog${a}1`]);
   const hint = disclosure('?', t('print.jog.hint'));
   const element = h('div', { class: 'jog-pad' },
-    $.homeHint, $.homeDone,
+    $.homeHint, h('div', { class: 'row' }, $.home, $.homeDone),
     h('div', { class: 'jog-steps', role: 'radiogroup', 'aria-label': t('print.stepLabel') },
       h('span', {}, t('jogpad.step')),
       steps.map((r, i) => h('label', { class: 'jog-step' }, r, h('span', {}, t('print.stepOption', { v: JOG_STEPS[i] })))),
@@ -59,6 +70,8 @@ export function createJogPad({ calibrator, allowed = () => true, log = () => {},
     for (const k of keys) $[k].disabled = busy || base || !(k.startsWith('jogz') ? link.z.ok : link.xy.ok);
     $.homeHint.textContent = link.hint;
     $.homeDone.hidden = !(calibrator.markHomed && link.homeMissing);
+    $.home.hidden = !(calibrator.jog.home && link.homeMissing);
+    $.home.disabled = busy || base;
   }
   sync();
   off.push(calibrator.subscribeLink(sync));

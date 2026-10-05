@@ -32,6 +32,20 @@ export function createJog({ state, positionSource, transport, guard = () => ({ o
       }
     },
 
+    /**
+     * Home (G28) on the user's explicit request (after a confirmation in the UI: the pen must be out or raised above the
+     * nozzle — homing lowers the head to probe Z). No guard: this is how the guard gets satisfied. The coordinate epochs
+     * change as for any G28 (the feed or the plugin sees it).
+     */
+    async home() {
+      try {
+        await transport.command(['G28']);
+        return { ok: true, message: t('jog.homed') };
+      } catch (e) {
+        return { ok: false, message: e && e.message ? e.message : String(e) };
+      }
+    },
+
     /** "Go to" a point in nozzle coordinates: moves X/Y and Z, so both guard parts must allow it. */
     async goTo(point) {
       try {
