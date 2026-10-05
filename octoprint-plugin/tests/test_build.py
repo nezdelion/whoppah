@@ -67,4 +67,7 @@ def test_zip_version_comes_from_git_and_tracked_files_stay(tmp_path, monkeypatch
     from datetime import datetime, timezone
     assert build.git_version("0.1.0", count=37, dirty=False) == "0.1.37"
     assert build.git_version("2.3.9", count=5, dirty=True, now=datetime(2026, 10, 5, 7, 9, tzinfo=timezone.utc)) == "2.3.5.post202610050709"
-    assert build.git_version(build.read_version()).startswith("0.1."), "real git works"
+    major_minor = ".".join(build.read_version().split(".")[:2])
+    assert build.git_version(build.read_version()).startswith(major_minor + "."), "real git works"
+    assert build.commits_since_minor() >= 0
+    assert build.minor_of('__version__ = "0.2.0"\n') == ("0", "2") and build.minor_of("") is None

@@ -4,8 +4,8 @@
     python3 tools/build_plugin.py [--version X.Y.Z] [--no-zip]
 
 The zip's version comes from git, the tracked files are not changed: MAJOR.MINOR from octoprint_plotter/_version.py,
-PATCH = the number of commits (`git rev-list --count HEAD`), so every commit gives a new, higher version and Plugin
-Manager installs the zip over the old one. Uncommitted changes add `.post<UTC yyyymmddHHMM>` (still higher than the clean
+PATCH = the number of commits since the commit that set this MAJOR.MINOR (that commit is .0), so every commit gives
+a new, higher version and Plugin Manager installs the zip over the old one. Uncommitted changes add `.post<UTC yyyymmddHHMM>` (still higher than the clean
 build of the same commit). --version sets an exact version instead. Only the copy inside the zip gets the version.
 
 The app sources are never duplicated in git: octoprint_plotter/static/app/ is generated and git-ignored.
@@ -58,12 +58,32 @@ def git(*args):
     return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, check=True).stdout.strip()
 
 
+def minor_of(text):
+    m = re.search(r'__version__\s*=\s*"(\d+)\.(\d+)', text or "")
+    return (m.group(1), m.group(2)) if m else None
+
+
+def commits_since_minor():
+    """Commits after the one that set the current MAJOR.MINOR in _version.py (that commit itself is PATCH 0);
+    all commits if it never changed."""
+    path = VERSION_FILE.relative_to(ROOT).as_posix()
+    current = minor_of(VERSION_FILE.read_text(encoding="utf-8"))
+    for commit in git("log", "--format=%H", "--", path).split():
+        try:
+            before = minor_of(git("show", f"{commit}^:{path}"))
+        except subprocess.CalledProcessError:  # the file is new in this commit, or the root commit
+            before = None
+        if before != current:
+            return int(git("rev-list", "--count", f"{commit}..HEAD"))
+    return int(git("rev-list", "--count", "HEAD"))
+
+
 def git_version(base, *, count=None, dirty=None, now=None):
-    """MAJOR.MINOR of base + commit count; uncommitted changes add .post<UTC minute>."""
+    """MAJOR.MINOR of base + commits since MAJOR.MINOR was set; uncommitted changes add .post<UTC minute>."""
     m = re.match(r"(\d+)\.(\d+)", base)
     if not m:
         raise SystemExit(f"cannot read MAJOR.MINOR from {base}")
-    count = int(git("rev-list", "--count", "HEAD")) if count is None else count
+    count = commits_since_minor() if count is None else count
     dirty = bool(git("status", "--porcelain")) if dirty is None else dirty
     version = f"{m.group(1)}.{m.group(2)}.{count}"
     if dirty:
