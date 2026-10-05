@@ -205,3 +205,4 @@ textarea { font: inherit; font-size: 15px; color: var(--text); background: var(-
 .text-sample { display: block; width: 100%; height: auto; aspect-ratio: 7.5; margin-top: 6px; background: var(--paper); border-radius: 6px; }
 .text-params .param-grid { grid-template-columns: minmax(0, 1fr); }
 .text-params label.preset { margin-bottom: 6px; }
+.text-preview { width: 100%; } /* the text preview grows with the lines (fixed scale by the line height), the page scrolls */

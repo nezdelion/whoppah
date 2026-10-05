@@ -12,7 +12,10 @@ import { t, fmtNumber } from '../../i18n/index.js';
 const mm = (v) => fmtNumber(v, { maxFrac: 1 });
 
 /** Polylines into a canvas: fitted into (W, H) with a margin, Y down; returns nothing. */
-function strokeLines(g, lines, W, H, { pad, lineWidth, color }) {
+/** Preview scale: one text line (cap height × line spacing) takes this many CSS px; padding around the text, CSS px. */
+const LINE_PX = 40, PAD_PX = 12;
+
+function strokeLines(g, lines, W, H, { pad, lineWidth, color, maxScale = Infinity }) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const l of lines) for (let i = 0; i < l.length; i += 2) {
     if (l[i] < x0) x0 = l[i];
@@ -21,7 +24,7 @@ function strokeLines(g, lines, W, H, { pad, lineWidth, color }) {
     if (l[i + 1] > y1) y1 = l[i + 1];
   }
   if (x0 === Infinity) return;
-  const k = Math.min((W - 2 * pad) / Math.max(x1 - x0, 1e-6), (H - 2 * pad) / Math.max(y1 - y0, 1e-6));
+  const k = Math.min(maxScale, (W - 2 * pad) / Math.max(x1 - x0, 1e-6), (H - 2 * pad) / Math.max(y1 - y0, 1e-6));
   const ox = (W - (x1 - x0) * k) / 2 - x0 * k, oy = (H - (y1 - y0) * k) / 2 - y0 * k;
   g.strokeStyle = color; g.lineWidth = lineWidth; g.lineJoin = 'round'; g.lineCap = 'round';
   g.beginPath();
@@ -133,8 +136,12 @@ export function createTextSource({ createModel = () => createTextModel() } = {})
         const lines = d ? d.layers.flatMap((l) => l.lines) : [];
         const b = d ? bbox(d) : null;
         const s = d ? stats(d) : { lines: 0 };
-        // the canvas follows the text proportions (between 4:1 and 1:1)
-        const ar = b ? Math.min(4, Math.max(1, (b.w + 4) / (b.h + 4))) : 3;
+        // a fixed scale set by the line height (one line ≈ LINE_PX on screen), not "fit the whole text": the letters keep their
+        // size however much text there is; the canvas grows with the lines and only a line wider than the canvas shrinks them
+        const p = m.params();
+        const kCss = LINE_PX / Math.max(0.1, p.sizeMm * p.lineSpacing);
+        const boxW = ($.canvas.parentElement && $.canvas.parentElement.clientWidth) || 600;
+        const ar = b ? Math.min(12, Math.max(1, boxW / (b.h * kCss + 2 * PAD_PX))) : 3;
         $.canvas.style.setProperty('--ar', String(ar));
         const W = $.canvas.width, H = $.canvas.height;
         view.setSize(W, H);
@@ -147,7 +154,7 @@ export function createTextSource({ createModel = () => createTextModel() } = {})
           g.fillText(d ? t('texttab.empty') : t('texttab.loadingFont'), 16 * dpr, 30 * dpr);
         } else {
           view.apply(g);
-          strokeLines(g, lines, W, H, { pad: 12 * dpr, lineWidth: (1.4 * dpr) / view.zoom, color: col('--layer-0') || '#000' });
+          strokeLines(g, lines, W, H, { pad: PAD_PX * dpr, lineWidth: (1.4 * dpr) / view.zoom, color: col('--layer-0') || '#000', maxScale: kCss * dpr });
         }
         $.stats.textContent = s.lines ? t('texttab.stats', { lines: t('svgtab.lines', { count: s.lines }), w: mm(d.meta.physicalSize.w), h: mm(d.meta.physicalSize.h) }) : '';
         $.drawWarn.textContent = d ? d.meta.warnings.join('\n') : '';
