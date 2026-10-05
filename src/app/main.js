@@ -1,4 +1,5 @@
 // Composition root: choosing implementations (storage, transport, auth), assembling the tabs.
+import { followAsIsDefault } from './as-is-default.js';
 import { LocalStorageStore, migrateLegacy, migrateProfiles } from '../storage/settings-store.js';
 import { fromLegacy } from '../core/profiles.js';
 import { createOctoPrintTransport } from '../transport/octoprint-http.js';
@@ -205,6 +206,7 @@ async function start() {
   if (feed) feed.start();
 
   // after loading a drawing, show the result immediately
+  followAsIsDefault(state); // text goes to Print at its size in mm by default; the option stays switchable
   state.subscribe((e) => { if (e.type === 'drawing') tabs.show('print'); });
 }
 
