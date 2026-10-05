@@ -291,6 +291,8 @@ export const myStyle = (gray, w, h, params, paper) => runToEnd(mySteps({ gray, w
 
 ### Разработка плагина
 
+**CI (GitHub Actions, `.github/workflows/ci.yml`).** Каждый push в `main` и каждый pull request запускает `npm test` и тесты плагина, затем собирает zip плагина (скачивается из запуска как артефакт). Тег `v*` (например, `git tag v0.2.12 && git push origin v0.2.12`) дополнительно публикует релиз GitHub с zip; ставится в OctoPrint через Plugin Manager → «… from URL» по ссылке на файл релиза (публичный репозиторий) или скачиванием.
+
 ```sh
 tools/dev_octoprint.sh               # .venv + OctoPrint 1.11 + плагин (editable) + Virtual Printer, порт 5001, данные в .octoprint-dev
 tools/test_plugin.sh                 # тесты плагина: общий .venv (создаётся один раз), работает и из git worktree

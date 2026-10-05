@@ -291,6 +291,8 @@ Switching the language in the header works **live, without a page reload** (`cre
 
 ### Plugin development
 
+**CI (GitHub Actions, `.github/workflows/ci.yml`).** Every push to `main` and every pull request runs `npm test` and the plugin tests, then builds the plugin zip (downloadable from the run as an artifact). A tag `v*` (e.g. `git tag v0.2.12 && git push origin v0.2.12`) also publishes a GitHub release with the zip; install it in OctoPrint via Plugin Manager → "… from URL" with the release asset link (public repo) or by downloading it.
+
 ```sh
 tools/dev_octoprint.sh               # .venv + OctoPrint 1.11 + plugin (editable) + Virtual Printer, port 5001, data in .octoprint-dev
 tools/test_plugin.sh                 # plugin tests: shared .venv (created once), also works from a git worktree

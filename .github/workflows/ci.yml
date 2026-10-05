@@ -1,0 +1,76 @@
+# Tests on every push and pull request, the plugin zip as an artifact; a tag v* also publishes a GitHub release with it.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tests/test_build.py checks the version computed from the git history
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: App tests
+        run: npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: octoprint-plugin/pyproject.toml
+      - name: Plugin tests
+        run: tools/test_plugin.sh -q
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the zip version (MAJOR.MINOR.PATCH) is computed from the git history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build the plugin zip
+        id: build
+        run: |
+          python3 tools/build_plugin.py | tee build.log
+          echo "version=$(sed -n 's/.*(version \(.*\))$/\1/p' build.log)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OctoPrint-Plotter-${{ steps.build.outputs.version }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: OctoPrint-Plotter-${{ needs.build.outputs.version }}
+          path: dist
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" \
+            --title "Whoppah $GITHUB_REF_NAME (plugin ${{ needs.build.outputs.version }})" --generate-notes
