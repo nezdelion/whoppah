@@ -135,3 +135,14 @@ test('the sheet beyond the bed on the right: 14.0 mm, the format stays chosen; w
   // pipeline: the sheet against the print area of the profile
   assert.match(sheetCheck(settingsWith()).join('\n'), /справа на 25,0 мм\nрисунок вписан/);
 });
+
+
+test('buildPlan: a drawing with meta.keepOrder (text) is printed in its own order, not nearest-first from the corner', () => {
+  // document Y down: the first line is at the top (far from the corner, which is bottom left), the second at the bottom
+  const lines = [[0, 0, 100, 0], [0, 100, 100, 100]];
+  const firstStartY = (plan) => plan.machine.layers[0].lines[0][1];
+  const kept = buildPlan(doc(lines, { keepOrder: true }), settingsWith({ bed: null }));
+  const free = buildPlan(doc(lines), settingsWith({ bed: null }));
+  assert.ok(firstStartY(kept) > firstStartY(free), 'text starts with the top line; the free order starts near the corner');
+  assert.ok(kept.machine.layers[0].lines[0][0] < kept.machine.layers[0].lines[0][2], 'left to right, not reversed');
+});

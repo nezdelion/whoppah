@@ -190,7 +190,7 @@ export function textName(text) {
 }
 
 /**
- * Text -> Drawing in document coordinates (mm): one layer, meta { source: 'text', name, warnings, unitMm: 1,
+ * Text -> Drawing in document coordinates (mm): one layer, meta { source: 'text', name, warnings, unitMm: 1, keepOrder (print in this order),
  * physicalSize: { w, h } of the drawn lines } — "As is in mm" prints at the set size.
  */
 export function textDrawing(text, font, opts = {}) {
@@ -208,6 +208,6 @@ export function textDrawing(text, font, opts = {}) {
   return createDrawing({
     space: SPACE.DOCUMENT,
     layers: [{ id: 'text', name: t('text.layerName'), lines: r.lines }],
-    meta: { source: 'text', name: textName(text) || t('text.layerName'), warnings: r.warnings, unitMm: 1, physicalSize, font: font.name },
+    meta: { source: 'text', name: textName(text) || t('text.layerName'), warnings: r.warnings, unitMm: 1, physicalSize, font: font.name, keepOrder: true },
   });
 }

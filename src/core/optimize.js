@@ -139,6 +139,25 @@ export function sortMerge(drawing, { start = [0, 0], tol = 0.05, linkTol = 0 } =
   return derive(drawing, { layers });
 }
 
+/**
+ * Joins consecutive lines in their given order and direction (no reordering, no reversal): the next line is appended to the
+ * previous one when its start is within tol of the previous end (its first point dropped) or within linkTol (kept, the gap drawn).
+ * For drawings whose order is meaningful, e.g. text written in reading and stroke order.
+ */
+export function mergeInOrder(drawing, { tol = 0.05, linkTol = 0 } = {}) {
+  const layers = drawing.layers.map((layer) => {
+    const out = [];
+    for (const l of layer.lines) {
+      const prev = out[out.length - 1];
+      const d = prev ? Math.hypot(l[0] - prev[prev.length - 2], l[1] - prev[prev.length - 1]) : Infinity;
+      if (prev && (d <= tol || d <= linkTol)) for (let k = d <= tol ? 2 : 0; k < l.length; k++) prev.push(l[k]);
+      else out.push(l.slice());
+    }
+    return { ...layer, lines: out };
+  });
+  return derive(drawing, { layers });
+}
+
 export function travelLength(drawing, start = [0, 0]) {
   let travel = 0, p = start;
   for (const layer of drawing.layers) {
@@ -151,10 +170,13 @@ export function travelLength(drawing, start = [0, 0]) {
 }
 
 /** simplify -> sortMerge, plus a before/after report. */
-export function optimize(drawing, { simplifyTolMm = 0, mergeTolMm = 0.05, linkTolMm = 0, start = [0, 0] } = {}) {
+export function optimize(drawing, { simplifyTolMm = 0, mergeTolMm = 0.05, linkTolMm = 0, start = [0, 0], keepOrder = false } = {}) {
   const before = stats(drawing);
   const travelBefore = travelLength(drawing, start);
-  const result = sortMerge(simplify(drawing, simplifyTolMm), { start, tol: mergeTolMm, linkTol: linkTolMm });
+  // keepOrder: the drawing's own order and direction matter (text) — only consecutive lines are joined
+  const result = keepOrder
+    ? mergeInOrder(simplify(drawing, simplifyTolMm), { tol: mergeTolMm, linkTol: linkTolMm })
+    : sortMerge(simplify(drawing, simplifyTolMm), { start, tol: mergeTolMm, linkTol: linkTolMm });
   const after = stats(result);
   return {
     drawing: result,

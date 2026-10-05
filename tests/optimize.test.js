@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDrawing, stats, allLines } from '../src/core/drawing.js';
-import { simplify, simplifyLine, sortMerge, optimize, travelLength } from '../src/core/optimize.js';
+import { simplify, simplifyLine, sortMerge, optimize, travelLength, mergeInOrder } from '../src/core/optimize.js';
 import { pointSegmentDistance } from '../src/core/geometry.js';
 import { deepFreeze } from './helpers/fixtures.js';
 import './helpers/ru.js';
@@ -113,4 +113,21 @@ test('simplifyLine: the same RDP as simplify, the ends are kept, the type follow
   const flat = Float64Array.of(0, 0, 1, 0.01, 2, -0.01, 3, 0.005, 4, 0);
   assert.deepEqual(Array.from(simplifyLine(flat, 0.05)), [0, 0, 4, 0]);
   assert.equal(simplifyLine(flat, 0), flat, 'tolerance 0 — unchanged');
+});
+
+
+test('mergeInOrder: keeps the given order and direction (no nearest-first, no reversal), joins only consecutive touching lines', () => {
+  // written right-to-left on purpose: sortMerge from the origin would start at the nearest end and reverse lines
+  const d = createDrawing({ layers: [{ id: 'l', name: 'l', lines: [[50, 0, 40, 0], [40, 0, 30, 0], [10, 0, 0, 0], [20, 5, 25, 5]] }] });
+  const r = mergeInOrder(d, { tol: 0.05 });
+  assert.deepEqual(r.layers[0].lines, [[50, 0, 40, 0, 30, 0], [10, 0, 0, 0], [20, 5, 25, 5]]);
+  const o = optimize(d, { start: [0, 0], keepOrder: true });
+  assert.deepEqual(o.drawing.layers[0].lines, r.layers[0].lines, 'optimize with keepOrder = mergeInOrder');
+  const nearest = optimize(d, { start: [0, 0] });
+  assert.notDeepEqual(nearest.drawing.layers[0].lines[0], [50, 0, 40, 0, 30, 0], 'without it the order changes');
+});
+
+test('mergeInOrder: linkTol draws the short gap to the next line without dropping its first point', () => {
+  const d = createDrawing({ layers: [{ id: 'l', name: 'l', lines: [[0, 0, 10, 0], [10.4, 0, 20, 0]] }] });
+  assert.deepEqual(mergeInOrder(d, { tol: 0.05, linkTol: 0.5 }).layers[0].lines, [[0, 0, 10, 0, 10.4, 0, 20, 0]]);
 });
