@@ -48,8 +48,8 @@ jobs:
       - name: Build the plugin zip
         id: build
         run: |
-          python3 tools/build_plugin.py | tee build.log
-          echo "version=$(sed -n 's/.*(version \(.*\))$/\1/p' build.log)" >> "$GITHUB_OUTPUT"
+          python3 tools/build_plugin.py | tee "$RUNNER_TEMP/build.log"
+          echo "version=$(sed -n 's/.*(version \(.*\))$/\1/p' "$RUNNER_TEMP/build.log")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: OctoPrint-Plotter-${{ steps.build.outputs.version }}
