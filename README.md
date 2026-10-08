@@ -33,6 +33,7 @@ Plain JavaScript (ES modules), no build step and no npm dependencies.
   - [Verification with OctoPrint (Virtual Printer)](#verification-with-octoprint-virtual-printer)
 - [License](#license)
 - [Third-party code](#third-party-code)
+- [Acknowledgements](#acknowledgements)
 
 ## Running
 
@@ -54,133 +55,126 @@ The standalone app is just static files, so it also works from GitHub Pages (or 
 
 ## OctoPrint plugin
 
-The app can be served by OctoPrint 1.11 itself as a full-screen page at `/plugin/plotter/`: no separate server, API key or CORS, with settings shared across all devices. Standalone mode (above) keeps working in parallel.
+OctoPrint 1.11 can serve the app itself as a full-screen page at `/plugin/plotter/`: no separate server, API key or CORS, and the settings are shared by all devices. Standalone mode keeps working alongside it.
 
-**Modes.** On startup the app reads `env.json` next to the page: static `{"mode":"standalone"}` — REST with an API key and settings in the browser; the plugin's dynamic `env.json` — OctoPrint session auth (`X-CSRF-Token` header) and settings on the server. The tab and core code does not depend on the mode; in plugin mode the address and key are not shown, and the header has an "← OctoPrint" link.
+**Install.**
 
-**Installation.**
+Get a ready zip from [releases](https://github.com/nezdelion/whoppah/releases) or from the artifacts of [CI builds](https://github.com/nezdelion/whoppah/actions/workflows/ci.yml?query=branch%3Amain+is%3Asuccess) (open a run → Artifacts; needs a GitHub login, the downloaded archive contains the plugin zip). Or build it yourself:
 
 ```sh
-python3 tools/build_plugin.py        # copies index.html, src/, vendor/ into the plugin package and builds dist/OctoPrint-Plotter-<version>.zip
+python3 tools/build_plugin.py        # builds dist/OctoPrint-Plotter-<version>.zip
 ```
 
-OctoPrint → Settings → Plugin Manager → "Get More…" → "… from an uploaded file" → choose the zip → restart OctoPrint. A "Plotter" link appears in the top bar. The zip version comes from git: MAJOR.MINOR from `octoprint-plugin/octoprint_plotter/_version.py`, PATCH = number of commits since that MAJOR.MINOR was set, so every commit gives a higher version and a new zip installs over the old one; uncommitted changes add `.post<UTC time>`. Tracked files are not changed by the build; `--version X.Y.Z` sets an exact version. Update the same way with a new zip (after the restart the browser re-validates the files itself: the page and static files are served with `Cache-Control: no-cache` and ETag). Uninstall in Plugin Manager. The version is in `octoprint-plugin/octoprint_plotter/_version.py` (or `--version X.Y.Z` at build time).
+OctoPrint → Settings → Plugin Manager → "Get More…" → "… from an uploaded file" → the zip → restart OctoPrint. A "Plotter" link appears in the top bar. To update, install a newer zip the same way; uninstall in Plugin Manager. Each commit gives a higher version (see [Plugin development](#plugin-development)).
 
-**Permissions and settings storage.**
+**Permissions.**
 
-- The page and service URLs are available only to logged-in users (without login — redirect to the OctoPrint login and back to the app).
-- The machine profiles (with the active one) and calibration are shared by everyone; job parameters and presets are per user. Another device's profile switch is picked up with the next poll (5 s).
-- Any profile write — values, bed, create, duplicate, rename, delete **and choosing the active profile** — requires the **"Plotter: Machine profile"** permission (`PLUGIN_PLOTTER_MACHINE_PROFILE`): the administrators group has it by default; it is granted in Settings → Access Control (to a user or group). Without the permission the profiles are shown read-only.
-- Writing the calibration requires the standard OctoPrint **Control** permission. Print, upload and pause are checked against OctoPrint permissions (Print, File Upload, Control); on denial "permission required: …" is shown.
-- A section is at most 1 MB; unknown sections are rejected by the server.
+- Only logged-in users can open the app (others are sent to the OctoPrint login).
+- Machine profiles and calibration are shared by everyone; job parameters and presets are per user.
+- Changing profiles, including choosing the active one, needs the **"Plotter: Machine profile"** permission (admins have it by default; grant it in Settings → Access Control). Without it profiles are read-only.
+- Writing calibration needs **Control**; printing, upload and pause need Print, File Upload and Control.
 
-**Calibration capture and jog panel.** Bring the pen over with the standard Control tab, then on the "Print" tab press "Corner here" (accounting for the pen offset from the sheet corner) or "Touch here"; the position is read with `M118`/`M400`/`M114` (unavailable while printing). "Corner is correct" / "Touch is correct" confirm a part without changing values. After homing (`G28`) or a printer reconnect the app shows "calibration may be outdated", and printing requires confirmation. Requires the Control permission and firmware that answers `M118`.
+**Calibration capture.** Bring the pen over with the jog panel or OctoPrint's Control tab, then press "Corner here" or "Touch here" on the "Print" tab (reads the position with `M118`/`M400`/`M114`; not while printing). "Corner is correct" / "Touch is correct" confirm without changing the values. After homing, a printer reconnect or a profile switch the calibration is marked "may be outdated" and printing asks for confirmation. Standalone mode has the same buttons when the printer feed is connected; after a page reload the calibration is considered outdated.
 
-The same buttons exist in standalone when the printer feed is connected: the calibration lives in the browser and the coordinate epochs in the feed memory, so after a page reload both parts are considered outdated until a new capture or "Corner is correct" / "Touch is correct". Until the feed has seen `G28` (since connecting to the printer; Home is tracked separately for XY and Z), capture and the jog panel are disabled with the hint "Not homed — home before installing the pen"; the app never sends `G28` on its own — only the "Home (G28)" button next to the hint does, after confirming the pen is out or raised above the nozzle; if Home was done before the page was opened (`G28` is dangerous with a pen), the "Already homed" button with confirmation removes the guard until the next reconnect, and does not change the coordinate epochs. The jog panel (X±/Y±/Z±, step 0.1/1/10 mm, both modes) reads the position before each step, does not go beyond the profile axis limits, and Z not more than 2 mm below the touch; with a measured bed, while the pen may be down (Z unknown or below touch + clearance) X/Y stay in the print area, and off the bed Z stays at touch + clearance or higher.
+**Homing guard.** The app never sends `G28` on its own: homing with a pen installed can crash it. Until the feed has seen `G28`, capture and the jog panel are off with the hint "Not homed — home before installing the pen". "Home (G28)" homes after you confirm the pen is out or raised; "Already homed" removes the guard until the next reconnect.
 
-**Firmware settings (standalone, feed connected).** "Read firmware settings" ("Connection" section) sends `M503` and parses `M201`/`M203`/`M204`/`M205`/`M420`: a summary, warnings (profile feeds above `M203`, mesh fade below the touch), "Fill in profile accelerations…" on confirmation. The result is kept only in memory, until the feed drops; while it exists, the time estimate clamps feeds by `M203` and starts from the `M205` jerk (marked "accounting for firmware"). The plugin has no feed — not available there.
+**Jog panel.** X±/Y±/Z±, step 0.1/1/10 mm. Stays within the profile axis limits, never more than 2 mm below the touch, and while the pen may be down X/Y stay inside the print area.
 
-**Transferring settings from standalone.** In standalone: "Export to file" at the bottom of the settings panel; in the plugin: "Import from file…". The profiles and calibration are skipped with a message if permissions are missing, the rest is imported. If the user has no settings on the server yet, but `localStorage` of the same address (host:port) has standalone settings, the app offers to transfer them itself.
+**Firmware settings** (standalone with the feed). "Read firmware settings" sends `M503`: a summary, warnings (profile feeds above `M203`, mesh fade below the touch) and "Fill in profile accelerations…". The time estimate then uses the firmware limits.
 
-Behind a reverse proxy with a prefix (`X-Script-Name`) the URLs are built from `script_root`, and the app opens at `https://host/octoprint/plugin/plotter/`.
+**Moving settings from standalone.** "Export to file" in standalone, "Import from file…" in the plugin. If the server has no settings for you yet and the browser has standalone settings for the same host:port, the app offers to move them.
+
+Works behind a reverse proxy with a prefix (`X-Script-Name`), e.g. `https://host/octoprint/plugin/plotter/`.
 
 ## OctoPrint setup
 
-1. In OctoPrint: Settings → API → enable **Enable Cross Origin Resource Sharing (CORS)**.
-2. Get the **API key** there too (Settings → API → Application Keys or the global key).
-3. In the app, "Print" tab → "Connection": the address (`http://localhost:5000` for OctoPrint on the same machine, default; `http://octopi.local` for OctoPi on a Raspberry Pi) and the key; the "Test connection" button.
+Standalone mode only:
 
-Without an address and key the send buttons are inactive; G-code download works. The key is stored only in the browser's localStorage and is not included in the settings export file.
+1. OctoPrint: Settings → API → enable **Enable Cross Origin Resource Sharing (CORS)**, copy the **API key**.
+2. App: "Print" tab → "Connection": address (`http://localhost:5000` by default, `http://octopi.local` for OctoPi) and key → "Test connection".
+
+Without them only G-code download works. The key stays in the browser and is not exported with the settings.
 
 ## Settings and calibration
 
-All coordinates in the app are the **head position** (the nozzle), as shown in OctoPrint; the pen is offset from it, and the app accounts for the offset through the pen area and the sheet corner.
+All coordinates are the **head (nozzle) position**, as OctoPrint shows them. The pen offset is taken into account through the pen area and the sheet corner.
 
-**First setup (wizard).** The "Ready to print" card at the top of the Print tab lists what must be set: connection (standalone only), pen area, sheet corner, touch — each ready / not set / check, with "Set up" per item and "Run setup" for the whole wizard. The wizard is a modal dialog with steps, every change is saved at once, it can be closed on any step:
+**Setup wizard.** The "Ready to print" card on the "Print" tab lists what is missing (connection, pen area, sheet corner, touch) with "Set up" per item and "Run setup" for all. Steps, each saved immediately:
 
-1. **Connection** (standalone): OctoPrint address and API key, the indicator, "Test connection".
-2. **Pen area**: the machine profile (printer + pen holder) and where the pen tip can draw, one of two ways (below).
-3. **Sheet**: format and orientation; put the sheet on the bed, then either "Bring the pen to the area corner" (the pen hovers over the near left corner of the pen area — slide the sheet corner under the pen tip) or jog the pen to the sheet corner; then "Sheet corner here". "Pen does not reach the sheet corner" holds the pen offset from the corner for that case.
-4. **Touch**: lower Z step by step until the pen touches the paper, "Touch here"; pen width.
-5. **Check**: the readiness list, "Pen up", "Trace frame" (when a drawing is loaded).
+1. **Connection** (standalone): address, API key, "Test connection".
+2. **Pen area**: the machine profile and where the pen can draw (below).
+3. **Sheet**: format and orientation. "Bring the pen to the area corner" and slide the sheet corner under the tip, or jog the pen to the sheet corner; then "Sheet corner here". If the pen cannot reach the corner, use "Pen does not reach the sheet corner".
+4. **Touch**: lower Z until the pen touches the paper, "Touch here"; pen width.
+5. **Check**: "Pen up", "Trace frame".
 
-Steps that move the head have the jog pad (step 0.1/1/10 mm, X±/Y±/Z±) and the "Not homed" guard with "Already homed". Without a position source (no plugin feed) the steps show the number fields only.
+**Pen area** — two ways:
 
-**Pen area** (the active profile). Two ways, chosen by a switch; both fill the same bed rectangle of the profile:
-- **Pen offset from the nozzle** `dx, dy` (to the right / away from you — positive; the pen closer to you than the nozzle is a negative `dy`): the bed in head coordinates is the nominal bed (default 235×235 mm) shifted by −offset, the far corner "by nominal". Enter the numbers, or bring the pen tip to any bed corner it reaches, choose that corner and press "Pen here": the offset is corner − head position. Example: pen 35 mm right of the nozzle, limits X-4…234 — the pen reaches 204 mm along X.
-- **Extreme pen positions**: the near left and far right positions of the pen tip over the bed — "Use current position" or numbers; stored as measured corners.
-The editor shows "Pen reaches: W × H mm", a map (bed, axis limits, pen area, sheet) and "Go to" the area corners to check by eye. **Print area** = axis limits ∩ bed; the area not set — the axis limits, and the pen-on-bed checks are skipped with a note. The bed has no coordinate epoch (homing does not make it stale).
+- **Pen offset from the nozzle** `dx, dy` (right / away from you is positive). Type it, or put the pen tip on a bed corner and press "Pen here". Example: pen 35 mm right of the nozzle with X limits -4…234 reaches 204 mm along X.
+- **Extreme pen positions**: the near left and far right positions of the pen tip.
 
-Settings panel layout:
+The editor shows the reach ("Pen reaches: W × H mm") and a map; "Go to" moves to the area corners to check by eye. **Print area** = axis limits ∩ bed.
 
-- **Ready to print** card, then **Job** (every time): paper format (custom formats are saved), orientation, margin, alignment, rotation, "as is in mm", "Limit to print area"; folded **Optimization** (simplification and merge tolerances) and **Calibration values** (sheet corner and touch as numbers, with the date).
-- **Printer** (folded, rarely): **machine profiles**, the pen area editor, pen heights as offsets from the touch, feeds, axis limits, pen width, `G28`/`M84`, connection (standalone), settings export/import. The fold states are remembered in the browser.
-- The calibration card on the right: the "may be outdated" warning with "Corner is correct" / "Touch is correct", the jog pad and "Set up…".
+**Settings panel.**
 
-**Machine profiles.** A profile is "printer + pen holder": up to 20 named profiles, one active; New (defaults), Duplicate, Rename, Delete (not the last one; deleting the active one makes the neighbour active). Layout, G-code, checks, the jog panel and the time estimate use the active profile; the job settings, the sheet corner and the touch are not part of a profile and do not change on a switch. The corner and the touch depend on the holder, so after a profile switch both are reported as "may be outdated (the machine profile changed)" and printing asks for confirmation, until a new capture, input or "Corner is correct" / "Touch is correct" (back to the previous profile — fresh again). The single profile of earlier versions becomes the profile "Neptune 3 Pro" on the first start (standalone: in the browser, plugin: on the server); the old data is kept.
+- **Job** (every time): paper format, orientation, margin, alignment, rotation, "As is in mm", "Limit to print area"; folded **Optimization** and **Calibration values**.
+- **Printer** (rarely): machine profiles, pen area, pen heights relative to the touch, feeds, axis limits, pen width, `G28`/`M84`, connection, settings export/import.
 
-**"Limit to print area"** (job, on by default, marked ⚠): the drawing is fitted (scale and alignment) into (sheet field − margins) ∩ (print area moved to sheet coordinates via the corner); the sheet itself may extend beyond the area (a warning per side). Off: the drawing is fitted into the sheet as before. If the field minus margins is inside the print area, the G-code is the same with the option on or off. Before sending, the drawing is checked against the print area regardless of the option: beyond an axis limit or beyond the bed edge (per side, in mm) — confirmation.
+**Machine profiles.** A profile = printer + pen holder; up to 20, one active. Job settings, sheet corner and touch do not belong to a profile.
 
-**Point and "Go to".** Every point in head coordinates (sheet corner, pen positions) is the same control: X/Y, "Use current position", "Go to". "Go to" reads the position, lifts the pen to the start height if it is lower (or unknown), moves X/Y and, with a fresh touch, lowers to touch + clearance; a point outside the axis limits is refused. Same guards and permissions as the jog panel.
+**"Limit to print area"** (on by default): the drawing is fitted into the sheet field minus margins, cut to the print area. Whatever the option, a drawing going past an axis limit or the bed edge asks for confirmation before sending.
 
-Settings export/import via a file is at the bottom of the settings panel: format version 2 (all profiles with the active one, calibration, job, presets); a version 1 file (a single profile) is rejected with "the old settings file format is not supported". Settings of the old page (`neptune-plotter.settings`) are migrated once on first launch.
+**"Go to"** lifts the pen first if needed, moves X/Y and, with a fresh touch, lowers to touch + clearance.
 
-**Button hints.** Every button has a short hint (dictionary key `<area>.<button>.hint`): the hover title on a desktop, a "?" next to the button on touch screens (shows the text under the button).
+**Settings file.** Export/import at the bottom of the panel: profiles, calibration, job, presets (format 2; format 1 files are rejected). Settings of earlier versions are migrated on first start.
+
+Every button has a hint: on hover on a desktop, behind "?" on touch screens.
 
 ## Tabs
 
 ### "SVG" tab
 
-Drop an SVG file onto the tab or click to choose one. The tab shows the number of lines and points and the size in mm if the file sets one; text elements and raster images are skipped with a warning (convert text to curves first). The drawing goes to the "Print" tab at once and is imported again when the field, margin or rotation change.
+Drop an SVG file onto the tab or click to choose one. Shows the number of lines and points and the size in mm if the file sets one. Text and raster images are skipped with a warning — convert text to curves first. The drawing goes to the "Print" tab at once.
 
 ### "Photo" tab and styles
 
-The "Photo" tab turns a photo into lines: image → stack of style layers, each visible layer becomes a drawing layer. A new run of a layer cancels the previous one. A layer gets the "done" status only on a reliable completion signal; for plotterfun styles not verified for the vendored version the result stays intermediate, and printing needs confirmation.
+Turns a photo into lines: a stack of style layers, each visible layer becomes a drawing layer. Most styles come from [plotterfun](https://github.com/mitxela/plotterfun); its unverified styles give an intermediate result, and printing it asks for confirmation.
 
-**Crop and "Fade background".** "Crop" on the preview shows the whole photo with a frame: drag a corner or a side to resize it, drag inside to move it (mouse or finger; the preview zoom is off in this mode). "Frame" chooses free proportions or the proportions of the drawing field (field minus margins, inverse when rotated; switching it on fits the frame at once). The layers are recalculated once, when the frame is released; "Reset crop" draws the whole photo again. The frame gets the whole working resolution (`rasterize(decoded, workingSize, crop)`), so the paper scale `mmPerPx` and the density check follow it: a frame of half the photo lies on the same field twice as large. "Fade background" (strength, size, softness; strength 0 = off) is one setting for all layers: outside an ellipse in the middle of the frame (100 % — inscribed in it) the image fades toward white with a smoothstep over the softness (`applyVignette` in `src/styles/prep.js`, applied to the working image before any style), so light lines vanish toward the edges like an oval engraved portrait; a change recalculates the layers after the same delay as a layer parameter. The frame belongs to the photo: it lives in the tab model (kept across a language switch and a preset), a new file resets it, and it is not saved — a preset is restored without the photo, and the frame of one photo would cut a random part of another. "Fade background" is saved with the layers in the tab preset (`vignette` field; a preset without it switches it off).
+**Crop.** "Crop" shows the whole photo with a frame: drag corners and sides to resize, inside to move. "Frame" is free or fits the drawing field. "Reset crop" goes back to the whole photo. The crop belongs to the photo and is not saved in presets.
+
+**Fade background** (strength, size, softness; 0 = off): the image fades to white outside an ellipse in the middle, like an oval engraved portrait. Saved in the tab preset.
 
 #### Wave lines
 
-Parallel lines at an angle and step (mm on paper); each line is a wave whose amplitude, frequency or both grow with the darkness of its band; in dark areas the line gets thicker by up to 3 or 5 passes `pass pitch × pen width` apart (they merge into one thick line; the pen is not lifted inside a stroke); in light areas below the break threshold the line stops (highlights shorter than one step do not break it). The amplitude is capped so that neighbouring lines at full thickness do not touch; "Shift every other line by half a period" puts neighbours in antiphase (off — in phase). The lines come out as a serpentine. Three presets: fine waves, classic (the defaults), bold. The defaults are placeholders until a paper test.
+Parallel lines at a set angle and step (mm); each is a wave whose amplitude and/or frequency grow with darkness. Dark areas get 3 or 5 merged passes, light areas below the break threshold break the line. "Shift every other line by half a period" puts neighbours in antiphase. Presets: fine waves, classic, bold.
 
-With wave lines set "Join ends with a stroke up to" (`linkTolMm`, Optimization) either to 0, or deliberately a bit more than the line step: then neighbouring lines of the serpentine are joined by a stroke along the image edge or the edge of a light area — faster, but the joins are visible as an outline. A value below the step joins nothing.
+Set "Join ends with a stroke up to" (Optimization) to 0, or a bit above the line step to join the serpentine along the edges (faster, but the joins are visible).
 
 #### Engraving
 
-Lines follow the form of the image, like a portrait on a banknote. The tone of a real photo is prepared first: "Auto levels" (on by default) stretch the brightness range between the percentiles "Auto levels: clipping, %" and 100 − it, so a washed-out photo gets its blacks and whites; "Local contrast, %" mixes in a contrast-limited adaptive histogram equalisation (CLAHE, 8 tiles along the long side), so a light face against a bright background still gets readable mid-tones.
+Lines follow the form of the image, like a banknote portrait.
 
-The direction field is the smoothed structure tensor of the brightness at two scales: lines run along the contours of equal tone (isophotes), turned by "Rotation from the tone contours" (90° — across them, e.g. around a cylinder lit from the side). "Field smoothing" (mm) is the size of the forms the lines follow (the oval of a face, a fold of cloth); "Fine detail, %" is how far the detail at a third of that scale (eyes, nose, strands of hair) bends them — 0 % only the large form, 100 % the detail fully. Very steep gradients (a silhouette, a hair line) enter the field capped, so lines beside an edge do not all run along it. Where the brightness hardly changes ("Flat area threshold" — brightness change per 1 cm on paper, %), the structure has no clear direction, or the area is texture rather than form (foliage, grass, noise — "Simplify background, %": the higher, the more of it goes to the base angle), the lines turn smoothly to the "Base angle"; "Follow the form" 0 % gives straight parallel lines everywhere. The field depends on the auto levels but not on brightness, contrast, gamma, inversion and local contrast — they only change the tone.
+- **Tone**: "Auto levels" stretch a washed-out photo; "Local contrast" brings out mid-tones on a bright background.
+- **Direction**: lines run along contours of equal tone, turned by "Rotation from the tone contours". "Field smoothing" (mm) is the size of the forms they follow; "Fine detail" is how much eyes, nose and hair bend them. Flat areas and texture ("Flat area threshold", "Simplify background") turn to the "Base angle"; "Follow the form" 0 % gives straight lines.
+- **Spacing and thickness**: "Spacing in dark/light areas" × "Base line spacing"; no line below "Break in light areas". Dark areas get thicker lines with "Thin stroke ends", capped by "Max. ink in shadows"; the darkest areas get a "Cross layer". Strokes shorter than "Min. stroke length" are dropped.
+- **Presets**: portrait, banknote, sketch.
 
-The lines are evenly spaced streamlines (Jobard–Lefer): the distance between neighbours goes from "Spacing in dark areas" to "Spacing in light areas" (both × "Base line spacing", mm), lines converge to at most half of it and stop there; below "Break in light areas" the line is not drawn (a highlight narrower than about two light spacings interrupts it, and it continues on the same track). The first line starts at the image centre, the next ones beside it, so neighbouring lines are drawn one after another. In dark areas a line gets thicker by 3 or 5 merging passes (as wave lines) with "Thin stroke ends" like a burin cut, but never wider than "Max. ink in shadows, %" of the distance to the nearest other line (shadows keep thin white lines instead of a black fill); in the darkest areas ("Cross layer from darkness") a second family of thin lines at "Cross layer angle" is drawn on top, in the same drawing layer (one pen). Strokes shorter than "Min. stroke length" or than three line distances are dropped (no clutter of short strokes in textured areas), a line is never longer than "Max. line length". Presets: portrait (the defaults), banknote (dense even long lines, tone by thickness, calm background, no cross layer), sketch (sparse short lines that follow more detail, cross layer in shadows). The defaults are placeholders until a paper test.
+If the spacing is too small the layer stops with "Too many lines — increase the spacing". Start with "Join ends with a stroke up to" = 0.
 
-All parameters are live. The status shows the phases ("Direction field", "Lines 45%", "Cross layer 70%", "Finishing"), the main lines appear before the end. If the spacing is too small for the image the placement stops at a point limit and the layer shows "Too many lines — increase the spacing" next to "done".
-
-For engraving start with "Join ends with a stroke up to" (`linkTolMm`) 0: line ends are not on one edge as with wave lines, so joining them draws visible strokes across the picture.
+Defaults of both styles are placeholders until a paper test.
 
 ### "Text" tab
 
-The "Text" tab (`src/app/tabs/text-tab.js`, model `src/app/text/text-model.js`) writes a phrase with a **single-line font**: every letter is a few open strokes along its centre line, drawn once by the pen, like handwriting with a pen or fineliner (no outlines, no pressure). Type the text (several lines), choose a font (a sample is shown under the list) and set: capital letter height in mm, letter spacing (% of the height), line spacing (× height, baseline to baseline), slant, alignment (left / centre / right against the widest line or the wrap width), line width for word wrapping (0 — no wrapping; a word longer than a line is broken between letters) and "Like by hand". The preview follows every change; the drawing goes to the "Print" tab only on "To print". The drawing is in millimetres (`unitMm: 1`), so the job option "As is in mm" prints the capitals exactly at the set height; fitting into the field works as for any drawing.
+Writes text with a **single-line font**: each letter is a few strokes along its centre line, drawn once, like a fineliner. Set the cap height (mm), letter and line spacing, slant, alignment, wrap width (0 = no wrap) and "Like by hand". The drawing goes to "Print" on "To print"; it is in mm, and "As is in mm" switches on so letters keep the set height. Text is printed in reading order.
 
-**"Like by hand"** (0–100 %) gives every letter a small random size, slant, rotation, offset and step, and each line a gentle baseline wave and tilt. It is seeded: the same text, parameters and seed give the same lines (after a reload too); "New variation" picks another seed. The strength scales one fixed pattern, so the slider changes it smoothly; 0 % is the font exactly. The handwriting presets (neat, natural, hasty) set only the letter spacing, slant and "Like by hand". The text, font, parameters and seed are saved in the tab preset.
+**"Like by hand"** (0–100 %) adds small random size, slant and baseline variation. Same text, settings and seed give the same result; "New variation" picks another seed. Presets: neat, natural, hasty.
 
-**Built-in fonts** (`src/app/text/fonts/*.json`, all with Latin, digits, Russian with Ё, «», —, …): Hershey Script, EMS Felix, EMS Allure (handwriting) and NewStroke (technical sans). No free single-line *handwriting* font with Cyrillic was found, so the Cyrillic, Latin-1 letters and typographic punctuation of the handwriting fonts are taken from NewStroke at build time: scaled to the font's capital height, lowercase fitted to its x-height, slanted like the font. Their Cyrillic is therefore italic print, not cursive. A character the font lacks is taken from NewStroke (with a note under the preview), typographic characters fall back to plain ones (« » → ", — → -, … → ..., № → No, ё → е), anything else is drawn as "?" with a warning.
+**Fonts**: Hershey Script, EMS Felix, EMS Allure (handwriting) and NewStroke (technical). All have Latin, digits and Russian. The handwriting fonts take Cyrillic from NewStroke, so it is italic print, not cursive. Missing characters come from NewStroke or are replaced ("?" with a warning as a last resort).
 
-**Your fonts.** "Add font…" accepts single-line SVG fonts (`<font>` with `<glyph unicode d>`, as used by Inkscape's Hershey Text extension) and Hershey `.jhf` files (code points from 32 in file order). Outline fonts are refused: TTF/OTF/WOFF at once, and an SVG font whose glyphs are closed contours with "this looks like an outline font; single-line fonts only for now". The parsed font (the same JSON form as the built-in ones, usually tens of KB) is kept per user: in plugin mode in the user's server section `fonts` (at most 1 MB with all their fonts; a font that does not fit, or that the server refuses, stays only in this browser and the message says so), standalone in the browser's localStorage. "Remove font" removes the chosen font of yours. The fonts are not part of the settings file.
-
-**Size and order on Print.** A text drawing switches the job option "As is, in mm" on, so the letters get the cap height set on the tab; switch it off to scale the text to the field. The next SVG or photo drawing puts the option back as it was (unless you changed it meanwhile). Text is printed in reading and stroke order (top line first, left to right, each stroke in its writing direction), not nearest-first from the corner.
+**Your fonts.** "Add font…" accepts single-line SVG fonts (as from Inkscape's Hershey Text) and Hershey `.jhf`. Outline fonts (TTF/OTF/WOFF, closed-contour SVG) are refused. Stored per user: on the server in plugin mode (up to 1 MB), in the browser in standalone mode. Not part of the settings file.
 
 ## Interface language
 
-Languages: English (`en`, fallback), Russian (`ru`), Spanish (`es`), German (`de`) and French (`fr`).
-
-Which language to enable (`src/i18n/detect.js`, `src/app/lang.js`), in descending priority:
-
-1. an explicit choice in the language switch in the page header (Auto / English / Русский / Español / Deutsch / Français, on every tab, standalone and plugin), stored in `localStorage` (`whoppah.lang`);
-2. plugin: the interface language of the current OctoPrint user — `language` in the dynamic `env.json` (user setting `interface.language`, otherwise the global `appearance.defaultLanguage`; "_default" means "not chosen");
-3. `navigator.languages`: the first supported one by the primary subtag (`ru*` → Russian, `de-AT` → German, `es-MX` → Spanish, `fr-CA` → French, `en*` → English);
-4. otherwise English (including for an unsupported OctoPrint language, e.g. `it`, in which case the browser language is checked).
-
-The language is chosen at startup, before the UI is built. Switching it in the header works **live, without a page reload**: the drawing, settings and profiles, the loaded SVG file, the photo with its layers and running computations, the "Print" tab log, the active tab and the preview zoom stay. Messages already shown are recomputed in the new language; texts produced earlier by core or OctoPrint (import warnings, the job log, the connection detail) stay in the old language until they are produced again. The plugin server (Python) texts stay English: the app shows them only as error details.
+English, Russian, Spanish, German, French. Chosen in this order: the switch in the page header → the OctoPrint user's language (plugin) → the browser language → English. Switching applies at once, without a reload; the drawing, settings, photo layers and log are kept. Plugin server messages stay in English.
 
 ## Development
 
@@ -234,7 +228,9 @@ The "Print" tab does not change. An intermediate result is marked `meta.partial 
 
 The "Photo" tab (`src/app/tabs/photo-tab.js`) is an ordinary source: image → stack of style layers → `ctx.emit(drawing)`, each visible layer becomes a drawing layer. Computation runs in workers (`src/styles/runner.js`), a new run of a layer cancels the previous one. A layer gets the "done" status only on a reliable completion signal; for plotterfun styles it is built by the wrapper `src/styles/plotterfun-host.js` from the manifest `src/styles/plotterfun-completion.json` (execution model of each style: `sync`, `async-handler`, `timer-chain`, `none`). The manifest applies only to the commit from the first line of `vendor/plotterfun/UPSTREAM`; after updating vendor run `python3 tools/audit_plotterfun.py` — unverified styles get `none` (the result stays intermediate, printing needs confirmation).
 
-**Crop.** The frame geometry is in `src/app/photo/crop.js` (pure functions).
+**Crop and fade.** Frame geometry: `src/app/photo/crop.js` (pure functions). The frame gets the whole working resolution (`rasterize(decoded, workingSize, crop)`), so `mmPerPx` and the density check follow it. The crop lives in the tab model (kept across a language switch and a preset) and is not saved: a preset is restored without the photo. Fade background is `applyVignette` in `src/styles/prep.js` (smoothstep, applied to the working image before any style), saved as the `vignette` field of the tab preset.
+
+**Engraving algorithm.** Tone: auto levels by percentiles, CLAHE (8 tiles along the long side). Direction field: smoothed structure tensor of brightness at two scales (fine detail at 1/3 of "Field smoothing"), steep gradients capped; the field depends on auto levels only, not on the other tone settings. Lines: evenly spaced streamlines (Jobard–Lefer) seeded from the centre, converging to at most half the spacing; thickness by 3/5 passes (`thicken`), capped by the distance to the nearest line. Strokes shorter than three spacings are dropped too; placement stops at a point limit.
 
 Status texts of own styles may carry numbers: the worker sends progress as `{ key, params }` (for example `{ key: 'styles.progress.waves', params: { percent: 40 } }` → "Wave lines 40%"), plain strings are dictionary keys or plotterfun texts.
 
@@ -275,7 +271,9 @@ Font interface: the layout (`src/core/text-layout.js`) knows only a `StrokeFont`
 
 Dictionaries are flat modules `src/i18n/en.js`, `ru.js`, `es.js`, `de.js`, `fr.js` with stable dotted keys (`print.upload`); a value is a string with `{params}` or plural forms (chosen by `Intl.PluralRules` from the `count` parameter; each entry has every form the language's rules can return: `en`/`de` `{ one, other }`, `es`/`fr` `{ one, many, other }`, `ru` `{ one, few, many, other }`). `t(key, params)`: if the key is missing in the current language, English is used; if missing there too, the key itself. Numbers in text are formatted by `fmtNumber` (`Intl.NumberFormat`: "1.5" / "1,5"); in G-code and input fields always a dot. `tests/i18n.test.js` checks that every language has the same key set and `{name}` parameters as `en`, that every plural entry has all the forms of its language, that all `t('…')` from `src` are in every dictionary, that no sentence is left in English in the other dictionaries (at most two allowed), and that no Cyrillic remains in `src` outside the dictionaries.
 
-Switching the language in the header works **live, without a page reload** (`createLanguageControl` in `src/app/lang.js`): the choice is saved, the language is enabled, the static markup is translated (`translateStatic`), and the views are rebuilt in place (`src/app/ui/tab-host.js` unmounts and mounts every tab again; the header indicator and switch are recreated). Services are not recreated — state (drawing, settings, profiles), transport, the printer feed, the connection and calibration monitors, the firmware/limits memory — and neither are the tab models: the SVG tab keeps the loaded file, the Photo tab keeps its model in `src/app/photo/photo-model.js` (image, layers, parameters, running worker computations, which finish into the new view), the Print tab keeps its log, file name, "travel" and jog step; the active tab and the preview zoom stay too. Texts that appear in schemas, constants and the registry are computed on access (getters), so they do not get "frozen" in the language at module load.
+**Live language switch** (`createLanguageControl` in `src/app/lang.js`): saves the choice, translates the static markup (`translateStatic`) and remounts every tab view (`src/app/ui/tab-host.js`). Services (state, transport, printer feed, monitors) and tab models are not recreated, so a tab must keep its data in the model, not the view (see [How to add a drawing source](#how-to-add-a-drawing-source)). Texts in schemas, constants and the registry are getters, so they are not frozen in the load-time language.
+
+**Language detection** (`src/i18n/detect.js`): stored choice `whoppah.lang` → plugin `env.json` `language` (user `interface.language`, else `appearance.defaultLanguage`; `_default` = not chosen) → `navigator.languages` by primary subtag → English. Texts produced earlier by core or OctoPrint stay in the old language until produced again.
 
 **New string**: add the key to every dictionary (`en.js`, `ru.js`, `es.js`, `de.js`, `fr.js`, same parameters), in code — `t('key', { param })`. Tests that check Russian texts import `tests/helpers/ru.js` (pins `ru`).
 
@@ -290,6 +288,12 @@ Switching the language in the header works **live, without a page reload** (`cre
 - **Pen change between layers**: the hook `beforeLayer(layer, index) => string[]` in `generateGcode`.
 
 ### Plugin development
+
+**Modes.** On start the app reads `env.json` next to the page: static `{"mode":"standalone"}` — REST with an API key, settings in the browser; the plugin's dynamic `env.json` — OctoPrint session auth (`X-CSRF-Token`), settings on the server, the user's language. Tab and core code does not depend on the mode.
+
+**Version.** MAJOR.MINOR from `octoprint-plugin/octoprint_plotter/_version.py`, PATCH = commits since MAJOR.MINOR was set; uncommitted changes add `.post<UTC time>`; `--version X.Y.Z` sets it exactly. The build does not change tracked files. Page and static files are served with `Cache-Control: no-cache` and ETag.
+
+**Server storage.** A settings section is at most 1 MB, unknown sections are rejected; other devices see a profile switch at the next poll (5 s).
 
 **CI (GitHub Actions, `.github/workflows/ci.yml`).** Every push to `main` and every pull request runs `npm test` and the plugin tests, then builds the plugin zip (downloadable from the run as an artifact). A tag `v*` (e.g. `git tag v0.2.12 && git push origin v0.2.12`) also publishes a GitHub release with the zip; install it in OctoPrint via Plugin Manager → "… from URL" with the release asset link (public repo) or by downloading it.
 
@@ -318,3 +322,8 @@ MIT (`LICENSE`), © 2026 nezdelion. Third-party code and fonts keep their own li
   - **Hershey Script** (`vendor/hershey/scripts.jhf`, <https://github.com/kamalmostafa/hershey-fonts>): the Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. National Bureau of Standards; the format of the font data was originally created by James Hurt, Cognition, Inc. Free for any use with this acknowledgement (`vendor/hershey/LICENSE`).
   - **NewStroke** (`vendor/newstroke/`, Vladimir Uryvaev, <http://vovanium.ru/sledy/newstroke/en>), CC0 1.0 — also the Cyrillic and punctuation of the other built-in fonts.
   - **EMS Allure**, **EMS Felix** (`vendor/ems-fonts/`, <https://gitlab.com/oskay/hershey-text>): Sheldon B. Michaels, SVG fonts by Windell H. Oskay, derivatives of Allura (Rob Leuschke) and Felipa (Fontstage); SIL Open Font License 1.1. `allure.json` and `felix.json` are modified versions under the same license.
+
+## Acknowledgements
+
+- [Pen plotter graphics software](https://mattwidmann.net/notes/pen-plotter-graphics-software) by Matt Widmann: a collection of links to pen plotting tools.
+- [plotterfun](https://mitxela.com/plotterfun) by mitxela ([source](https://github.com/mitxela/plotterfun)): most of the photo styles on the "Photo" tab come from it.
