@@ -46,6 +46,8 @@ Open <http://localhost:8000/>. Does not work from `file://` (ES modules), an htt
 
 ### GitHub Pages
 
+Live: **<https://nezdelion.github.io/whoppah/>** — deployed from `main` by CI after the tests pass.
+
 The standalone app is just static files, so it also works from GitHub Pages (or any static hosting) without a local server:
 
 - An HTTPS page can reach OctoPrint at `http://localhost:5000`: browsers treat localhost as trusted (recent Chrome may ask once to allow access to the local network).

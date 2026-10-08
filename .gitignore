@@ -13,3 +13,4 @@ octoprint-plugin/octoprint_plotter/static/app/
 /.claude/skills
 /.claude/commands
 /.claude/worktrees/
+.idea/

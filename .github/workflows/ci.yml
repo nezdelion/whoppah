@@ -1,4 +1,5 @@
-# Tests on every push and pull request, the plugin zip as an artifact; a tag v* also publishes a GitHub release with it.
+# Tests on every push and pull request, the plugin zip as an artifact; a tag v* also publishes a GitHub release with it;
+# main is also deployed to GitHub Pages (the standalone app: static files, no build).
 name: CI
 
 on:
@@ -74,3 +75,31 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" \
             --title "Whoppah $GITHUB_REF_NAME (plugin ${{ needs.build.outputs.version }})" --generate-notes
+
+  pages:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect the standalone app
+        # only what the page loads: the page, the standalone env.json, the app sources and the vendored code and fonts
+        run: |
+          mkdir -p "$RUNNER_TEMP/site"
+          cp -r index.html env.json LICENSE src vendor "$RUNNER_TEMP/site/"
+          touch "$RUNNER_TEMP/site/.nojekyll"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+      - id: deploy
+        uses: actions/deploy-pages@v4
