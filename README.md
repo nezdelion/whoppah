@@ -10,6 +10,8 @@ Tested on Elegoo Neptune 3 Pro (Marlin) and OctoPrint 1.11.
 
 Drawing (SVG, a photo in one of the line styles, or text) → layout on the sheet → pen G-code → download or send to OctoPrint.
 
+**Pen holder.** On the Neptune I use a pen holder that clips onto the print head: <https://www.thingiverse.com/thing:7419087>. For your printer search for `"pen holder" + printer name` or `pen plotter + printer name`; as a last resort, model one after a holder for another printer.
+
 Plain JavaScript (ES modules), no build step and no npm dependencies.
 
 ## Contents
